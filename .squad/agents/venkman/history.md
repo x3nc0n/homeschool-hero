@@ -8,3 +8,4 @@
 - Key UI flows: assignment management, file upload (scan/photo), grade review, quiz/test creation
 - Must be simple enough for "mildly IT-inclined" parents
 - Mobile-friendly upload flow is critical (phone photos of assignments)
+- **GitHub Repository:** https://github.com/x3nc0n/homeschool-hero

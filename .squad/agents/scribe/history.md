@@ -2,6 +2,7 @@
 
 - **Project:** homeschool-hero
 - **Created:** 2026-05-08
+- **GitHub Repository:** https://github.com/x3nc0n/homeschool-hero
 
 ## Core Context
 
