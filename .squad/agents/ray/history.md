@@ -22,6 +22,8 @@
 - All APIs contract-tested and production-ready for phase 2 (tasks 17-19, 25)
 - 2026-05-08T17:04:55.759-05:00 — Submitted tasks 17-19: OCR now supports image preprocessing + PDF rendering via PyMuPDF, AI grading supports Ollama/OpenAI with robust response parsing, and grading jobs are processed by an app-started background worker with confidence-based auto-grading.
 - 2026-05-08T17:04:55.759-05:00 — Submission uploads enqueue grading jobs automatically, OCR text is persisted on submissions, and AI-unavailable scenarios route jobs to manual review instead of failing grading flow.
+- 2026-05-08T17:04:55.759-05:00 — Final Docker polish aligned the shipped app around `/api`, bundled the React SPA into the container, and added Compose health checks plus persistent uploads/Postgres volumes.
+- 2026-05-08T17:04:55.759-05:00 — FastAPI now auto-runs Alembic migrations on startup, serves the built UI and uploaded files from one port, and keeps Ollama optional via a Compose profile so manual review still works without local AI.
 
 ### Phase 2 Completion (2026-05-08T22:30:00Z)
 - Tasks 17-19 completed: OCR preprocessing, AI grading, and background worker daemon operational
@@ -29,4 +31,3 @@
 - Grading pipeline active: upload → OCR → AI grading with confidence routing
 - Low-confidence grades (<0.8) route to `needs_review` for manual approval
 - Ollama/OpenAI failover implemented
-

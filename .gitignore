@@ -20,6 +20,14 @@ coverage/
 .next/
 out/
 
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.db
+backend/.pytest-state/
+backend/.pytest_cache/
+data/uploads-test/
+
 # Environment and secrets
 .env
 .env.*
