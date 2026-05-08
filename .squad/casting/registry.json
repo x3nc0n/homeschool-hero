@@ -1,0 +1,52 @@
+{
+  "agents": {
+    "egon": {
+      "persistent_name": "Egon",
+      "universe": "ghostbusters",
+      "role": "Lead",
+      "created_at": "2026-05-08T07:32:07-05:00",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "venkman": {
+      "persistent_name": "Venkman",
+      "universe": "ghostbusters",
+      "role": "Frontend Dev",
+      "created_at": "2026-05-08T07:32:07-05:00",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "ray": {
+      "persistent_name": "Ray",
+      "universe": "ghostbusters",
+      "role": "Backend Dev",
+      "created_at": "2026-05-08T07:32:07-05:00",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "winston": {
+      "persistent_name": "Winston",
+      "universe": "ghostbusters",
+      "role": "Tester",
+      "created_at": "2026-05-08T07:32:07-05:00",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "scribe": {
+      "persistent_name": "Scribe",
+      "universe": null,
+      "role": "Scribe",
+      "created_at": "2026-05-08T07:32:07-05:00",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "ralph": {
+      "persistent_name": "Ralph",
+      "universe": null,
+      "role": "Work Monitor",
+      "created_at": "2026-05-08T07:32:07-05:00",
+      "legacy_named": false,
+      "status": "active"
+    }
+  }
+}
