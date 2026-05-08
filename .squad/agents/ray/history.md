@@ -31,3 +31,14 @@
 - Grading pipeline active: upload → OCR → AI grading with confidence routing
 - Low-confidence grades (<0.8) route to `needs_review` for manual approval
 - Ollama/OpenAI failover implemented
+
+### Task 25: Docker Polish + Integration (2026-05-08T23:50:20Z)
+- Multi-stage Dockerfile with optimized build and runtime layers
+- Frontend SPA bundled into FastAPI backend container
+- Alembic migrations auto-run on container startup
+- Health endpoint (/health) for Docker compose checks
+- Docker Compose configured with volume mounts and health monitoring
+- README quickstart with local development and deployment instructions
+- All 33 backend tests passing, frontend build clean
+- Commit: aa9555d — "Polish MVP Docker setup"
+- MVP fully containerized and ready for deployment

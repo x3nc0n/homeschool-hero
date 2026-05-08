@@ -16,3 +16,11 @@
 - Frontend tasks 9-16, 20 completed successfully: React SPA with all pages, protected routing, API integration ✓
 - Build passing, all parent workflows wired end-to-end: auth, dashboard, student/subject/assignment CRUD, uploads, grade book, quiz builder/taker, review queue ✓
 - Ready for user feedback and phase 2 refinements
+
+### Frontend Bundling: Docker Integration (2026-05-08T23:50:20Z)
+- Frontend SPA now bundled into FastAPI backend container
+- Built React artifacts served as static files from /app/dist/
+- SPA routing preserved via FastAPI fallback to index.html
+- Single-port deployment: backend API on /api + frontend on /
+- Frontend no longer requires separate development/build infrastructure
+- CORS configured for both dev (localhost) and prod deployment
