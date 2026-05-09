@@ -7,7 +7,9 @@ import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { CapabilitiesProvider } from '@/context/CapabilitiesContext'
 import { NotificationsProvider } from '@/context/NotificationsContext'
 import { PwaProvider } from '@/context/PwaContext'
+import { ThemeProvider } from '@/context/ThemeContext'
 import { api, MAINTENANCE_EVENT } from '@/lib/api'
+import { AppearanceSettingsPage } from '@/pages/AppearanceSettingsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { BackupsPage } from '@/pages/BackupsPage'
 import { ExportsPage } from '@/pages/ExportsPage'
@@ -119,6 +121,7 @@ function ProtectedRoutes() {
         <Route path="/audit" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<AuditLogPage />} />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/settings/family" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<FamilySettingsPage />} />} />
+        <Route path="/settings/appearance" element={<AppearanceSettingsPage />} />
         <Route path="/settings/notifications" element={<NotificationPreferencesPage />} />
         <Route path="/settings/status" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<StatusPage />} />} />
         <Route path="*" element={<NotFoundPage />} />
@@ -248,14 +251,16 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <CapabilitiesProvider>
-        <PwaProvider>
-          <NotificationsProvider>
-            <AccessibilityEnhancer />
-            <AppRoutes />
-          </NotificationsProvider>
-        </PwaProvider>
-      </CapabilitiesProvider>
+      <ThemeProvider>
+        <CapabilitiesProvider>
+          <PwaProvider>
+            <NotificationsProvider>
+              <AccessibilityEnhancer />
+              <AppRoutes />
+            </NotificationsProvider>
+          </PwaProvider>
+        </CapabilitiesProvider>
+      </ThemeProvider>
     </AuthProvider>
   )
 }

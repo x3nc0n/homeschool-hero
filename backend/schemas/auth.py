@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 
+from backend.schemas.preferences import UserPreferencesRead
 from backend.validation import normalize_email_address, normalize_text, validate_password_policy
 
 
@@ -68,6 +69,7 @@ class AuthSessionResponse(BaseModel):
     user: SessionUser
     family: SessionFamily
     membership: SessionMembership
+    ui_preferences: UserPreferencesRead
     message: str | None = None
 
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import type { AcceptInvitationPayload, AuthSession, FamilyRole, RegisterPayload } from '@/types/api'
+import type { AcceptInvitationPayload, AuthSession, FamilyRole, RegisterPayload, UserUiPreferences } from '@/types/api'
 import { api, ApiError } from '@/lib/api'
+import { DEFAULT_UI_PREFERENCES } from '@/lib/theme'
 
 type AuthContextValue = {
   isAuthenticated: boolean
@@ -17,6 +18,8 @@ type AuthContextValue = {
   canViewAuditLog: boolean
   canUploadSubmissions: boolean
   canReviewQueue: boolean
+  uiPreferences: UserUiPreferences
+  setUiPreferences: (preferences: UserUiPreferences) => void
   login: (email: string, password: string) => Promise<void>
   register: (payload: RegisterPayload) => Promise<void>
   acceptInvitation: (invitationId: number, payload: AcceptInvitationPayload) => Promise<void>
@@ -89,6 +92,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       canViewAuditLog: isParentAdmin,
       canUploadSubmissions: isParentAdmin || isTutor,
       canReviewQueue: isParentAdmin || isTutor,
+      uiPreferences: session?.ui_preferences ?? DEFAULT_UI_PREFERENCES,
+      setUiPreferences: (preferences: UserUiPreferences) => {
+        setSession((current) => (current ? { ...current, ui_preferences: preferences } : current))
+      },
       login: async (email: string, password: string) => {
         const nextSession = await api.login(email, password)
         setSession(nextSession)

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import AuditAction, Family, FamilyMembership, FamilyRole, FamilySettings, User
+from backend.models import AuditAction, Family, FamilyMembership, FamilyRole, FamilySettings, User, UserPreference
 from backend.schemas.auth import (
     BootstrapStatusResponse,
     LoginRequest,
@@ -37,6 +37,7 @@ from backend.services.audit import log_event
 from backend.services.gradebook import ensure_default_grade_scale
 from backend.services.maintenance import get_maintenance_status, membership_can_bypass_maintenance
 from backend.services.notifications import create_security_alert_for_user
+from backend.services.preferences import DEFAULT_USER_PREFERENCES, serialize_user_preferences
 
 router = APIRouter(prefix='/auth', tags=['auth'])
 
@@ -45,7 +46,12 @@ def _set_session_cookie(response: Response, request: Request | None, *, user_id:
     set_session_cookies(response, request, user_id=user_id, family_id=family_id)
 
 
-def _auth_session_from_record(user: User, membership: FamilyMembership, family: Family) -> AuthSession:
+def _auth_session_from_record(
+    user: User,
+    membership: FamilyMembership,
+    family: Family,
+    preferences: UserPreference | None = None,
+) -> AuthSession:
     family_settings = family.__dict__.get('family_settings')
     return AuthSession(
         user_id=user.id,
@@ -58,6 +64,7 @@ def _auth_session_from_record(user: User, membership: FamilyMembership, family: 
         family_name=family.name,
         family_state_code=family_settings.state_code if family_settings else 'CUSTOM',
         student_id=membership.student_id,
+        ui_preferences=serialize_user_preferences(preferences),
     )
 
 
@@ -109,6 +116,7 @@ def _session_response(auth: AuthSession, message: str | None = None) -> SessionR
         },
         family={'id': auth.family_id, 'name': auth.family_name, 'state_code': auth.family_state_code},
         membership={'role': auth.role, 'is_owner': auth.is_owner, 'student_id': auth.student_id},
+        ui_preferences=auth.ui_preferences or DEFAULT_USER_PREFERENCES.model_dump(),
         message=message,
     )
 
@@ -149,8 +157,9 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
     membership.user = user
     membership.family = family
     family_settings = FamilySettings(family=family, timezone=payload.timezone.strip(), grading_scale=payload.grading_scale.strip())
+    user_preferences = UserPreference(user=user, **DEFAULT_USER_PREFERENCES.model_dump())
 
-    db.add_all([family, user, membership, family_settings])
+    db.add_all([family, user, membership, family_settings, user_preferences])
     await db.flush()
     await ensure_default_grade_scale(db, family.id)
     await db.commit()
@@ -166,6 +175,7 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
         family_name=family.name,
         family_state_code=family_settings.state_code,
         student_id=membership.student_id,
+        ui_preferences=serialize_user_preferences(user_preferences),
     )
     _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
     return _session_response(auth, message='Owner account created')
@@ -185,7 +195,7 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
             await _register_failed_login(db, user)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid email or password')
 
-    user, membership, family, state_code = membership_row
+    user, membership, family, state_code, preferences = membership_row
     if _is_locked(user):
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail='Account temporarily locked. Try again later.')
     if not verify_password(payload.password, user.password_hash):
@@ -205,6 +215,7 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
         family_name=family.name,
         family_state_code=(state_code or 'CUSTOM').upper(),
         student_id=membership.student_id,
+        ui_preferences=serialize_user_preferences(preferences),
     )
     await log_event(
         db,

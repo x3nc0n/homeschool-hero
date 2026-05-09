@@ -19,6 +19,10 @@ export type GradingJobStatus =
 export type FamilyRole = 'parent' | 'co-parent' | 'tutor' | 'student_viewer'
 export type CapabilityName = 'ai_grading' | 'email' | 'backup' | 'ocr'
 export type AuthProvider = 'local' | 'oidc' | 'saml'
+export type ThemePreference = 'light' | 'dark' | 'high-contrast' | 'system'
+export type FontSizePreference = 'small' | 'medium' | 'large'
+export type DensityPreference = 'compact' | 'comfortable'
+export type SidebarPositionPreference = 'left' | 'right' | 'collapsed'
 export type ScheduleOverrideType = 'cancel' | 'reschedule' | 'add'
 export type AttendanceStatus = 'present' | 'absent' | 'tardy' | 'excused'
 export type ComplianceRuleType =
@@ -261,11 +265,20 @@ export interface FamilyMembership {
   student_id?: number | null
 }
 
+export interface UserUiPreferences {
+  theme: ThemePreference
+  accent_color: string
+  font_size: FontSizePreference
+  density: DensityPreference
+  sidebar_position: SidebarPositionPreference
+}
+
 export interface AuthSession {
   authenticated: boolean
   user: User
   family: Family
   membership: FamilyMembership
+  ui_preferences: UserUiPreferences
   message?: string
 }
 

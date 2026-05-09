@@ -60,3 +60,7 @@
 - Added frontend accessibility guardrails: skip-to-content link, stronger focus styling, live-region announcements, semantic card/empty/loading/error primitives, keyboard-friendly mobile navigation, notification panel dialog semantics, and automatic label-to-control association for shared form layouts.
 - Added `eslint-plugin-jsx-a11y`, fixed current accessibility lint issues, increased touch target sizing in shared controls, documented the manual accessibility checklist in `docs/accessibility-checklist.md`, and kept frontend validation green with `cd frontend && npm run lint` plus `cd frontend && npm run build`.
 - Revalidated the full stack with `cd backend && python -m pytest -q` (`187 passed, 1 skipped`).
+### UX-04 Themes and customization (2026-05-09T04:51:12-05:00)
+- Added a full appearance system with a ThemeProvider, localStorage-backed preferences, light/dark/high-contrast themes, accent color overrides, font size and density controls, and a desktop sidebar position toggle that supports left, right, and collapsed layouts.
+- Added backend-backed UI preferences with a new user preferences model, migration, auth session payload support, and authenticated `GET/PUT /api/users/preferences` endpoints so saved appearance choices load immediately after sign-in.
+- Added a dedicated Appearance settings page with live preview and reset/save flows, then validated with `python -m pytest backend\tests\test_user_preferences.py backend\tests\test_auth.py -q` plus `cd frontend && npm run lint && npm run build`.

@@ -28,6 +28,7 @@ from backend.routers.students import router as students_router
 from backend.routers.subjects import router as subjects_router
 from backend.routers.submissions import router as submissions_router
 from backend.routers.transcripts import router as transcripts_router
+from backend.routers.users import router as users_router
 
 __all__ = [
     'assignments_router',
@@ -60,4 +61,5 @@ __all__ = [
     'subjects_router',
     'submissions_router',
     'transcripts_router',
+    'users_router',
 ]

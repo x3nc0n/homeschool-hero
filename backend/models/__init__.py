@@ -40,6 +40,7 @@ from backend.models.subject import Subject
 from backend.models.submission import Submission
 from backend.models.transcript import Transcript, TranscriptEntry, TranscriptStatus
 from backend.models.user import User
+from backend.models.user_preferences import UserPreference
 
 __all__ = [
     'Assignment',
@@ -125,4 +126,5 @@ __all__ = [
     'Term',
     'TermType',
     'User',
+    'UserPreference',
 ]

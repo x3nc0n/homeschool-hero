@@ -18,6 +18,7 @@ import {
   LogOut,
   MailPlus,
   Menu,
+  Palette,
   ScrollText,
   Search,
   Settings,
@@ -34,6 +35,7 @@ import type { FamilyRole } from '@/types/api'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/context/NotificationsContext'
 import { usePwa } from '@/context/PwaContext'
+import { useTheme } from '@/context/ThemeContext'
 import { storeRecentSearch } from '@/lib/searchHistory'
 import { cn } from '@/lib/utils'
 import { Breadcrumbs } from '@/components/common/Breadcrumbs'
@@ -110,6 +112,7 @@ const navGroups: NavGroup[] = [
       { to: '/invitations', label: 'Invitations', icon: MailPlus, roles: ['parent', 'co-parent'] },
       { to: '/audit', label: 'Audit Log', icon: ScrollText, roles: ['parent', 'co-parent'] },
       { to: '/settings/family', label: 'Family', icon: Settings, roles: ['parent', 'co-parent'] },
+      { to: '/settings/appearance', label: 'Appearance', icon: Palette, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
       { to: '/settings/notifications', label: 'Notifications', icon: Settings, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
       { to: '/settings/backups', label: 'Backups', icon: HardDriveDownload, roles: ['parent', 'co-parent'] },
       { to: '/settings/restore', label: 'Restore', icon: HardDriveDownload, roles: ['parent', 'co-parent'] },
@@ -136,6 +139,7 @@ const focusableSelector = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { logout, userName, familyName, role } = useAuth()
+  const { preferences } = useTheme()
   const { recent, unreadCount, markAllAsRead, markAsRead } = useNotifications()
   const { canInstall, installApp, isOfflineReady, isOnline, needsRefresh, dismissOfflineReady, applyUpdate } = usePwa()
   const location = useLocation()
@@ -325,10 +329,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     navigate(link)
   }
 
-  const renderNavGroups = (compact = false) =>
+  const renderNavGroups = (compact = false, collapsed = false) =>
     groups.map((group) => (
       <section key={group.label} className="space-y-2">
-        <p className={cn('px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground', compact && 'pt-2')}>{group.label}</p>
+        <p className={cn('px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground', compact && 'pt-2', collapsed && 'sr-only')}>{group.label}</p>
         <div className="space-y-1">
           {group.items.map((item) => (
             <NavLink
@@ -336,11 +340,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) =>
-                cn('flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm transition hover:bg-muted', isActive && 'bg-primary/10 font-medium text-primary')
+                cn(
+                  'flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm transition hover:bg-muted',
+                  collapsed && 'justify-center px-2',
+                  isActive && 'bg-primary/10 font-medium text-primary',
+                )
               }
+              title={collapsed ? item.label : undefined}
             >
               <item.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-              <span>{item.label}</span>
+              <span className={cn(collapsed && 'sr-only')}>{item.label}</span>
             </NavLink>
           ))}
         </div>
@@ -359,6 +368,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     [groups],
   )
 
+  const desktopSidebarCollapsed = preferences.sidebar_position === 'collapsed'
+  const desktopSidebarOnRight = preferences.sidebar_position === 'right'
+
   return (
     <div className="min-h-screen bg-muted/20">
       <a
@@ -371,24 +383,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {unreadCount ? `${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}.` : 'No unread notifications.'}
       </div>
       <div className="mx-auto max-w-7xl px-3 py-4 pb-24 md:px-6 md:pb-6">
-        <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
-          <aside aria-label="Workspace navigation" className="hidden md:block">
+        <div className={cn('grid gap-4', desktopSidebarCollapsed ? 'md:grid-cols-[92px_minmax(0,1fr)]' : 'md:grid-cols-[260px_minmax(0,1fr)]')}>
+          <aside aria-label="Workspace navigation" className={cn('hidden md:block', desktopSidebarOnRight && 'md:order-2')}>
             <div className="sticky top-4 space-y-4 rounded-xl border bg-card p-4 shadow-sm">
               <div>
-                <p className="text-lg font-bold">Homeschool Hero</p>
-                <p className="text-sm text-muted-foreground">{familyName || 'Family workspace'}</p>
+                <p className="text-lg font-bold">{desktopSidebarCollapsed ? 'HH' : 'Homeschool Hero'}</p>
+                {!desktopSidebarCollapsed ? <p className="text-sm text-muted-foreground">{familyName || 'Family workspace'}</p> : null}
               </div>
-              <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                <p className="font-medium">{userName}</p>
-                <p className="text-xs text-muted-foreground">{role ? roleLabels[role] : 'Signed in'}</p>
+              <div className={cn('rounded-lg border bg-muted/30 p-3 text-sm', desktopSidebarCollapsed && 'px-2 text-center')}>
+                <p className="font-medium">{desktopSidebarCollapsed ? userName.slice(0, 1).toUpperCase() : userName}</p>
+                {!desktopSidebarCollapsed ? <p className="text-xs text-muted-foreground">{role ? roleLabels[role] : 'Signed in'}</p> : null}
               </div>
               <nav aria-label="Primary navigation" className="space-y-4">
-                {renderNavGroups()}
+                {renderNavGroups(false, desktopSidebarCollapsed)}
               </nav>
             </div>
           </aside>
 
-          <div className="min-w-0 space-y-4">
+          <div className={cn('min-w-0 space-y-4', desktopSidebarOnRight && 'md:order-1')}>
             <header className="rounded-xl border bg-card p-4 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-2">

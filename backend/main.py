@@ -47,6 +47,7 @@ from backend.routers import (
     subjects_router,
     submissions_router,
     transcripts_router,
+    users_router,
 )
 from backend.routers.calendar import router as calendar_router
 from backend.routers.grading import router as grading_router
@@ -564,6 +565,7 @@ def create_app() -> FastAPI:
     app.include_router(grading_router, prefix=API_PREFIX)
     app.include_router(reviews_router, prefix=API_PREFIX)
     app.include_router(search_router, prefix=API_PREFIX)
+    app.include_router(users_router, prefix=API_PREFIX)
 
     @app.get('/', include_in_schema=False)
     async def serve_index() -> FileResponse:

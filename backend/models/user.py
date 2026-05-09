@@ -28,6 +28,7 @@ class User(TimestampMixin, Base):
     review_comments = relationship('ReviewComment', foreign_keys='ReviewComment.author_user_id', back_populates='author')
     notifications = relationship('Notification', back_populates='user', cascade='all, delete-orphan')
     notification_preferences = relationship('NotificationPreference', back_populates='user', cascade='all, delete-orphan')
+    ui_preferences = relationship('UserPreference', back_populates='user', cascade='all, delete-orphan', uselist=False)
     portfolio_entries = relationship('PortfolioEntry', back_populates='creator')
     generated_compliance_reports = relationship('ComplianceReport', back_populates='generated_by')
     generated_report_cards = relationship('ReportCard', back_populates='generated_by')

@@ -76,6 +76,7 @@ from backend.schemas.notifications import (
     NotificationReadAllResponse,
     NotificationReadUpdate,
 )
+from backend.schemas.preferences import UserPreferencesRead, UserPreferencesUpdate
 from backend.schemas.quizzes import QuizAttemptCreate, QuizAttemptRead, QuizCreate, QuizRead, QuizUpdate
 from backend.schemas.report_cards import (
     ReportCardEntryRead,
@@ -149,6 +150,8 @@ __all__ = [
     "NotificationRead",
     "NotificationReadAllResponse",
     "NotificationReadUpdate",
+    "UserPreferencesRead",
+    "UserPreferencesUpdate",
     "FamilyComplianceStateRead",
     "FamilyComplianceStateUpdate",
     "QuizAttemptCreate",

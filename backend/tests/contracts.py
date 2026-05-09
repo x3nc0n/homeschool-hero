@@ -106,6 +106,10 @@ NOTIFICATIONS = {
     'preferences': f'{API_PREFIX}/notifications/preferences',
 }
 
+USERS = {
+    'preferences': f'{API_PREFIX}/users/preferences',
+}
+
 BACKUPS = {
     'collection': f'{API_PREFIX}/backups',
     'trigger': f'{API_PREFIX}/backups/trigger',

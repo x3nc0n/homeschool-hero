@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import AuditAction, Family, FamilyMembership, FamilyRole, Invitation, NotificationType, Student, User
+from backend.models import AuditAction, Family, FamilyMembership, FamilyRole, Invitation, NotificationType, Student, User, UserPreference
 from backend.routers.auth import _session_response, _set_session_cookie
 from backend.schemas.auth import SessionResponse
 from backend.schemas.invitations import InvitationAccept, InvitationCreate, InvitationRead
@@ -19,6 +19,7 @@ from backend.services.audit import log_event
 from backend.services.authorization import Capability, require_capabilities
 from backend.services.invitations import build_invitation_link, dispatch_invitation
 from backend.services.notifications import create_family_notifications, create_notification
+from backend.services.preferences import DEFAULT_USER_PREFERENCES
 
 router = APIRouter(prefix='/invitations', tags=['invitations'])
 
@@ -210,6 +211,7 @@ async def accept_invitation(
         )
         db.add(user)
         await db.flush()
+        user.ui_preferences = UserPreference(user_id=user.id, **DEFAULT_USER_PREFERENCES.model_dump())
 
     membership_exists = (
         await db.execute(
@@ -265,6 +267,13 @@ async def accept_invitation(
         family_name=family.name,
         family_state_code=family_settings.state_code if family_settings else 'CUSTOM',
         student_id=membership.student_id,
+        ui_preferences=(user.ui_preferences and {
+            'theme': user.ui_preferences.theme,
+            'accent_color': user.ui_preferences.accent_color,
+            'font_size': user.ui_preferences.font_size,
+            'density': user.ui_preferences.density,
+            'sidebar_position': user.ui_preferences.sidebar_position,
+        }) or DEFAULT_USER_PREFERENCES.model_dump(),
     )
     _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
     await log_event(

@@ -121,6 +121,7 @@ import type {
   WeeklyAgenda,
   SearchFilters,
   SearchResponse,
+  UserUiPreferences,
   PaginatedResponse,
 } from '@/types/api'
 import type { DetailedHealthResponse, ReadinessResponse, SystemStatusResponse } from '@/types/health'
@@ -372,6 +373,17 @@ export const api = {
     return request<NotificationPreference[]>('/notifications/preferences', {
       method: 'PUT',
       body: JSON.stringify({ preferences }),
+    })
+  },
+
+  getUserPreferences() {
+    return request<UserUiPreferences>('/users/preferences')
+  },
+
+  updateUserPreferences(preferences: UserUiPreferences) {
+    return request<UserUiPreferences>('/users/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(preferences),
     })
   },
 

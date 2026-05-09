@@ -121,5 +121,61 @@
       "save": "Save preferences",
       "reset": "Reset"
     }
+  },
+  "appearance": {
+    "title": "Appearance and customization",
+    "description": "Preview changes instantly, keep them on this device right away, and sync them to your account when you save.",
+    "systemStatus": "System theme: {{systemTheme}}. Active theme: {{resolvedTheme}}.",
+    "theme": {
+      "title": "Theme",
+      "description": "Choose how colors and contrast behave across the dashboard, forms, tables, and navigation."
+    },
+    "accentColor": {
+      "label": "Accent color",
+      "description": "Primary buttons, links, and focus rings will use this color."
+    },
+    "fontSize": {
+      "label": "Font size",
+      "description": "Scale reading size across the app.",
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    },
+    "density": {
+      "label": "Layout density",
+      "description": "Compact packs more data onscreen. Comfortable adds more breathing room.",
+      "compact": "Compact",
+      "comfortable": "Comfortable"
+    },
+    "sidebar": {
+      "label": "Sidebar placement",
+      "description": "Move the desktop sidebar or keep it collapsed by default.",
+      "left": "Left side",
+      "right": "Right side",
+      "collapsed": "Collapsed by default"
+    },
+    "preview": {
+      "title": "Live preview",
+      "description": "Use this sample workspace to verify contrast, spacing, and type sizing before saving.",
+      "primaryAction": "Save draft",
+      "secondaryAction": "Review schedule",
+      "ghostAction": "Notes",
+      "inputLabel": "Example input",
+      "selectLabel": "Example status",
+      "tableTitle": "Table preview",
+      "tableDescription": "Shared table, card, and control styles use the same theme tokens."
+    },
+    "messages": {
+      "saved": "Appearance preferences saved.",
+      "reset": "Appearance preferences reset to defaults."
+    },
+    "errors": {
+      "save": "Unable to save appearance preferences",
+      "reset": "Unable to reset appearance preferences"
+    },
+    "actions": {
+      "save": "Save preferences",
+      "reset": "Reset to defaults"
+    }
   }
 }

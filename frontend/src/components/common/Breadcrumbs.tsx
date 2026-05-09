@@ -31,6 +31,7 @@ const labelMap: Record<string, string> = {
   upload: 'upload',
   planner: 'planner',
   settings: 'settings',
+  appearance: 'appearance',
   family: 'family',
   backups: 'backups',
   status: 'status',

@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import Family, FamilyMembership, FamilySettings, User
+from backend.models import Family, FamilyMembership, FamilySettings, User, UserPreference
+from backend.services.preferences import serialize_user_preferences
 
 serializer = URLSafeTimedSerializer(settings.secret_key, salt='homeschool-session')
 ModelT = TypeVar('ModelT')
@@ -40,6 +41,7 @@ class AuthSession:
     family_name: str
     family_state_code: str = 'CUSTOM'
     student_id: int | None = None
+    ui_preferences: dict[str, str] | None = None
 
 
 def normalize_email(email: str) -> str:
@@ -178,10 +180,11 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
 
     stmt = (
-        select(User, FamilyMembership, Family, FamilySettings.state_code)
+        select(User, FamilyMembership, Family, FamilySettings.state_code, UserPreference)
         .join(FamilyMembership, FamilyMembership.user_id == User.id)
         .join(Family, Family.id == FamilyMembership.family_id)
         .outerjoin(FamilySettings, FamilySettings.family_id == Family.id)
+        .outerjoin(UserPreference, UserPreference.user_id == User.id)
         .where(
             User.id == claims['user_id'],
             User.is_active.is_(True),
@@ -193,7 +196,7 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
     row = result.one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
-    user, membership, family, state_code = row
+    user, membership, family, state_code, preferences = row
     return AuthSession(
         user_id=user.id,
         family_id=family.id,
@@ -205,6 +208,7 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
         family_name=family.name,
         family_state_code=(state_code or 'CUSTOM').upper(),
         student_id=membership.student_id,
+        ui_preferences=serialize_user_preferences(preferences),
     )
 
 
@@ -234,12 +238,13 @@ async def get_login_membership(
     *,
     email: str,
     family_id: int | None = None,
-) -> tuple[User, FamilyMembership, Family, str | None] | None:
+) -> tuple[User, FamilyMembership, Family, str | None, UserPreference | None] | None:
     stmt = (
-        select(User, FamilyMembership, Family, FamilySettings.state_code)
+        select(User, FamilyMembership, Family, FamilySettings.state_code, UserPreference)
         .join(FamilyMembership, FamilyMembership.user_id == User.id)
         .join(Family, Family.id == FamilyMembership.family_id)
         .outerjoin(FamilySettings, FamilySettings.family_id == Family.id)
+        .outerjoin(UserPreference, UserPreference.user_id == User.id)
         .where(
             User.email == normalize_email(email),
             User.is_active.is_(True),
