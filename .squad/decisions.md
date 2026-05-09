@@ -104,6 +104,12 @@
 - **Decision:** Four policies: (1) All migrations require `ROLLBACK_NOTES` string-literal block; (2) No-op downgrades exempt only merge revisions; (3) All SSL contexts set `context.minimum_version = ssl.TLSv1_2`; (4) No duplicate function definitions in test helpers.
 - **Impact:** 210 backend tests pass, migration lint passes with 0 errors, CI green on next push. All new migrations must follow ROLLBACK_NOTES policy.
 
+### Ray Docker Capability Fix (2026-05-09)
+- **Author:** Ray
+- **Context:** `docker compose up` failed because hardened shared defaults dropped all Linux capabilities, blocking PostgreSQL from creating `PGDATA` on first boot. Clean Postgres validation exposed migration issues reproducible only on PostgreSQL.
+- **Decision:** Keep shared hardening defaults, add minimal `cap_add` permissions only to `db` service, require clean PostgreSQL compose validation when Docker or migration changes touch startup. Migration scripts must stay PostgreSQL-safe for enum creation, seed inserts, and expression indexes.
+- **Impact:** Local compose startup maintains security posture without breaking database initialization; backend changes now pass real PostgreSQL boot path instead of SQLite-only validation.
+
 ### Ray DM-02 Export Packages (2026-05-09)
 - **Author:** Ray
 - **Context:** DM-02 needs JSON, CSV, ZIP export packages for dataset representation, spreadsheet review, portability.

@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-05-09T13:31:43.322-05:00 — Gitleaks still flags high-entropy sample secrets in `.env.example` unless the placeholder value matches the rule allowlist; prefer explicit placeholders like `change-me-in-production` for `SECRET_KEY`.
+- 2026-05-09T13:31:43.322-05:00 — GitHub Actions with `docker/setup-buildx-action@v3` need `docker build --load` when later steps scan the image from the local Docker daemon (for example Trivy on `${CI_IMAGE_NAME}`).
 - 2026-05-09T08:17:16.263-05:00 — For hardened Docker services that inherit `cap_drop: ALL`, restore PostgreSQL startup with targeted `cap_add` on `db`, and validate clean Postgres boot against the full migration chain because Postgres-specific enum/index issues can hide behind the initial container failure.
 - 2026-05-08 — Added capability-based RBAC with student-linked memberships/invitations so student viewers are scoped to one student, and invitation delivery now falls back to copyable links when SMTP is unavailable.
 - Project: homeschool-hero — open-source homeschool platform for families
@@ -45,3 +47,11 @@
 - Held #9 (pytest 9.x major version): flagged for breaking changes requiring test suite migration strategy
 - Held #13 (duplicate of #12): governance cleanup
 - **Outcome:** Backend dependency cycle 80% auto-merged; pytest major version pending team migration assessment
+
+### Docker Compose Capability Fix (2026-05-09T18:31Z)
+- Fixed critical startup failure: hardened shared defaults dropped all Linux capabilities, preventing PostgreSQL from creating PGDATA on first boot
+- Solution: added minimal `cap_add` permissions to db service in docker-compose.yml
+- Validated: local build+run complete, containers healthy, `/api/health` returns ready:true, 210 backend tests pass
+- Commit 7833329 pushed to main
+- Decision captured: Ray Docker Capability Fix — keep shared hardening defaults with minimal db-service exceptions; require clean PostgreSQL validation when Docker/migration changes touch startup
+
