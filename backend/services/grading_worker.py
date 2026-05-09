@@ -40,6 +40,7 @@ from backend.services.grading_pipeline import (
 from backend.services.logging_config import log_action
 from backend.services.notifications import create_grading_complete_notifications, run_notification_maintenance
 from backend.services.ocr import extract_text
+from backend.services.reviews import sync_review_item_for_job
 
 logger = logging.getLogger(__name__)
 NOTIFICATION_MAINTENANCE_INTERVAL = max(settings.grading_poll_interval, 900.0)
@@ -366,6 +367,7 @@ async def process_queued_job_once() -> bool:
                 ).scalar_one_or_none()
                 if assignment_target:
                     assignment_target.status = AssignmentTargetStatus.graded
+                await sync_review_item_for_job(db, job)
                 await create_grading_complete_notifications(
                     db,
                     family_id=submission.family_id,
@@ -375,6 +377,7 @@ async def process_queued_job_once() -> bool:
                     max_score=max_score,
                 )
             elif job.status == GradingJobStatus.review_needed:
+                await sync_review_item_for_job(db, job)
                 await create_grading_complete_notifications(
                     db,
                     family_id=submission.family_id,
@@ -384,6 +387,8 @@ async def process_queued_job_once() -> bool:
                     max_score=None,
                     needs_review=True,
                 )
+            else:
+                await sync_review_item_for_job(db, job)
 
             await _audit_new_history(db, job=job, previous_history=previous_history)
             if previous_snapshot != _job_snapshot(job):

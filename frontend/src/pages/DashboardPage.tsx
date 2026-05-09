@@ -23,6 +23,10 @@ function average(values: number[]) {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
+function isOpenReviewStatus(status?: string) {
+  return status === 'pending_review' || status === 'in_review' || status === 'needs_regrade'
+}
+
 export function DashboardPage() {
   const { canReviewQueue, studentId: scopedStudentId } = useAuth()
   const { status: capabilityStatus, optionalUnavailable } = useCapabilities()
@@ -106,7 +110,7 @@ export function DashboardPage() {
   const summaryCards = [
     { label: 'Recent assignments', value: assignments.length },
     { label: 'Grade average', value: `${gradeAverage.toFixed(1)}%` },
-    ...(canReviewQueue ? [{ label: 'Pending reviews', value: queue.length }] : []),
+    ...(canReviewQueue ? [{ label: 'Pending reviews', value: queue.filter((item) => isOpenReviewStatus(item.status)).length }] : []),
   ]
 
   return (

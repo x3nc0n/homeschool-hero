@@ -66,3 +66,4 @@ class GradingJob(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     submission = relationship('Submission', back_populates='grading_job')
+    review_item = relationship('ReviewItem', back_populates='grading_job', uselist=False, cascade='all, delete-orphan')
