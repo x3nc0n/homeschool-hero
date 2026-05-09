@@ -75,6 +75,7 @@ The shipped Compose topology is designed for single-host, self-hosted deployment
 - All services use `restart: unless-stopped`
 - Persistent named volumes store database state, uploads, Ollama models, and backups
 - Every service defines a health check
+- API request logs include correlation IDs, user/family context, slow-request warnings, grading lifecycle events, and backup lifecycle events
 - Containers use memory limits
 - Security hardening is enabled with dropped Linux capabilities, `no-new-privileges`, and read-only root filesystems where practical
 - The app image runs as a non-root user and uses `tini` for signal handling
@@ -179,6 +180,9 @@ curl http://localhost:8000/api/capabilities
 | `BACKUP_FILENAME_PREFIX` | No | Filename prefix for generated backup archives. |
 | `CONFIDENCE_THRESHOLD` | No | AI auto-approval threshold between `0` and `1`. |
 | `GRADING_POLL_INTERVAL` | No | Seconds between grading worker polls. |
+| `ENABLE_METRICS_ENDPOINT` | No | Enables the authenticated `/api/metrics` monitoring endpoint. |
+| `LOG_LEVEL` | No | Root backend log level (`INFO`, `WARNING`, etc.). |
+| `LOG_JSON` | No | Force JSON logging on/off. Defaults to JSON outside tests. |
 | `UPLOAD_DIR` | No | Filesystem path for uploaded work inside the app container. |
 | `MIGRATION_MODE` | No | `apply` auto-upgrades pending migrations on startup; `warn` reports pending migrations without changing schema. |
 | `APP_MEMORY_LIMIT` | No | Memory limit for the `app` service. |
@@ -195,6 +199,7 @@ curl http://localhost:8000/api/capabilities
 - Performs migration preflight checks for connectivity, current revision, pending revisions, and operator timing
 - Waits for PostgreSQL
 - Starts the background grading worker
+- Exposes `/api/metrics` when `ENABLE_METRICS_ENDPOINT=true`
 - Ensures the uploads directory exists
 - Serves the React SPA and FastAPI API from the same port
 

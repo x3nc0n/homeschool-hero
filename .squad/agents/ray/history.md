@@ -89,6 +89,8 @@
 - 2026-05-09T06:20:00-05:00 — Verified CP-05 with `cd backend && python -m pytest -q` (84 passed, 2 skipped) plus `cd frontend && npm ci && npm run lint && npm run build`; frontend lint still reports two pre-existing hook-dependency warnings outside the auth changes.
 - 2026-05-08T23:52:13-05:00 — Completed AG-01 assignment domain upgrade: expanded assignments with category/grading period/weight/max score/recurrence/rubric/attachments/history metadata, added per-student AssignmentTarget records with status tracking, and wired submission/grade flows to update target progress.
 - 2026-05-08T23:52:13-05:00 — Verified AG-01 with `cd backend && python -m pytest -q` (94 passed, 2 skipped) and `cd frontend && npm run build`; assignment CRUD/filtering/backward-compat regression coverage now includes multi-student targets, pagination, grading periods, and target status sync.
+- 2026-05-09T04:58:00-05:00 — Completed IO-04 observability surfaces: added structured backend logging with correlation IDs and request timing, optional `/api/metrics` monitoring, grading/backup lifecycle logging, and a dashboard activity + system health summary widget.
+- 2026-05-09T04:58:00-05:00 — Verified IO-04 with `cd backend && python -m pytest -q` (94 passed, 2 skipped) plus `cd frontend && npm run build`; added regression coverage for correlation IDs, request logging, slow-request warnings, and metrics payloads.
 
 ### Wave 3 Summary (2026-05-08T22:32:57Z)
 - CP-04: Audit logging with immutable append-only events (commit 5c359f9) ✅ COMPLETE

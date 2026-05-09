@@ -14,6 +14,7 @@ from backend.database import AsyncSessionLocal
 from backend.models import Assignment, Grade, GradedBy, GradingJob, GradingJobStatus, Submission
 from backend.services.ai_grader import grade_submission_text
 from backend.services.capabilities import get_capability_registry
+from backend.services.logging_config import log_action
 from backend.services.ocr import extract_text
 
 logger = logging.getLogger(__name__)
@@ -33,12 +34,25 @@ def _to_letter_grade(score: float) -> str:
 
 def process_grading_job(job: dict[str, Any]) -> dict[str, Any]:
     output = {**job}
+    start_time = time.perf_counter()
     try:
         capabilities = get_capability_registry().check_all_sync()
         ocr_capability = capabilities['ocr']
         if not ocr_capability['enabled']:
             message = f"OCR unavailable; text extraction skipped. {ocr_capability['reason']}"
-            logger.warning('Submission %s routed to manual review: %s', job.get('submission_id'), message)
+            log_action(
+                logger,
+                logging.WARNING,
+                'Submission routed to manual review because OCR is unavailable',
+                action='grading_job_failed',
+                family_id=job.get('family_id'),
+                details={
+                    'job_id': job.get('id'),
+                    'submission_id': job.get('submission_id'),
+                    'reason': message,
+                    'duration_ms': round((time.perf_counter() - start_time) * 1000, 2),
+                },
+            )
             output.update(
                 {
                     'ocr_result': '',
@@ -56,7 +70,19 @@ def process_grading_job(job: dict[str, Any]) -> dict[str, Any]:
         ai_capability = capabilities['ai_grading']
         if not ai_capability['enabled']:
             message = f"AI grading unavailable; routed to manual review. {ai_capability['reason']}"
-            logger.warning('Submission %s routed to manual review: %s', job.get('submission_id'), message)
+            log_action(
+                logger,
+                logging.WARNING,
+                'Submission routed to manual review because AI grading is unavailable',
+                action='grading_job_failed',
+                family_id=job.get('family_id'),
+                details={
+                    'job_id': job.get('id'),
+                    'submission_id': job.get('submission_id'),
+                    'reason': message,
+                    'duration_ms': round((time.perf_counter() - start_time) * 1000, 2),
+                },
+            )
             output.update(
                 {
                     'status': 'needs_review',
@@ -74,7 +100,19 @@ def process_grading_job(job: dict[str, Any]) -> dict[str, Any]:
             submission_text=extracted,
         )
     except Exception as exc:
-        logger.warning('Submission %s routed to manual review after grading error: %s', job.get('submission_id'), exc)
+        log_action(
+            logger,
+            logging.WARNING,
+            'Submission routed to manual review after grading error',
+            action='grading_job_failed',
+            family_id=job.get('family_id'),
+            details={
+                'job_id': job.get('id'),
+                'submission_id': job.get('submission_id'),
+                'reason': str(exc),
+                'duration_ms': round((time.perf_counter() - start_time) * 1000, 2),
+            },
+        )
         output.update({'status': 'needs_review', 'error_message': str(exc), 'ai_confidence': 0.0})
         return output
 
@@ -85,21 +123,52 @@ def process_grading_job(job: dict[str, Any]) -> dict[str, Any]:
     output['feedback'] = str(ai.get('feedback', ''))
     output['unavailable'] = bool(ai.get('unavailable', False))
     if output['unavailable']:
-        logger.warning(
-            'Submission %s routed to manual review because AI grading is unavailable: %s',
-            job.get('submission_id'),
-            ai.get('error_message') or output['feedback'],
+        log_action(
+            logger,
+            logging.WARNING,
+            'Submission routed to manual review because AI grading became unavailable',
+            action='grading_job_failed',
+            family_id=job.get('family_id'),
+            details={
+                'job_id': job.get('id'),
+                'submission_id': job.get('submission_id'),
+                'reason': ai.get('error_message') or output['feedback'],
+                'duration_ms': round((time.perf_counter() - start_time) * 1000, 2),
+            },
         )
         output['error_message'] = str(ai.get('error_message') or output.get('error_message') or output['feedback'])
         output['status'] = 'needs_review'
         return output
     output['status'] = 'complete' if confidence >= settings.confidence_threshold else 'needs_review'
     if output['status'] == 'needs_review':
-        logger.info(
-            'Submission %s routed to manual review because confidence %.2f is below threshold %.2f',
-            job.get('submission_id'),
-            confidence,
-            settings.confidence_threshold,
+        log_action(
+            logger,
+            logging.INFO,
+            'Submission routed to manual review because confidence is below threshold',
+            action='grading_job_completed',
+            family_id=job.get('family_id'),
+            details={
+                'job_id': job.get('id'),
+                'submission_id': job.get('submission_id'),
+                'confidence': confidence,
+                'threshold': settings.confidence_threshold,
+                'duration_ms': round((time.perf_counter() - start_time) * 1000, 2),
+            },
+        )
+    else:
+        log_action(
+            logger,
+            logging.INFO,
+            'Grading job completed automatically',
+            action='grading_job_completed',
+            family_id=job.get('family_id'),
+            details={
+                'job_id': job.get('id'),
+                'submission_id': job.get('submission_id'),
+                'score': output['score'],
+                'confidence': confidence,
+                'duration_ms': round((time.perf_counter() - start_time) * 1000, 2),
+            },
         )
     return output
 
@@ -124,6 +193,14 @@ async def _claim_next_job() -> int | None:
         job.status = GradingJobStatus.processing
         job.error_message = None
         await db.commit()
+        log_action(
+            logger,
+            logging.INFO,
+            'Claimed grading job for processing',
+            action='grading_job_processing',
+            family_id=job.family_id,
+            details={'job_id': job.id, 'submission_id': job.submission_id},
+        )
         return job.id
 
 
@@ -136,6 +213,22 @@ async def _finalize_failed(job_id: int, error_message: str) -> None:
         job.error_message = error_message[:2000]
         job.completed_at = datetime.now(timezone.utc)
         await db.commit()
+        duration_ms = None
+        if job.completed_at and job.created_at:
+            duration_ms = round((job.completed_at - job.created_at).total_seconds() * 1000, 2)
+        log_action(
+            logger,
+            logging.ERROR,
+            'Grading job failed',
+            action='grading_job_failed',
+            family_id=job.family_id,
+            details={
+                'job_id': job.id,
+                'submission_id': job.submission_id,
+                'reason': job.error_message,
+                'duration_ms': duration_ms,
+            },
+        )
 
 
 async def process_queued_job_once() -> bool:
@@ -159,6 +252,7 @@ async def process_queued_job_once() -> bool:
             job_result = process_grading_job(
                 {
                     'id': job.id,
+                    'family_id': job.family_id,
                     'submission_id': submission.id,
                     'file_path': submission.file_path,
                     'assignment_description': assignment.description if assignment else '',

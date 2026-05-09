@@ -1,9 +1,11 @@
 import asyncio
 import logging
+import uuid
+from time import perf_counter
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,16 +13,19 @@ from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
 from backend.config import settings
-from backend.database import engine
+from backend.database import engine, get_db
 from backend.models import Base
 from backend.rate_limit import RateLimitRule, RateLimiter
 from backend.routers import (
     assignments_router,
     audit_router,
     auth_router,
+    curriculum_router,
+    dashboard_router,
     grades_router,
     invitations_router,
     quizzes_router,
+    schedule_router,
     students_router,
     subjects_router,
     submissions_router,
@@ -29,6 +34,8 @@ from backend.routers.calendar import router as calendar_router
 from backend.routers.grading import router as grading_router
 from backend.services.capabilities import get_auth_providers, get_capability_registry
 from backend.services.grading_worker import create_worker
+from backend.services.logging_config import bind_context, configure_logging, log_action, reset_context, update_context
+from backend.services.monitoring import collect_metrics_payload, get_monitoring, install_monitoring
 from backend.startup import (
     ensure_database_migrations,
     ensure_auth_runtime_configured,
@@ -47,6 +54,7 @@ from backend.security import (
 API_PREFIX = settings.api_prefix.rstrip('/')
 FRONTEND_DIST_DIR = Path(__file__).resolve().parents[1] / 'frontend' / 'dist'
 FRONTEND_INDEX = FRONTEND_DIST_DIR / 'index.html'
+HEALTH_PATHS = {f'{API_PREFIX}/health', '/health'}
 logger = logging.getLogger(__name__)
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 PUBLIC_API_PATHS = {
@@ -206,8 +214,10 @@ async def _build_health_payload() -> tuple[int, dict[str, object]]:
 
 
 def create_app() -> FastAPI:
+    configure_logging(settings)
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.rate_limiter = RateLimiter()
+    install_monitoring(app)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
@@ -244,7 +254,14 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        logger.exception('Unhandled application error', exc_info=exc)
+        log_action(
+            logger,
+            logging.ERROR,
+            'Unhandled application error',
+            action='unhandled_error',
+            details={'path': request.url.path, 'method': request.method},
+            exc_info=exc,
+        )
         details = {'type': exc.__class__.__name__} if settings.testing else None
         response = JSONResponse(
             status_code=500,
@@ -256,49 +273,90 @@ def create_app() -> FastAPI:
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):
         path = request.url.path
+        correlation_id = request.headers.get('x-correlation-id') or str(uuid.uuid4())
+        request.state.correlation_id = correlation_id
+        context_token = bind_context(correlation_id=correlation_id, action='http_request')
+        started_at = perf_counter()
         is_public = _is_public_api_path(path) or path.startswith('/docs') or path.startswith('/openapi')
         session = None
-        if _is_api_path(path) and not is_public:
-            token = request.cookies.get(settings.session_cookie_name)
-            session = verify_session_token(token)
-            if not session:
-                response = JSONResponse(status_code=401, content=_error_payload('auth_required', 'Authentication required'))
-                _apply_transport_headers(request, response)
-                return response
-            if request.method.upper() not in SAFE_METHODS:
-                try:
-                    require_csrf(request, session)
-                except HTTPException as exc:
+        try:
+            if _is_api_path(path) and not is_public:
+                token = request.cookies.get(settings.session_cookie_name)
+                session = verify_session_token(token)
+                if not session:
                     response = JSONResponse(
-                        status_code=exc.status_code,
-                        content=_error_payload('csrf_failed', str(exc.detail)),
+                        status_code=401,
+                        content=_error_payload('auth_required', 'Authentication required'),
                     )
                     _apply_transport_headers(request, response)
                     return response
-            request.state.session = session
-        rate_limit = _get_rate_limit(request, session)
-        if rate_limit is not None:
-            rule, key = rate_limit
-            allowed, retry_after = await app.state.rate_limiter.check(rule, key)
-            if not allowed:
-                response = JSONResponse(
-                    status_code=429,
-                    content=_error_payload('rate_limited', 'Too many requests. Please try again later.'),
-                    headers={'Retry-After': str(retry_after)},
-                )
-                _apply_transport_headers(request, response)
-                return response
+                if request.method.upper() not in SAFE_METHODS:
+                    try:
+                        require_csrf(request, session)
+                    except HTTPException as exc:
+                        response = JSONResponse(
+                            status_code=exc.status_code,
+                            content=_error_payload('csrf_failed', str(exc.detail)),
+                        )
+                        _apply_transport_headers(request, response)
+                        return response
+                request.state.session = session
 
-        response = await call_next(request)
-        _apply_transport_headers(request, response)
-        if session and response.status_code < 500 and session_needs_rotation(session):
-            set_session_cookies(
-                response,
-                request,
-                user_id=session['user_id'],
-                family_id=session['family_id'],
-            )
-        return response
+            if session:
+                update_context(
+                    correlation_id=correlation_id,
+                    user_id=session['user_id'],
+                    family_id=session['family_id'],
+                    action='http_request',
+                )
+
+            rate_limit = _get_rate_limit(request, session)
+            if rate_limit is not None:
+                rule, key = rate_limit
+                allowed, retry_after = await app.state.rate_limiter.check(rule, key)
+                if not allowed:
+                    response = JSONResponse(
+                        status_code=429,
+                        content=_error_payload('rate_limited', 'Too many requests. Please try again later.'),
+                        headers={'Retry-After': str(retry_after)},
+                    )
+                    _apply_transport_headers(request, response)
+                    return response
+
+            response = await call_next(request)
+            _apply_transport_headers(request, response)
+            if session and response.status_code < 500 and session_needs_rotation(session):
+                set_session_cookies(
+                    response,
+                    request,
+                    user_id=session['user_id'],
+                    family_id=session['family_id'],
+                )
+            return response
+        finally:
+            duration_ms = round((perf_counter() - started_at) * 1000, 2)
+            status_code = getattr(locals().get('response', None), 'status_code', 500)
+            if 'response' in locals():
+                response.headers['X-Correlation-ID'] = correlation_id
+            if path not in HEALTH_PATHS:
+                slow_request = duration_ms > 1000
+                get_monitoring(app).observe_request(status_code=status_code, duration_ms=duration_ms, slow=slow_request)
+                log_action(
+                    logger,
+                    logging.WARNING if slow_request else logging.INFO,
+                    'Handled HTTP request',
+                    action='http_request',
+                    correlation_id=correlation_id,
+                    user_id=session['user_id'] if session else None,
+                    family_id=session['family_id'] if session else None,
+                    details={
+                        'method': request.method,
+                        'path': path,
+                        'status_code': status_code,
+                        'duration_ms': duration_ms,
+                    },
+                )
+            reset_context(context_token)
 
     @app.get(f'{API_PREFIX}/health')
     async def api_health() -> JSONResponse:
@@ -320,9 +378,17 @@ def create_app() -> FastAPI:
             'auth': get_auth_providers(),
         }
 
+    @app.get(f'{API_PREFIX}/metrics')
+    async def api_metrics(request: Request, db=Depends(get_db)) -> JSONResponse:
+        if not settings.enable_metrics_endpoint:
+            raise HTTPException(status_code=404, detail='Metrics endpoint is disabled')
+        return JSONResponse(status_code=200, content=await collect_metrics_payload(request.app, db))
+
     app.include_router(auth_router, prefix=API_PREFIX)
     app.include_router(invitations_router, prefix=API_PREFIX)
     app.include_router(audit_router, prefix=API_PREFIX)
+    app.include_router(curriculum_router, prefix=API_PREFIX)
+    app.include_router(dashboard_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)
     app.include_router(subjects_router, prefix=API_PREFIX)
     app.include_router(calendar_router, prefix=API_PREFIX)
@@ -330,6 +396,7 @@ def create_app() -> FastAPI:
     app.include_router(submissions_router, prefix=API_PREFIX)
     app.include_router(grades_router, prefix=API_PREFIX)
     app.include_router(quizzes_router, prefix=API_PREFIX)
+    app.include_router(schedule_router, prefix=API_PREFIX)
     app.include_router(grading_router, prefix=API_PREFIX)
 
     @app.get('/', include_in_schema=False)

@@ -82,7 +82,7 @@ async def update_student(
     return student
 
 
-@router.delete('/{student_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.delete('/{student_id}', status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_student(
     student_id: int,
     db: AsyncSession = Depends(get_db),

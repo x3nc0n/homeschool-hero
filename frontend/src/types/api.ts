@@ -6,6 +6,7 @@ export type ReviewAction = 'approve' | 'modify' | 'reject'
 export type FamilyRole = 'parent' | 'co-parent' | 'tutor' | 'student_viewer'
 export type CapabilityName = 'ai_grading' | 'email' | 'backup' | 'ocr'
 export type AuthProvider = 'local' | 'oidc' | 'saml'
+export type ScheduleOverrideType = 'cancel' | 'reschedule' | 'add'
 export type AuditAction =
   | 'login'
   | 'logout'
@@ -449,6 +450,84 @@ export interface InstructionalDayCount {
   weekday_days: number
   non_instructional_overrides: number
   instructional_overrides: number
+}
+
+export interface Schedule {
+  id: number
+  family_id: number
+  student_id: number
+  school_year_id: number
+  name: string
+  student: Student
+  school_year: SchoolYear
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ScheduleBlock {
+  id: number
+  schedule_id: number
+  subject_id: number
+  day_of_week: number
+  start_time: string
+  end_time: string
+  location?: string | null
+  notes?: string | null
+  subject: Subject
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ScheduleOverride {
+  id: number
+  schedule_id: number
+  date: string
+  original_block_id?: number | null
+  override_type: ScheduleOverrideType
+  subject_id?: number | null
+  start_time?: string | null
+  end_time?: string | null
+  reason: string
+  subject?: Subject | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ScheduleDetail extends Schedule {
+  blocks: ScheduleBlock[]
+  overrides: ScheduleOverride[]
+}
+
+export interface AgendaItem {
+  schedule_id: number
+  schedule_name: string
+  block_id?: number | null
+  override_id?: number | null
+  date: string
+  day_of_week: number
+  source: 'recurring' | 'override'
+  override_type?: ScheduleOverrideType | null
+  subject_id: number
+  subject_name: string
+  subject_color: string
+  start_time: string
+  end_time: string
+  location?: string | null
+  notes?: string | null
+  reason?: string | null
+}
+
+export interface DailyAgenda {
+  student_id: number
+  date: string
+  items: AgendaItem[]
+}
+
+export interface WeeklyAgenda {
+  student_id: number
+  week_start: string
+  week_end: string
+  days: DailyAgenda[]
 }
 
 export interface ResourceSummary {
