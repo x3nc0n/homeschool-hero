@@ -18,6 +18,13 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() removes the entire initial schema, including all data in students, subjects, assignments,
+  submissions, quiz attempts, grading jobs, and grades.
+- Take a full database backup before downgrading because this revision is destructive by design.
+- No data transformation is attempted on rollback; operators must restore data from backup if needed.
+"""
+
 assignment_status = postgresql.ENUM("pending", "complete", "graded", name="assignment_status", create_type=False)
 graded_by = postgresql.ENUM("human", "ai", "ai+human", name="graded_by", create_type=False)
 grading_job_status = postgresql.ENUM(

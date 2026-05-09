@@ -108,15 +108,21 @@ jobs:
             python -m pip install -r backend/requirements-test.txt
           fi
 
+      - name: Lint migration files
+        env:
+          APP_ENV: test
+          TESTING: '1'
+          DATABASE_URL: postgresql+asyncpg://homeschool:changeme@127.0.0.1:5432/homeschool_hero_ci
+        run: |
+          bash scripts/migrate.sh lint
+
       - name: Verify Alembic migrations
         env:
           APP_ENV: test
           TESTING: '1'
           DATABASE_URL: postgresql+asyncpg://homeschool:changeme@127.0.0.1:5432/homeschool_hero_ci
         run: |
-          python -m alembic -c backend/alembic.ini upgrade head
-          python -m alembic -c backend/alembic.ini downgrade base
-          python -m alembic -c backend/alembic.ini upgrade head
+          bash scripts/migrate.sh verify
 
   frontend-tests:
     name: Frontend checks

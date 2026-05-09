@@ -22,6 +22,7 @@
 - 2026-05-08T23:15:58.975-05:00 — Security issue automation now artifacts CodeQL SARIF + Trivy JSON from the `Security` workflow, opens or refreshes `security`/`severity:*`/`squad` issues for HIGH+ findings, labels reviewed suppressions, and auto-closes resolved findings on later runs.
 - 2026-05-08T23:15:59.056-05:00 — IO-03 added startup migration preflight/status logging, `MIGRATION_MODE` warn/apply behavior, a Python migration CLI plus `scripts/migrate.{ps1,sh}`, rollback-notes templates/docs, and CI migration lint + upgrade/downgrade verification.
 - 2026-05-08T23:15:59.056-05:00 — Focused migration/startup tests passed (`backend/tests/test_startup.py`, `backend/tests/test_migrations.py`); broader backend imports remain blocked by a pre-existing FastAPI 204 response assertion in `backend/routers/calendar.py`.
+- 2026-05-08T23:15:59.056-05:00 — Startup CLI smoke checks now confirm `python -m backend.cli migrations startup-check` honors `MIGRATION_MODE=warn` and reports pending revisions without serving stale-schema errors.
 
 ### Phase 1 Completion (2026-05-08T22:04:55Z)
 - Test infrastructure tasks 21-22 completed successfully: pytest contracts, async httpx clients, mocked dependencies ✓

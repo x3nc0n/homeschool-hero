@@ -168,6 +168,7 @@ curl http://localhost:8000/api/capabilities
 | `CONFIDENCE_THRESHOLD` | No | AI auto-approval threshold between `0` and `1`. |
 | `GRADING_POLL_INTERVAL` | No | Seconds between grading worker polls. |
 | `UPLOAD_DIR` | No | Filesystem path for uploaded work inside the app container. |
+| `MIGRATION_MODE` | No | `apply` auto-upgrades pending migrations on startup; `warn` reports pending migrations without changing schema. |
 | `APP_MEMORY_LIMIT` | No | Memory limit for the `app` service. |
 | `DB_MEMORY_LIMIT` | No | Memory limit for the `db` service. |
 | `OLLAMA_MEMORY_LIMIT` | No | Memory limit for the `ollama` service. |
@@ -179,6 +180,7 @@ curl http://localhost:8000/api/capabilities
 ## What the container does on startup
 
 - Runs Alembic migrations automatically
+- Performs migration preflight checks for connectivity, current revision, pending revisions, and operator timing
 - Waits for PostgreSQL
 - Starts the background grading worker
 - Ensures the uploads directory exists
@@ -198,7 +200,7 @@ If the `ai` profile is enabled, the Ollama container also pre-pulls the configur
 Pull requests into `main` are expected to pass these GitHub Actions quality gates before merge:
 
 - **Backend quality gate** — installs OCR dependencies, runs backend pytest, and enforces backend coverage at `76%` or higher.
-- **Migration checks** — runs Alembic upgrade/downgrade/upgrade against PostgreSQL so schema changes are validated on the production database family.
+- **Migration checks** — lints migration rollback discipline, upgrades from baseline to head, downgrades one revision, then upgrades back to head against PostgreSQL.
 - **Frontend checks** — runs the existing frontend lint and production build steps.
 - **Container checks** — builds the production image, scans it with Trivy, and fails on `HIGH`/`CRITICAL` vulnerabilities unless they are explicitly listed in `.trivyignore`.
 - **Secret scan** — runs Gitleaks on pull requests to catch committed secrets early.
@@ -215,6 +217,8 @@ See `docs/security-scanning.md` for the full security scanning playbook, severit
 ### Contributor recommendations
 
 - Run backend tests from a clean state with `cd backend && python -m pytest -q`.
+- Check migration state with `python -m backend.cli migrations status` or `scripts/migrate.ps1 status`.
+- Follow `docs/migrations.md` for upgrade, downgrade, rollback, and migration-authoring discipline.
 - Run frontend checks with `cd frontend && npm ci && npm run lint && npm run build`.
 - Keep `.trivyignore` limited to reviewed exceptions only, with a reason comment directly above each ignored CVE.
 - Add Gitleaks to your local pre-commit workflow so staged changes are scanned before you push.

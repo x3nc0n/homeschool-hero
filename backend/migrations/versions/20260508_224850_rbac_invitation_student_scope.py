@@ -19,6 +19,12 @@ down_revision: Union[str, None] = '20260508_223000'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops invitations.student_id and family_memberships.student_id plus their indexes/foreign keys.
+- Export invitation and membership student assignments before rollback if operators need to restore them later.
+- No row-level data rewrite occurs beyond removing those optional references.
+"""
+
 
 def upgrade() -> None:
     with op.batch_alter_table('family_memberships') as batch:

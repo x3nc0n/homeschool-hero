@@ -23,6 +23,14 @@ down_revision: Union[str, None] = '20260508_170455'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() removes families, users, family_settings, family_memberships, invitations, and every family_id
+  column added to legacy tables.
+- Legacy single-family records are not reconstructed automatically; export tenant data before downgrade if you
+  may need to preserve per-family ownership metadata.
+- Owner bootstrap accounts and invitation records created during upgrade are deleted on rollback.
+"""
+
 family_role = sa.Enum('parent', 'co-parent', 'tutor', 'student_viewer', name='family_role')
 
 
