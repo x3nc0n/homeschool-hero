@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload CodeQL SARIF artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-codeql-${{ matrix.language }}
           path: codeql-results/${{ matrix.language }}.sarif
@@ -142,7 +142,7 @@ jobs:
 
       - name: Upload Trivy JSON artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-trivy-json
           path: trivy-results.json
