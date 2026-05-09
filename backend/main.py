@@ -38,6 +38,7 @@ from backend.routers import (
     portfolio_router,
     quizzes_router,
     report_cards_router,
+    restore_router,
     reviews_router,
     schedule_router,
     search_router,
@@ -496,6 +497,7 @@ def create_app() -> FastAPI:
     app.include_router(imports_router, prefix=API_PREFIX)
     app.include_router(quizzes_router, prefix=API_PREFIX)
     app.include_router(report_cards_router, prefix=API_PREFIX)
+    app.include_router(restore_router, prefix=API_PREFIX)
     app.include_router(transcripts_router, prefix=API_PREFIX)
     app.include_router(schedule_router, prefix=API_PREFIX)
     app.include_router(grading_router, prefix=API_PREFIX)

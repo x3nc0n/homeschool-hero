@@ -38,6 +38,7 @@ class BackupConfigRead(BaseModel):
     schedule: str
     next_scheduled: datetime | None
     retention_days: int
+    retention_count: int
     filename_prefix: str
     encryption_configured: bool
     restic_installed: bool
@@ -49,6 +50,8 @@ class BackupConfigRead(BaseModel):
 
 
 class BackupStatusRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     configured: bool
     scheduler_enabled: bool
     destination: BackupDestination

@@ -214,6 +214,7 @@ def get_backup_configuration(config: Settings = settings) -> dict[str, Any]:
         'schedule': config.backup_schedule,
         'next_scheduled': next_scheduled,
         'retention_days': config.backup_retention_days,
+        'retention_count': max(1, config.backup_retention_count),
         'filename_prefix': config.backup_filename_prefix,
         'encryption_configured': bool((config.backup_encryption_key or '').strip()),
         'restic_installed': restic_installed(config),
@@ -332,12 +333,15 @@ def _write_database_backup(config: Settings, destination: Path) -> dict[str, Any
     if not pg_dump_binary:
         raise RuntimeError('pg_dump is required for PostgreSQL backups but was not found on PATH.')
 
-    target = destination / 'database.sql'
+    target = destination / 'database.dump'
     env = {'PGPASSWORD': url.password or ''}
     command = [
         pg_dump_binary,
+        '--format=custom',
         '--clean',
         '--if-exists',
+        '--file',
+        str(target),
         '--host',
         str(url.host or 'localhost'),
         '--port',
@@ -349,8 +353,7 @@ def _write_database_backup(config: Settings, destination: Path) -> dict[str, Any
     completed = subprocess.run(command, capture_output=True, text=True, env={**os.environ, **env}, check=False)
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.strip() or 'pg_dump failed')
-    target.write_text(completed.stdout, encoding='utf-8')
-    return {'mode': 'pg_dump', 'path': str(target), 'size_bytes': target.stat().st_size}
+    return {'mode': 'pg_dump_custom', 'path': str(target), 'size_bytes': target.stat().st_size}
 
 
 def _copy_upload_tree(source: Path, destination: Path) -> dict[str, Any]:
@@ -462,19 +465,22 @@ def _cleanup_old_backups(config: Settings) -> None:
     if target is None or not target.exists():
         return
     cutoff = _now_utc() - timedelta(days=config.backup_retention_days)
+    candidates: list[tuple[Path, datetime]] = []
     for item in target.iterdir():
-        if item.name.startswith('.') or item.name in {'restic-repo', 'manifests'}:
+        if item.name.startswith('.') or item.name in {'_staging', 'restic-repo', 'manifests'} or not item.is_dir():
             continue
         try:
             modified = datetime.fromtimestamp(item.stat().st_mtime, tz=UTC)
         except OSError:
             continue
-        if modified >= cutoff:
+        candidates.append((item, modified))
+    candidates.sort(key=lambda row: row[1], reverse=True)
+    keep_minimum = max(1, int(config.backup_retention_count))
+    protected = {path for path, _ in candidates[:keep_minimum]}
+    for item, modified in candidates:
+        if item in protected or modified >= cutoff:
             continue
-        if item.is_dir():
-            shutil.rmtree(item, ignore_errors=True)
-        else:
-            item.unlink(missing_ok=True)
+        shutil.rmtree(item, ignore_errors=True)
 
 
 def _build_manifest(
@@ -505,6 +511,23 @@ def _build_manifest(
             'export': export,
         },
     }
+
+
+def _normalize_manifest_paths(manifest: dict[str, Any], *, export_file_name: str | None = None) -> dict[str, Any]:
+    contents = manifest.setdefault('contents', {})
+    database = contents.get('database')
+    files = contents.get('files')
+    export = contents.get('export')
+    if isinstance(database, dict):
+        existing = database.get('path')
+        database['path'] = str(Path('database') / Path(str(existing)).name) if existing else str(Path('database') / 'database.dump')
+    if isinstance(files, dict):
+        files['path'] = str(Path('files') / 'uploads')
+    if isinstance(export, dict):
+        existing = export.get('path')
+        export_name = export_file_name or (Path(str(existing)).name if existing else 'family-export.zip')
+        export['path'] = str(Path('exports') / export_name)
+    return manifest
 
 
 async def _perform_backup(context: BackupExecutionContext) -> BackupExecutionResult:
@@ -548,6 +571,7 @@ async def _perform_backup(context: BackupExecutionContext) -> BackupExecutionRes
                 restic_snapshot_id=snapshot_id,
                 storage_mode='restic',
             )
+            manifest = _normalize_manifest_paths(manifest, export_file_name=Path(str(export.get('path') or '')).name)
             await asyncio.to_thread(_write_manifest, manifest_path, manifest)
             completed_at = _now_utc()
             await asyncio.to_thread(_write_success_markers, target, completed_at=completed_at, size_bytes=stage_size)
@@ -566,6 +590,7 @@ async def _perform_backup(context: BackupExecutionContext) -> BackupExecutionRes
             restic_snapshot_id=None,
             storage_mode='plain_copy',
         )
+        manifest = _normalize_manifest_paths(manifest, export_file_name=Path(str(export.get('path') or '')).name)
         await asyncio.to_thread(_write_manifest, destination_dir / 'manifest.json', manifest)
         completed_at = _now_utc()
         await asyncio.to_thread(_write_success_markers, target, completed_at=completed_at, size_bytes=artifact_size)

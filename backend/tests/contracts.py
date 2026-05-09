@@ -110,6 +110,15 @@ BACKUPS = {
     'detail': f'{API_PREFIX}/backups/{{job_id}}',
 }
 
+RESTORE = {
+    'backups': f'{API_PREFIX}/restore/backups',
+    'validate': f'{API_PREFIX}/restore/validate/{{backup_id}}',
+    'execute': f'{API_PREFIX}/restore/execute/{{backup_id}}',
+    'selective': f'{API_PREFIX}/restore/selective/{{backup_id}}',
+    'retention': f'{API_PREFIX}/restore/retention',
+    'cleanup': f'{API_PREFIX}/restore/cleanup',
+}
+
 CALENDAR = {
     'school_years': f'{API_PREFIX}/calendar/school-years',
     'school_year_detail': f'{API_PREFIX}/calendar/school-years/{{school_year_id}}',

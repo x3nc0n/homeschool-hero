@@ -20,6 +20,7 @@ from backend.routers.notifications import router as notifications_router
 from backend.routers.portfolio import router as portfolio_router
 from backend.routers.quizzes import router as quizzes_router
 from backend.routers.report_cards import router as report_cards_router
+from backend.routers.restore import router as restore_router
 from backend.routers.reviews import router as reviews_router
 from backend.routers.schedule import router as schedule_router
 from backend.routers.search import router as search_router
@@ -51,6 +52,7 @@ __all__ = [
     'portfolio_router',
     'quizzes_router',
     'report_cards_router',
+    'restore_router',
     'reviews_router',
     'schedule_router',
     'search_router',

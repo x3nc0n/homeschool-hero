@@ -31,6 +31,7 @@ import { PortfolioPage } from '@/pages/PortfolioPage'
 import { PortfolioSharePage } from '@/pages/PortfolioSharePage'
 import { QuizzesPage } from '@/pages/QuizzesPage'
 import { ReportCardsPage } from '@/pages/ReportCardsPage'
+import { RestorePage } from '@/pages/RestorePage'
 import { ReviewQueuePage } from '@/pages/ReviewQueuePage'
 import { ReviewDetailPage } from '@/pages/ReviewDetailPage'
 import { ResourceLibraryPage } from '@/pages/ResourceLibraryPage'
@@ -89,6 +90,7 @@ function ProtectedRoutes() {
         <Route path="/exports" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<ExportsPage />} />} />
         <Route path="/settings/backups" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<BackupsPage />} />} />
 
+        <Route path="/settings/restore" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<RestorePage />} />} />
 
         <Route path="/imports" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ImportsPage />} />} />
         <Route path="/resources" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ResourceLibraryPage />} />} />

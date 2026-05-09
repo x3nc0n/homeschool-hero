@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { HardDriveDownload, RefreshCw } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
-import type { BackupConfig, BackupJob, BackupJobStatus, BackupStatus } from '@/types/api'
+import type { BackupConfig, BackupJob, BackupJobStatus, BackupStatus, RetentionPolicy } from '@/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorState } from '@/components/common/ErrorState'
 import { LoadingState } from '@/components/common/LoadingState'
+import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 function statusVariant(status: BackupJobStatus) {
@@ -38,6 +40,7 @@ export function BackupsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [retention, setRetention] = useState<RetentionPolicy>({ retention_days: 14, retention_count: 3 })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -51,6 +54,10 @@ export function BackupsPage() {
       setConfig(configResponse)
       setStatus(statusResponse)
       setJobs(historyResponse)
+      setRetention({
+        retention_days: configResponse.retention_days,
+        retention_count: configResponse.retention_count,
+      })
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load backups')
     } finally {
@@ -100,6 +107,41 @@ export function BackupsPage() {
       setMessage('Backup queued. Status will refresh automatically.')
     } catch (triggerError) {
       setError(triggerError instanceof Error ? triggerError.message : 'Unable to trigger backup')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveRetention = async () => {
+    setSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const updated = await api.updateRestoreRetention(retention)
+      setRetention(updated)
+      setMessage('Retention policy updated.')
+      await load()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to update retention settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const runCleanup = async () => {
+    setSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const result = await api.cleanupRestoreBackups()
+      setMessage(
+        result.deleted.length
+          ? `Retention cleanup removed ${result.deleted.length} backup(s).`
+          : 'Retention cleanup completed with no deletions.',
+      )
+      await load()
+    } catch (cleanupError) {
+      setError(cleanupError instanceof Error ? cleanupError.message : 'Unable to run retention cleanup')
     } finally {
       setSaving(false)
     }
@@ -175,6 +217,9 @@ export function BackupsPage() {
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh status
               </Button>
+              <Button variant="outline" asChild>
+                <Link to="/settings/restore">Open restore workspace</Link>
+              </Button>
             </div>
             {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -232,6 +277,43 @@ export function BackupsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Retention policy</CardTitle>
+          <CardDescription>Automatically prune expired backups while keeping a minimum safety floor.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Retention days</p>
+              <Input
+                type="number"
+                min={1}
+                value={retention.retention_days}
+                onChange={(event) => setRetention((current) => ({ ...current, retention_days: Number(event.target.value) || 1 }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Minimum backups to keep</p>
+              <Input
+                type="number"
+                min={1}
+                value={retention.retention_count}
+                onChange={(event) => setRetention((current) => ({ ...current, retention_count: Number(event.target.value) || 1 }))}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void saveRetention()} disabled={saving}>
+              Save retention policy
+            </Button>
+            <Button variant="outline" onClick={() => void runCleanup()} disabled={saving}>
+              Run cleanup now
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
