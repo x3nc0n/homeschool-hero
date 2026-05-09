@@ -35,6 +35,7 @@ from backend.services.auth_provisioning import ExternalIdentity, provision_exter
 from backend.services.auth_saml import SAMLConfigurationError, begin_saml_login, complete_saml_login, get_metadata_xml
 from backend.services.audit import log_event
 from backend.services.gradebook import ensure_default_grade_scale
+from backend.services.maintenance import get_maintenance_status, membership_can_bypass_maintenance
 from backend.services.notifications import create_security_alert_for_user
 
 router = APIRouter(prefix='/auth', tags=['auth'])
@@ -127,6 +128,9 @@ async def bootstrap_status(db: AsyncSession = Depends(get_db)) -> BootstrapStatu
 
 @router.post('/register', response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)) -> RegisterResponse:
+    maintenance = await get_maintenance_status(db)
+    if maintenance.active:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=maintenance.message)
     if not await bootstrap_required(db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Bootstrap is no longer available')
 
@@ -169,7 +173,10 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
 
 @router.post('/login', response_model=LoginResponse)
 async def login(payload: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)) -> LoginResponse:
+    maintenance = await get_maintenance_status(db)
     membership_row = await get_login_membership(db, email=payload.email, family_id=payload.family_id)
+    if maintenance.active and (membership_row is None or not membership_can_bypass_maintenance(membership_row[1])):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=maintenance.message)
     if membership_row is None:
         user = await _find_user_by_email(db, payload.email)
         if user is not None:
@@ -261,6 +268,9 @@ async def _complete_external_login(
     db: AsyncSession,
 ) -> RedirectResponse:
     provisioned = await provision_external_identity(db, identity)
+    maintenance = await get_maintenance_status(db)
+    if maintenance.active and not membership_can_bypass_maintenance(provisioned.membership):
+        return _redirect_to_login_error(maintenance.message)
     response = _redirect_to_app()
     _set_session_cookie(response, request, user_id=provisioned.user.id, family_id=provisioned.family.id)
     return response

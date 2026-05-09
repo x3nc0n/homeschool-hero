@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { ComplianceCustomRulePayload, ComplianceRule, ComplianceRuleType, GradeScaleInput, GradeScaleRange } from '@/types/api'
+import type {
+  ComplianceCustomRulePayload,
+  ComplianceRule,
+  ComplianceRuleType,
+  GradeScaleInput,
+  GradeScaleRange,
+  MaintenanceStatus,
+} from '@/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -48,6 +55,18 @@ const blankRule: ComplianceCustomRulePayload = {
   is_active: true,
 }
 
+function toLocalDateTime(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  const offset = date.getTimezoneOffset()
+  const local = new Date(date.getTime() - offset * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+function toIsoDateTime(value: string) {
+  return value ? new Date(value).toISOString() : null
+}
+
 export function FamilySettingsPage() {
   const [scales, setScales] = useState<GradeScaleInput[]>([])
   const [stateCode, setStateCode] = useState('CUSTOM')
@@ -57,6 +76,12 @@ export function FamilySettingsPage() {
   const [saving, setSaving] = useState(false)
   const [savingState, setSavingState] = useState(false)
   const [savingRule, setSavingRule] = useState(false)
+  const [maintenance, setMaintenance] = useState<MaintenanceStatus | null>(null)
+  const [maintenanceMessage, setMaintenanceMessage] = useState('')
+  const [maintenanceSaving, setMaintenanceSaving] = useState(false)
+  const [scheduleSaving, setScheduleSaving] = useState(false)
+  const [scheduleStart, setScheduleStart] = useState('')
+  const [scheduleEnd, setScheduleEnd] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -70,14 +95,19 @@ export function FamilySettingsPage() {
     setLoading(true)
     setError('')
     try {
-      const [gradeScales, familyState, rulesResponse] = await Promise.all([
+      const [gradeScales, familyState, rulesResponse, maintenanceStatus] = await Promise.all([
         api.listGradeScales(),
         api.getFamilyComplianceState(),
         api.getComplianceRules(),
+        api.getMaintenanceStatus(),
       ])
       setScales(gradeScales.map((scale) => ({ id: scale.id, name: scale.name, is_default: scale.is_default, ranges: scale.ranges })))
       setStateCode(familyState.state_code)
       setCustomRules(rulesResponse.rules.filter((rule) => rule.is_custom))
+      setMaintenance(maintenanceStatus)
+      setMaintenanceMessage(maintenanceStatus.message)
+      setScheduleStart(toLocalDateTime(maintenanceStatus.start_at))
+      setScheduleEnd(toLocalDateTime(maintenanceStatus.end_at))
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load family settings')
     } finally {
@@ -142,12 +172,113 @@ export function FamilySettingsPage() {
     }
   }
 
+  const saveMaintenanceMode = async (enabled: boolean) => {
+    setMaintenanceSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const updated = await api.toggleMaintenance({ enabled, message: maintenanceMessage })
+      setMaintenance(updated)
+      setMaintenanceMessage(updated.message)
+      setMessage(enabled ? 'Maintenance mode enabled.' : 'Maintenance mode disabled.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to update maintenance mode')
+    } finally {
+      setMaintenanceSaving(false)
+    }
+  }
+
+  const saveMaintenanceSchedule = async () => {
+    setScheduleSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const updated = await api.scheduleMaintenance({
+        start_at: toIsoDateTime(scheduleStart),
+        end_at: toIsoDateTime(scheduleEnd),
+        message: maintenanceMessage,
+      })
+      setMaintenance(updated)
+      setMaintenanceMessage(updated.message)
+      setScheduleStart(toLocalDateTime(updated.start_at))
+      setScheduleEnd(toLocalDateTime(updated.end_at))
+      setMessage(updated.start_at && updated.end_at ? 'Maintenance window scheduled.' : 'Maintenance schedule cleared.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save maintenance schedule')
+    } finally {
+      setScheduleSaving(false)
+    }
+  }
+
   if (loading) return <LoadingState message="Loading family settings…" />
   if (error && !scales.length && !customRules.length) return <ErrorState message={error} onRetry={() => void load()} />
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-[1fr_1.1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Maintenance mode</CardTitle>
+            <CardDescription>Pause access for non-admin users while parents and co-parents keep operator access.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={maintenance?.active ? 'destructive' : 'secondary'}>
+                {maintenance?.active ? `Active via ${maintenance.source}` : 'Inactive'}
+              </Badge>
+              {maintenance?.env_enabled ? <Badge variant="outline">Forced by env</Badge> : null}
+              {maintenance?.scheduled ? <Badge variant="outline">Window saved</Badge> : null}
+            </div>
+            <div className="space-y-2">
+              <Label>Maintenance message</Label>
+              <Textarea value={maintenanceMessage} onChange={(event) => setMaintenanceMessage(event.target.value)} />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => void saveMaintenanceMode(true)} disabled={maintenanceSaving}>
+                Enable maintenance
+              </Button>
+              <Button variant="outline" onClick={() => void saveMaintenanceMode(false)} disabled={maintenanceSaving}>
+                Disable maintenance
+              </Button>
+            </div>
+            <div className="grid gap-4 border-t pt-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Window start</Label>
+                <Input type="datetime-local" value={scheduleStart} onChange={(event) => setScheduleStart(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Window end</Label>
+                <Input type="datetime-local" value={scheduleEnd} onChange={(event) => setScheduleEnd(event.target.value)} />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => void saveMaintenanceSchedule()} disabled={scheduleSaving}>
+                Save maintenance window
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setScheduleStart('')
+                  setScheduleEnd('')
+                  void api
+                    .scheduleMaintenance({ start_at: null, end_at: null, message: maintenanceMessage })
+                    .then((updated) => {
+                      setMaintenance(updated)
+                      setMessage('Maintenance schedule cleared.')
+                    })
+                    .catch((saveError) => setError(saveError instanceof Error ? saveError.message : 'Unable to clear maintenance schedule'))
+                }}
+                disabled={scheduleSaving}
+              >
+                Clear window
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Bypass roles: {maintenance?.bypass_roles?.join(', ') || 'parent, co-parent'}
+            </p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Compliance settings</CardTitle>

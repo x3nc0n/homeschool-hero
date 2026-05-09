@@ -1,0 +1,28 @@
+services:
+  app:
+    environment:
+      SESSION_COOKIE_SECURE: "true"
+      TLS_ENABLED: "true"
+      HTTPS_REDIRECT_ENABLED: "true"
+      HSTS_ENABLED: "true"
+    expose:
+      - "8000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-tls.conf:/etc/nginx/templates/tls.conf.template:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./data/certbot/www:/var/www/certbot
+    environment:
+      NGINX_ENVSUBST_TEMPLATE_SUFFIX: ".template"
+      APP_UPSTREAM: "app:8000"
+      TLS_CERT_PATH: "/etc/nginx/certs/homeschool-hero.crt"
+      TLS_KEY_PATH: "/etc/nginx/certs/homeschool-hero.key"

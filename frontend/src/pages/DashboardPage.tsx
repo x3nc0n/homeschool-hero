@@ -100,7 +100,7 @@ export function DashboardPage() {
   )
 
   const gradeAverage = useMemo(() => average(grades.map((grade) => (grade.score / grade.max_score) * 100)), [grades])
-  const healthStatus = health?.status || capabilityStatus
+  const healthStatus = health?.status || (capabilityStatus === 'ok' ? 'healthy' : 'degraded')
   const systemHealth = dashboardSummary?.system_health
   const recentActivity = dashboardSummary?.recent_activity || []
 
@@ -191,7 +191,9 @@ export function DashboardPage() {
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Overall status</span>
-              <Badge variant={healthStatus === 'ok' ? 'secondary' : 'destructive'}>{healthStatus}</Badge>
+              <Badge variant={healthStatus === 'healthy' ? 'secondary' : healthStatus === 'degraded' ? 'outline' : 'destructive'}>
+                {healthStatus}
+              </Badge>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border p-3">
@@ -216,6 +218,20 @@ export function DashboardPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">All optional services are available.</p>
               )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">TLS status</p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={health?.transport.tls_enabled ? 'secondary' : 'outline'}>
+                  {health?.transport.tls_enabled ? 'TLS enabled' : 'TLS disabled'}
+                </Badge>
+                <Badge variant={health?.transport.https_redirect_enabled ? 'secondary' : 'outline'}>
+                  {health?.transport.https_redirect_enabled ? 'HTTPS redirect on' : 'HTTPS redirect off'}
+                </Badge>
+                <Badge variant={health?.transport.hsts_enabled ? 'secondary' : 'outline'}>
+                  {health?.transport.hsts_enabled ? 'HSTS on' : 'HSTS off'}
+                </Badge>
+              </div>
             </div>
             <div className="space-y-2">
               <p className="text-sm font-medium">Grading queue</p>

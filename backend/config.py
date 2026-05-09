@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     session_max_age_seconds: int = Field(28800, alias='SESSION_MAX_AGE_SECONDS')
     session_cookie_secure: bool = Field(False, alias='SESSION_COOKIE_SECURE')
     session_rotation_seconds: int = Field(1800, alias='SESSION_ROTATION_SECONDS')
+    tls_enabled: bool = Field(False, alias='TLS_ENABLED')
+    https_redirect_enabled: bool = Field(False, alias='HTTPS_REDIRECT_ENABLED')
+    hsts_enabled: bool = Field(True, alias='HSTS_ENABLED')
+    hsts_max_age_seconds: int = Field(31536000, alias='HSTS_MAX_AGE_SECONDS')
+    hsts_include_subdomains: bool = Field(True, alias='HSTS_INCLUDE_SUBDOMAINS')
+    hsts_preload: bool = Field(False, alias='HSTS_PRELOAD')
     password_min_length: int = Field(12, alias='PASSWORD_MIN_LENGTH')
     auth_lockout_threshold: int = Field(5, alias='AUTH_LOCKOUT_THRESHOLD')
     auth_lockout_minutes: int = Field(15, alias='AUTH_LOCKOUT_MINUTES')
@@ -73,10 +79,12 @@ class Settings(BaseSettings):
     smtp_password: str | None = Field(default=None, alias='SMTP_PASSWORD')
     smtp_from_email: str | None = Field(default=None, alias='SMTP_FROM_EMAIL')
     smtp_use_tls: bool = Field(True, alias='SMTP_USE_TLS')
+    redis_url: str | None = Field(default=None, alias='REDIS_URL')
     backup_destination: str = Field('local', alias='BACKUP_DESTINATION')
     backup_target: str | None = Field(default=None, alias='BACKUP_TARGET')
     backup_schedule: str = Field('0 2 * * *', alias='BACKUP_SCHEDULE')
     backup_retention_days: int = Field(14, alias='BACKUP_RETENTION_DAYS')
+    backup_retention_count: int = Field(3, alias='BACKUP_RETENTION_COUNT')
     backup_filename_prefix: str = Field('homeschool-hero', alias='BACKUP_FILENAME_PREFIX')
     backup_scheduler_enabled: bool = Field(True, alias='BACKUP_SCHEDULER_ENABLED')
     backup_smb_host: str | None = Field(default=None, alias='BACKUP_SMB_HOST')
@@ -86,6 +94,11 @@ class Settings(BaseSettings):
     backup_nfs_host: str | None = Field(default=None, alias='BACKUP_NFS_HOST')
     backup_nfs_path: str | None = Field(default=None, alias='BACKUP_NFS_PATH')
     backup_encryption_key: str | None = Field(default=None, alias='BACKUP_ENCRYPTION_KEY')
+    maintenance_mode: bool = Field(False, alias='MAINTENANCE_MODE')
+    maintenance_message: str = Field(
+        'Homeschool Hero is temporarily unavailable while we perform maintenance. Please check back soon.',
+        alias='MAINTENANCE_MESSAGE',
+    )
     testing: bool = Field(False, alias='TESTING')
 
     @property

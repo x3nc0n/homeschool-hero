@@ -2,6 +2,7 @@ from backend.routers.assignments import router as assignments_router
 from backend.routers.attendance import router as attendance_router
 from backend.routers.audit import router as audit_router
 from backend.routers.auth import router as auth_router
+from backend.routers.admin import router as admin_router
 from backend.routers.backups import router as backups_router
 from backend.routers.calendar import router as calendar_router
 from backend.routers.compliance import router as compliance_router
@@ -12,6 +13,7 @@ from backend.routers.exports import router as exports_router
 from backend.routers.gradebook import router as gradebook_router
 from backend.routers.grades import router as grades_router
 from backend.routers.grading import router as grading_router
+from backend.routers.health import router as health_router
 from backend.routers.invitations import router as invitations_router
 from backend.routers.lesson_plans import router as lesson_plans_router
 from backend.routers.notifications import router as notifications_router
@@ -28,6 +30,7 @@ from backend.routers.transcripts import router as transcripts_router
 
 __all__ = [
     'assignments_router',
+    'admin_router',
     'attendance_router',
     'audit_router',
     'auth_router',
@@ -41,6 +44,7 @@ __all__ = [
     'gradebook_router',
     'grades_router',
     'grading_router',
+    'health_router',
     'invitations_router',
     'lesson_plans_router',
     'notifications_router',

@@ -68,6 +68,7 @@ export type ExportJobStatus = 'pending' | 'processing' | 'complete' | 'failed'
 export type BackupType = 'full' | 'incremental' | 'manual'
 export type BackupJobStatus = 'pending' | 'running' | 'complete' | 'failed'
 export type BackupDestination = 'local' | 'smb' | 'nfs'
+export type RestoreStorageMode = 'plain_copy' | 'restic'
 export type ExportEntityType =
   | 'family'
   | 'students'
@@ -127,12 +128,95 @@ export interface CapabilitiesResponse {
 }
 
 export interface HealthResponse {
-  status: 'ok' | 'degraded' | 'required_failure'
-  required: Record<string, string>
-  optional_unavailable: CapabilityName[]
-  capabilities: Record<CapabilityName, CapabilityStatus>
-  auth: CapabilitiesResponse['auth']
-  required_failures?: Record<string, string>
+  status: 'ok' | 'healthy' | 'degraded' | 'required_failure' | 'unhealthy'
+  ready?: boolean
+  checked_at?: string
+  transport: {
+    tls_enabled: boolean
+    https_redirect_enabled: boolean
+    hsts_enabled: boolean
+  }
+  maintenance: MaintenanceStatus
+}
+
+export type ServiceHealthLevel = 'healthy' | 'degraded' | 'unhealthy' | 'not_configured'
+
+export interface ServiceHealthStatus {
+  name: string
+  label: string
+  required: boolean
+  configured: boolean
+  status: ServiceHealthLevel
+  message: string
+  checked_at: string
+  response_time_ms?: number | null
+  details: Record<string, unknown>
+}
+
+export interface DetailedHealthResponse {
+  status: 'healthy' | 'degraded' | 'unhealthy'
+  ready: boolean
+  checked_at: string
+  services: Record<string, ServiceHealthStatus>
+  summary: {
+    healthy: number
+    degraded: number
+    unhealthy: number
+    not_configured: number
+  }
+  backup?: BackupStatus | null
+  transport: HealthResponse['transport']
+  maintenance: MaintenanceStatus
+}
+
+export interface ReadinessResponse {
+  status: 'ready' | 'not_ready'
+  ready: boolean
+  checked_at: string
+  checks: Record<string, string>
+}
+
+export interface SystemStatusResponse extends DetailedHealthResponse {
+  version: string
+  started_at: string
+  uptime_seconds: number
+  uptime_human: string
+  disk: {
+    path: string
+    total_bytes: number
+    used_bytes: number
+    free_bytes: number
+    used_percent: number
+    warning_threshold_percent: number
+    critical_threshold_percent: number
+    status: Exclude<ServiceHealthLevel, 'not_configured'>
+  }
+}
+
+export interface MaintenanceStatus {
+  enabled: boolean
+  env_enabled: boolean
+  active: boolean
+  scheduled: boolean
+  schedule_active: boolean
+  message: string
+  source: string
+  start_at?: string | null
+  end_at?: string | null
+  updated_at?: string | null
+  updated_by_user_id?: number | null
+  bypass_roles: FamilyRole[]
+}
+
+export interface MaintenanceTogglePayload {
+  enabled: boolean
+  message?: string
+}
+
+export interface MaintenanceSchedulePayload {
+  start_at?: string | null
+  end_at?: string | null
+  message?: string
 }
 
 export interface MetricsResponse {
@@ -754,6 +838,7 @@ export interface BackupConfig {
   schedule: string
   next_scheduled?: string | null
   retention_days: number
+  retention_count: number
   filename_prefix: string
   encryption_configured: boolean
   restic_installed: boolean
@@ -786,6 +871,57 @@ export interface BackupStatus {
   validation: BackupConfig['validation']
   last_backup?: BackupJob | null
   last_success?: BackupJob | null
+}
+
+export interface RestoreBackup {
+  backup_id: string
+  label: string
+  file_path: string
+  destination: BackupDestination
+  backup_type?: BackupType | null
+  storage_mode: RestoreStorageMode | string
+  created_at?: string | null
+  completed_at?: string | null
+  size_bytes: number
+  manifest_present: boolean
+  manifest_version?: string | null
+  available_entities: ExportEntityType[]
+  metadata: Record<string, unknown>
+}
+
+export interface RestoreValidationCheck {
+  name: string
+  valid: boolean
+  expected?: number | string | null
+  actual?: number | string | null
+  message: string
+}
+
+export interface RestoreValidation {
+  backup_id: string
+  valid: boolean
+  can_restore: boolean
+  confirmation_token?: string | null
+  expires_at?: string | null
+  checks: RestoreValidationCheck[]
+  warnings: string[]
+  metadata: Record<string, unknown>
+}
+
+export interface RestoreExecution {
+  backup_id: string
+  mode: string
+  restored_database: boolean
+  restored_files: boolean
+  restored_entities: Record<string, { created?: number; updated?: number; skipped?: number }>
+  safety_snapshot_job_id?: number | null
+  completed_at: string
+  message: string
+}
+
+export interface RetentionPolicy {
+  retention_days: number
+  retention_count: number
 }
 
 export interface AuditEvent {

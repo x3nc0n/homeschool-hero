@@ -1,9 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
-import type { FamilyRole } from '@/types/api'
+import type { FamilyRole, MaintenanceStatus } from '@/types/api'
 import { AppShell } from '@/components/layout/AppShell'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { CapabilitiesProvider } from '@/context/CapabilitiesContext'
 import { NotificationsProvider } from '@/context/NotificationsContext'
+import { api, MAINTENANCE_EVENT } from '@/lib/api'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { BackupsPage } from '@/pages/BackupsPage'
 import { ExportsPage } from '@/pages/ExportsPage'
@@ -38,6 +40,7 @@ import { StudentsPage } from '@/pages/StudentsPage'
 import { SubjectsPage } from '@/pages/SubjectsPage'
 import { TranscriptsPage } from '@/pages/TranscriptsPage'
 import { UploadPage } from '@/pages/UploadPage'
+import { MaintenancePage } from '@/pages/MaintenancePage'
 
 function LoadingScreen() {
   return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
@@ -85,6 +88,8 @@ function ProtectedRoutes() {
         <Route path="/curriculum" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CurriculumPage />} />} />
         <Route path="/exports" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<ExportsPage />} />} />
         <Route path="/settings/backups" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<BackupsPage />} />} />
+
+
         <Route path="/imports" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ImportsPage />} />} />
         <Route path="/resources" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ResourceLibraryPage />} />} />
         <Route path="/portfolio" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PortfolioPage />} />} />
@@ -158,18 +163,80 @@ function AcceptInvitationRoute() {
   return <AcceptInvitationPage />
 }
 
+function AppRoutes() {
+  const { role } = useAuth()
+  const [maintenance, setMaintenance] = useState<MaintenanceStatus | null>(null)
+
+  useEffect(() => {
+    const loadHealth = async () => {
+      try {
+        const health = await api.getHealth()
+        setMaintenance(health.maintenance.active ? health.maintenance : null)
+      } catch {
+        // Ignore health bootstrap issues here; individual pages already handle fetch failures.
+      }
+    }
+
+    const handleMaintenance = (event: Event) => {
+      const detail = (event as CustomEvent<MaintenanceStatus>).detail
+      if (!detail) return
+      setMaintenance({
+        enabled: Boolean(detail.enabled),
+        env_enabled: Boolean(detail.env_enabled),
+        active: true,
+        scheduled: Boolean(detail.scheduled),
+        schedule_active: Boolean(detail.schedule_active),
+        message: detail.message || 'Homeschool Hero is temporarily unavailable.',
+        source: detail.source || 'server',
+        start_at: detail.start_at,
+        end_at: detail.end_at,
+        updated_at: detail.updated_at,
+        updated_by_user_id: detail.updated_by_user_id,
+        bypass_roles: detail.bypass_roles || ['parent', 'co-parent'],
+      })
+    }
+
+    void loadHealth()
+    window.addEventListener(MAINTENANCE_EVENT, handleMaintenance as EventListener)
+    return () => window.removeEventListener(MAINTENANCE_EVENT, handleMaintenance as EventListener)
+  }, [])
+
+  const isAdmin = role === 'parent' || role === 'co-parent'
+
+  if (maintenance?.active && !isAdmin) {
+    return (
+      <MaintenancePage
+        maintenance={maintenance}
+        onRetry={() => {
+          void api.getHealth().then((health) => {
+            if (!health.maintenance.active) {
+              window.location.reload()
+              return
+            }
+            setMaintenance(health.maintenance)
+          })
+        }}
+      />
+    )
+  }
+
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginRoute />} />
+      <Route path="/setup" element={<SetupRoute />} />
+      <Route path="/accept-invite/:invitationId" element={<AcceptInvitationRoute />} />
+      <Route path="/portfolio/share/:shareToken" element={<PortfolioSharePage />} />
+      <Route path="*" element={<ProtectedRoutes />} />
+    </Routes>
+  )
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <CapabilitiesProvider>
         <NotificationsProvider>
-          <Routes>
-            <Route path="/login" element={<LoginRoute />} />
-            <Route path="/setup" element={<SetupRoute />} />
-            <Route path="/accept-invite/:invitationId" element={<AcceptInvitationRoute />} />
-            <Route path="/portfolio/share/:shareToken" element={<PortfolioSharePage />} />
-            <Route path="*" element={<ProtectedRoutes />} />
-          </Routes>
+          <AppRoutes />
         </NotificationsProvider>
       </CapabilitiesProvider>
     </AuthProvider>

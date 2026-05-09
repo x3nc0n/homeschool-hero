@@ -11,6 +11,7 @@ from backend.models.attendance import AttendanceExcuse, AttendanceRecord, Attend
 from backend.models.audit_event import AuditAction, AuditEvent
 from backend.models.backup_job import BackupDestination, BackupJob, BackupJobStatus, BackupType
 from backend.models.lesson_plan import LessonPlan, LessonPlanStatus, PacingTarget
+from backend.models.maintenance import MaintenanceMode
 from backend.models.calendar import CalendarEvent, CalendarEventType, GradingPeriod, SchoolYear, Term, TermType
 from backend.models.compliance import ComplianceRule, ComplianceRuleType, ComplianceState, ComplianceStatus
 from backend.models.compliance_report import ComplianceReport, ComplianceReportStatus, ComplianceReportType
@@ -90,6 +91,7 @@ __all__ = [
     'LessonResource',
     'LessonPlan',
     'LessonPlanStatus',
+    'MaintenanceMode',
     'Notification',
     'NotificationPreference',
     'NotificationType',

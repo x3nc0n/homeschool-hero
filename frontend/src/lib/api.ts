@@ -8,6 +8,10 @@ import type {
   BackupJob,
   BackupStatus,
   BackupType,
+  RestoreBackup,
+  RestoreExecution,
+  RestoreValidation,
+  RetentionPolicy,
   DailyAgenda,
   AuditEventFilters,
   AuditEventListResponse,
@@ -72,6 +76,9 @@ import type {
   NotificationListResponse,
   NotificationPreference,
   MetricsResponse,
+  MaintenanceSchedulePayload,
+  MaintenanceStatus,
+  MaintenanceTogglePayload,
   PacingStatusSummary,
   PortfolioCollection,
   PortfolioCollectionPayload,
@@ -116,8 +123,10 @@ import type {
   SearchResponse,
   PaginatedResponse,
 } from '@/types/api'
+import type { DetailedHealthResponse, ReadinessResponse, SystemStatusResponse } from '@/types/health'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+export const MAINTENANCE_EVENT = 'homeschool:maintenance'
 
 export class ApiError extends Error {
   status: number
@@ -172,11 +181,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`
+    let payload: Record<string, any> | null = null
     try {
-      const payload = await parseResponse<ApiErrorPayload>(response)
-      message = payload.detail || payload.message || message
+      payload = await parseResponse<Record<string, any>>(response)
+      message = payload?.detail || payload?.message || message
     } catch {
       // ignore parse issues
+    }
+    if (response.status === 503 && payload?.error?.code === 'maintenance_mode') {
+      window.dispatchEvent(
+        new CustomEvent(MAINTENANCE_EVENT, {
+          detail: payload.error.details?.maintenance ?? {
+            active: true,
+            message,
+            source: 'server',
+          },
+        }),
+      )
     }
     throw new ApiError(response.status, message)
   }
@@ -195,6 +216,36 @@ export const api = {
 
   getHealth() {
     return request<HealthResponse>('/health')
+  },
+
+  getDetailedHealth() {
+    return request<DetailedHealthResponse>('/health/detailed')
+  },
+
+  getReadiness() {
+    return request<ReadinessResponse>('/health/ready')
+  },
+
+  getSystemStatus() {
+    return request<SystemStatusResponse>('/status')
+  },
+
+  getMaintenanceStatus() {
+    return request<MaintenanceStatus>('/admin/maintenance')
+  },
+
+  toggleMaintenance(payload: MaintenanceTogglePayload) {
+    return request<MaintenanceStatus>('/admin/maintenance', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  scheduleMaintenance(payload: MaintenanceSchedulePayload) {
+    return request<MaintenanceStatus>('/admin/maintenance/schedule', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
   },
 
   getMetrics() {
@@ -356,6 +407,49 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ backup_type: backupType }),
     })
+  },
+
+  listRestoreBackups() {
+    return request<RestoreBackup[]>('/restore/backups')
+  },
+
+  validateRestoreBackup(backupId: string) {
+    return request<RestoreValidation>(`/restore/validate/${encodeURIComponent(backupId)}`, { method: 'POST' })
+  },
+
+  executeRestore(
+    backupId: string,
+    payload: { confirmation_token: string; include_database?: boolean; include_files?: boolean; auto_backup?: boolean },
+  ) {
+    return request<RestoreExecution>(`/restore/execute/${encodeURIComponent(backupId)}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  executeSelectiveRestore(
+    backupId: string,
+    payload: { confirmation_token: string; entity_types: ExportEntityType[]; overwrite_existing?: boolean; auto_backup?: boolean },
+  ) {
+    return request<RestoreExecution>(`/restore/selective/${encodeURIComponent(backupId)}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getRestoreRetention() {
+    return request<RetentionPolicy>('/restore/retention')
+  },
+
+  updateRestoreRetention(payload: RetentionPolicy) {
+    return request<RetentionPolicy>('/restore/retention', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  cleanupRestoreBackups() {
+    return request<RetentionPolicy & { deleted: string[]; kept: string[] }>('/restore/cleanup', { method: 'POST' })
   },
 
   createExportJob(payload: { export_type: ExportType; format: ExportFormat; entity_types?: ExportEntityType[]; date_from?: string }) {

@@ -1,26 +1,27 @@
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 import asyncio
 import logging
-import uuid
-from time import perf_counter
-from contextlib import asynccontextmanager
 from pathlib import Path
+from time import perf_counter
+import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
 from backend.config import settings
-from backend.database import engine, get_db
+from backend.database import AsyncSessionLocal, get_db
 from backend.models import Base
 from backend.openapi import API_DESCRIPTION, API_SUMMARY, API_VERSION, configure_openapi
 from backend.rate_limit import RateLimitRule, RateLimiter
 from backend.routers import (
     assignments_router,
     attendance_router,
+    admin_router,
     audit_router,
     auth_router,
     backups_router,
@@ -47,11 +48,14 @@ from backend.routers import (
 )
 from backend.routers.calendar import router as calendar_router
 from backend.routers.grading import router as grading_router
+from backend.routers.health import router as health_router
 from backend.routers.imports import router as imports_router
 from backend.services.capabilities import get_auth_providers, get_capability_registry
 from backend.services.backup_service import get_backup_scheduler
 from backend.services.grading_worker import create_worker
+from backend.services.health import build_simple_health_payload, get_runtime_started_at, log_startup_health_snapshot
 from backend.services.logging_config import bind_context, configure_logging, log_action, reset_context, update_context
+from backend.services.maintenance import get_maintenance_status, session_can_bypass_maintenance
 from backend.services.monitoring import collect_metrics_payload, get_monitoring, install_monitoring
 from backend.startup import (
     ensure_database_migrations,
@@ -74,7 +78,7 @@ DOCS_PATH = f'{API_PREFIX}/docs'
 REDOC_PATH = f'{API_PREFIX}/redoc'
 FRONTEND_DIST_DIR = Path(__file__).resolve().parents[1] / 'frontend' / 'dist'
 FRONTEND_INDEX = FRONTEND_DIST_DIR / 'index.html'
-HEALTH_PATHS = {f'{API_PREFIX}/health', '/health'}
+HEALTH_PATHS = {f'{API_PREFIX}/health', f'{API_PREFIX}/health/ready', '/health'}
 logger = logging.getLogger(__name__)
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 PUBLIC_API_PATHS = {
@@ -87,6 +91,7 @@ PUBLIC_API_PATHS = {
     f'{API_PREFIX}/auth/saml/metadata',
     f'{API_PREFIX}/auth/saml/acs',
     f'{API_PREFIX}/health',
+    f'{API_PREFIX}/health/ready',
     f'{API_PREFIX}/capabilities',
     OPENAPI_PATH,
     DOCS_PATH,
@@ -99,9 +104,13 @@ GENERAL_RATE_LIMIT = RateLimitRule('general', 100, 60)
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
     worker = None
     backup_scheduler = None
+    app.state.started_at = get_runtime_started_at(app)
+    app.state.database_migrated = settings.testing
+    app.state.services_initialized = settings.testing
+    app.state.startup_health = None
     summary = validate_runtime_config()
     log_validated_config_summary(summary)
     capabilities = await get_capability_registry().check_all()
@@ -111,10 +120,13 @@ async def lifespan(_: FastAPI):
     if not settings.testing:
         ensure_auth_runtime_configured()
         await asyncio.to_thread(ensure_database_migrations)
+        app.state.database_migrated = True
         worker = create_worker()
         worker.start()
         backup_scheduler = get_backup_scheduler()
         backup_scheduler.start()
+    app.state.services_initialized = True
+    app.state.startup_health = await log_startup_health_snapshot(app)
     yield
     if worker is not None:
         worker.stop()
@@ -178,13 +190,18 @@ def _apply_security_headers(response: JSONResponse | FileResponse) -> None:
 
 def _apply_transport_headers(request: Request, response: JSONResponse | FileResponse) -> None:
     _apply_security_headers(response)
-    if is_secure_request(request):
-        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    if settings.hsts_enabled and is_secure_request(request):
+        value = [f'max-age={settings.hsts_max_age_seconds}']
+        if settings.hsts_include_subdomains:
+            value.append('includeSubDomains')
+        if settings.hsts_preload:
+            value.append('preload')
+        response.headers['Strict-Transport-Security'] = '; '.join(value)
 
 
 def _get_rate_limit(request: Request, session: dict[str, object] | None) -> tuple[RateLimitRule, str] | None:
     path = request.url.path
-    if not _is_api_path(path) or path in {f'{API_PREFIX}/health', f'{API_PREFIX}/capabilities'}:
+    if not _is_api_path(path) or path in {f'{API_PREFIX}/health', f'{API_PREFIX}/health/ready', f'{API_PREFIX}/capabilities'}:
         return None
 
     ip = get_request_ip(request)
@@ -204,44 +221,31 @@ def _get_rate_limit(request: Request, session: dict[str, object] | None) -> tupl
     return GENERAL_RATE_LIMIT, principal
 
 
-async def _check_database_health() -> str:
-    async with engine.connect() as connection:
-        await connection.execute(text('SELECT 1'))
-    return 'ok'
+def _maintenance_payload(*, message: str, source: str) -> dict[str, object]:
+    return _error_payload(
+        'maintenance_mode',
+        message,
+        details={
+            'maintenance': {
+                'active': True,
+                'message': message,
+                'source': source,
+            }
+        },
+    )
 
 
-async def _build_health_payload() -> tuple[int, dict[str, object]]:
-    capabilities = await get_capability_registry().check_all()
-    required = {'config': 'ok', 'database': 'ok'}
-    required_failures: dict[str, str] = {}
+def _https_redirect_url(request: Request) -> str:
+    target = request.url.replace(scheme='https')
+    return str(target)
 
-    try:
-        await _check_database_health()
-    except Exception as exc:
-        required['database'] = 'failed'
-        required_failures['database'] = str(exc)
 
-    optional_unavailable = [name for name, state in capabilities.items() if not state['enabled']]
-    if required_failures:
-        status_code = 503
-        overall_status = 'required_failure'
-    elif optional_unavailable:
-        status_code = 200
-        overall_status = 'degraded'
-    else:
-        status_code = 200
-        overall_status = 'ok'
-
-    payload: dict[str, object] = {
-        'status': overall_status,
-        'required': required,
-        'optional_unavailable': optional_unavailable,
-        'capabilities': capabilities,
-        'auth': get_auth_providers(),
-    }
-    if required_failures:
-        payload['required_failures'] = required_failures
-    return status_code, payload
+def _should_redirect_to_https(request: Request) -> bool:
+    if not settings.tls_enabled or not settings.https_redirect_enabled:
+        return False
+    if request.url.path in HEALTH_PATHS:
+        return False
+    return not is_secure_request(request)
 
 
 def create_app() -> FastAPI:
@@ -256,6 +260,10 @@ def create_app() -> FastAPI:
         redoc_url=None,
         openapi_url=OPENAPI_PATH,
     )
+    app.state.started_at = datetime.now(UTC)
+    app.state.database_migrated = settings.testing
+    app.state.services_initialized = settings.testing
+    app.state.startup_health = None
     app.state.rate_limiter = RateLimiter()
     install_monitoring(app)
     configure_openapi(
@@ -327,9 +335,45 @@ def create_app() -> FastAPI:
         is_public = _is_public_api_path(path)
         session = None
         try:
+            if _should_redirect_to_https(request):
+                response = RedirectResponse(url=_https_redirect_url(request), status_code=307)
+                _apply_transport_headers(request, response)
+                return response
+
+            maintenance_status = None
+            if _is_api_path(path) and path not in {f'{API_PREFIX}/health', f'{API_PREFIX}/health/ready', f'{API_PREFIX}/capabilities'}:
+                async with AsyncSessionLocal() as db:
+                    maintenance_status = await get_maintenance_status(db)
             if _is_api_path(path) and not is_public:
                 token = request.cookies.get(settings.session_cookie_name)
                 session = verify_session_token(token)
+            maintenance_bypass_paths = {
+                f'{API_PREFIX}/auth/login',
+                f'{API_PREFIX}/auth/oidc/login',
+                f'{API_PREFIX}/auth/oidc/callback',
+                f'{API_PREFIX}/auth/saml/login',
+                f'{API_PREFIX}/auth/saml/acs',
+                f'{API_PREFIX}/auth/saml/metadata',
+            }
+            if (
+                maintenance_status
+                and maintenance_status.active
+                and _is_api_path(path)
+                and path not in {f'{API_PREFIX}/health', f'{API_PREFIX}/health/ready', f'{API_PREFIX}/capabilities', OPENAPI_PATH, DOCS_PATH, REDOC_PATH}
+                and path not in maintenance_bypass_paths
+            ):
+                bypass_allowed = False
+                async with AsyncSessionLocal() as db:
+                    bypass_allowed = await session_can_bypass_maintenance(db, session)
+                if not bypass_allowed:
+                    response = JSONResponse(
+                        status_code=503,
+                        content=_maintenance_payload(message=maintenance_status.message, source=maintenance_status.source),
+                    )
+                    _apply_transport_headers(request, response)
+                    return response
+
+            if _is_api_path(path) and not is_public:
                 if not session:
                     response = JSONResponse(
                         status_code=401,
@@ -405,14 +449,10 @@ def create_app() -> FastAPI:
                 )
             reset_context(context_token)
 
-    @app.get(f'{API_PREFIX}/health')
-    async def api_health() -> JSONResponse:
-        status_code, payload = await _build_health_payload()
-        return JSONResponse(status_code=status_code, content=payload)
-
     @app.get('/health', include_in_schema=False)
     async def health_alias() -> JSONResponse:
-        return await api_health()
+        status_code, payload = await build_simple_health_payload(app)
+        return JSONResponse(status_code=status_code, content=payload)
 
     @app.get(f'{API_PREFIX}/capabilities')
     async def api_capabilities() -> dict[str, object]:
@@ -432,6 +472,8 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=200, content=await collect_metrics_payload(request.app, db))
 
     app.include_router(auth_router, prefix=API_PREFIX)
+    app.include_router(health_router, prefix=API_PREFIX)
+    app.include_router(admin_router, prefix=API_PREFIX)
     app.include_router(invitations_router, prefix=API_PREFIX)
     app.include_router(notifications_router, prefix=API_PREFIX)
     app.include_router(portfolio_router, prefix=API_PREFIX)
