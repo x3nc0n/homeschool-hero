@@ -2,6 +2,10 @@
 
 ## Learnings
 
+- 2026-05-09T14:53:01-05:00 — Demo mode now hangs off `DEMO_MODE` in backend settings and seeds only on fresh databases during startup, keeping existing families untouched while giving fresh clones a fully populated Oklahoma K-12 experience.
+- 2026-05-09T14:53:01-05:00 — The demo seed approach creates one K-12 student cohort with per-student subjects, Oklahoma-aligned curriculum packages, realistic Q1/Q2 assignments/grades, and ~60 instructional days of attendance so the UI is immediately rich after first boot.
+- 2026-05-09T15:19:46-05:00 — The CI Trivy SARIF failure was caused by the container-checks image build dying before Trivy ran (`docker build --pull --load` after Buildx setup hit an EOF), so the local `homeschool-hero:ci` image never existed; fixing it meant using plain local-daemon Docker builds for scan jobs and keeping Trivy on `trivyignores`.
+- 2026-05-09T15:19:46-05:00 — CodeQL workflows should use `github/codeql-action@v4` everywhere (`init`, `analyze`, and `upload-sarif`) to avoid the v3 deprecation path.
 - 2026-05-09T14:45:14.180-05:00 — GitHub Actions `aquasecurity/trivy-action@v0.36.0` expects `trivyignores` (plural), not `ignorefile`; using the wrong input prevents the SARIF scan from writing `trivy-results.sarif`.
 - 2026-05-09T13:37:25.539-05:00 — Created administrator setup and configuration guide at `docs/admin-guide.md`.
 - 2026-05-09T13:31:43.322-05:00 — Gitleaks still flags high-entropy sample secrets in `.env.example` unless the placeholder value matches the rule allowlist; prefer explicit placeholders like `change-me-in-production` for `SECRET_KEY`.

@@ -75,7 +75,7 @@ jobs:
         run: npm run build
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
@@ -84,7 +84,7 @@ jobs:
         run: mkdir -p codeql-results
 
       - name: Analyze with CodeQL
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
           output: codeql-results/${{ matrix.language }}.sarif
@@ -105,10 +105,9 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build Docker image
+        env:
+          DOCKER_BUILDKIT: '0'
         run: docker build --pull -t "${SECURITY_IMAGE_NAME}" .
 
       - name: Scan image with Trivy policy gate
@@ -124,7 +123,7 @@ jobs:
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           exit-code: '1'
-          ignorefile: .trivyignore
+          trivyignores: .trivyignore
 
       - name: Generate Trivy JSON report
         if: always()
@@ -139,6 +138,7 @@ jobs:
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           exit-code: '0'
+          trivyignores: .trivyignore
 
       - name: Upload Trivy JSON artifact
         if: always()
@@ -161,11 +161,11 @@ jobs:
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           exit-code: '0'
-          ignorefile: .trivyignore
+          trivyignores: .trivyignore
 
       - name: Upload Trivy SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-image

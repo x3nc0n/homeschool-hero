@@ -176,7 +176,7 @@ jobs:
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           exit-code: '1'
-          ignorefile: .trivyignore
+          trivyignores: .trivyignore
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2.3.9
