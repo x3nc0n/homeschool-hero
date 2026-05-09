@@ -15,6 +15,7 @@ from backend.routers import (
     assignments_router,
     auth_router,
     grades_router,
+    invitations_router,
     quizzes_router,
     students_router,
     subjects_router,
@@ -71,7 +72,9 @@ def _is_api_path(path: str) -> bool:
 
 
 def _is_public_api_path(path: str) -> bool:
-    return path in PUBLIC_API_PATHS
+    if path in PUBLIC_API_PATHS:
+        return True
+    return path.startswith(f'{API_PREFIX}/invitations/') and path.endswith('/accept')
 
 
 async def _check_database_health() -> str:
@@ -154,6 +157,7 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(auth_router, prefix=API_PREFIX)
+    app.include_router(invitations_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)
     app.include_router(subjects_router, prefix=API_PREFIX)
     app.include_router(assignments_router, prefix=API_PREFIX)

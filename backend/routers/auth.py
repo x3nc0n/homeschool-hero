@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
@@ -52,7 +51,7 @@ def _session_response(auth: AuthSession, message: str | None = None) -> SessionR
             'is_active': True,
         },
         family={'id': auth.family_id, 'name': auth.family_name},
-        membership={'role': auth.role, 'is_owner': auth.is_owner},
+        membership={'role': auth.role, 'is_owner': auth.is_owner, 'student_id': auth.student_id},
         message=message,
     )
 
@@ -94,6 +93,7 @@ async def register(payload: RegisterRequest, response: Response, db: AsyncSessio
         role=membership.role.value,
         is_owner=membership.is_owner,
         family_name=family.name,
+        student_id=membership.student_id,
     )
     _set_session_cookie(response, user_id=user.id, family_id=family.id)
     return _session_response(auth, message='Owner account created')
@@ -118,6 +118,7 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
         role=membership.role.value,
         is_owner=membership.is_owner,
         family_name=family.name,
+        student_id=membership.student_id,
     )
     return _session_response(auth, message='Login successful')
 

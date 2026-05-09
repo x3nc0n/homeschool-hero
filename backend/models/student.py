@@ -15,3 +15,5 @@ class Student(TimestampMixin, Base):
     submissions = relationship('Submission', back_populates='student', cascade='all, delete-orphan')
     grades = relationship('Grade', back_populates='student', cascade='all, delete-orphan')
     quiz_attempts = relationship('QuizAttempt', back_populates='student', cascade='all, delete-orphan')
+    viewer_memberships = relationship('FamilyMembership', back_populates='student')
+    viewer_invitations = relationship('Invitation', back_populates='student')

@@ -4,6 +4,7 @@ import type {
   Assignment,
   AuthSession,
   BootstrapStatus,
+  CapabilitiesResponse,
   CreateInvitationPayload,
   Grade,
   Invitation,
@@ -69,6 +70,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   getBootstrapStatus() {
     return request<BootstrapStatus>('/auth/bootstrap')
+  },
+
+  getCapabilities() {
+    return request<CapabilitiesResponse>('/capabilities')
   },
 
   register(payload: RegisterPayload) {

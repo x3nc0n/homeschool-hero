@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Student } from '@/types/api'
+import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -11,6 +12,7 @@ import { ErrorState } from '@/components/common/ErrorState'
 import { LoadingState } from '@/components/common/LoadingState'
 
 export function StudentsPage() {
+  const { canEditStudents } = useAuth()
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -34,7 +36,7 @@ export function StudentsPage() {
   }, [])
 
   const saveStudent = async () => {
-    if (!draftName.trim()) return
+    if (!draftName.trim() || !canEditStudents) return
 
     if (editingId) {
       await api.updateStudent(editingId, { name: draftName.trim() })
@@ -56,48 +58,54 @@ export function StudentsPage() {
         <CardTitle>Students</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          <Input
-            className="max-w-sm"
-            placeholder="Student name"
-            value={draftName}
-            onChange={(event) => setDraftName(event.target.value)}
-          />
-          <Button onClick={() => void saveStudent()}>
-            <Plus className="mr-2 h-4 w-4" />
-            {editingId ? 'Update' : 'Add'} student
-          </Button>
-        </div>
+        {canEditStudents ? (
+          <div className="flex flex-wrap gap-2">
+            <Input
+              className="max-w-sm"
+              placeholder="Student name"
+              value={draftName}
+              onChange={(event) => setDraftName(event.target.value)}
+            />
+            <Button onClick={() => void saveStudent()}>
+              <Plus className="mr-2 h-4 w-4" />
+              {editingId ? 'Update' : 'Add'} student
+            </Button>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Tutors can view students but only parents can edit the roster.</p>
+        )}
 
         {students.length ? (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead className="w-[180px]">Actions</TableHead>
+                {canEditStudents ? <TableHead className="w-[180px]">Actions</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
               {students.map((student) => (
                 <TableRow key={student.id}>
                   <TableCell>{student.name}</TableCell>
-                  <TableCell className="space-x-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setDraftName(student.name)
-                        setEditingId(student.id)
-                      }}
-                    >
-                      <Pencil className="mr-2 h-3.5 w-3.5" />
-                      Edit
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={() => void api.deleteStudent(student.id).then(load)}>
-                      <Trash2 className="mr-2 h-3.5 w-3.5" />
-                      Delete
-                    </Button>
-                  </TableCell>
+                  {canEditStudents ? (
+                    <TableCell className="space-x-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setDraftName(student.name)
+                          setEditingId(student.id)
+                        }}
+                      >
+                        <Pencil className="mr-2 h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => void api.deleteStudent(student.id).then(load)}>
+                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                        Delete
+                      </Button>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))}
             </TableBody>

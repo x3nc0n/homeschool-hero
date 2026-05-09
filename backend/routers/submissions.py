@@ -9,7 +9,8 @@ from backend.config import settings
 from backend.database import get_db
 from backend.models import Assignment, GradingJob, GradingJobStatus, Student, Submission
 from backend.schemas.submissions import SubmissionRead
-from backend.security import AuthSession, get_auth_session, get_family_record
+from backend.security import AuthSession, get_family_record
+from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
 
 router = APIRouter(prefix='/submissions', tags=['submissions'])
 
@@ -17,13 +18,13 @@ router = APIRouter(prefix='/submissions', tags=['submissions'])
 @router.get('', response_model=list[SubmissionRead])
 async def list_submissions(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_submissions, action='view submissions')),
 ) -> list[Submission]:
-    submissions = (
-        await db.execute(
-            select(Submission).where(Submission.family_id == auth.family_id).order_by(Submission.uploaded_at.desc())
-        )
-    ).scalars().all()
+    stmt = select(Submission).where(Submission.family_id == auth.family_id)
+    if auth.role == 'student_viewer':
+        stmt = stmt.where(Submission.student_id == get_student_scope_id(auth))
+    stmt = stmt.order_by(Submission.uploaded_at.desc())
+    submissions = (await db.execute(stmt)).scalars().all()
     return list(submissions)
 
 
@@ -31,11 +32,12 @@ async def list_submissions(
 async def get_submission(
     submission_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_submissions, action='view submissions')),
 ) -> Submission:
     submission = await get_family_record(db, Submission, submission_id, auth.family_id)
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Submission not found')
+    ensure_student_scope(auth, submission.student_id, action='view submissions')
     return submission
 
 
@@ -45,7 +47,7 @@ async def upload_submission(
     student_id: int = Form(...),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_submissions, action='upload submissions')),
 ) -> Submission:
     assignment = await get_family_record(db, Assignment, assignment_id, auth.family_id)
     if not assignment:

@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.models import Subject
 from backend.schemas.subjects import SubjectCreate, SubjectRead, SubjectUpdate
-from backend.security import AuthSession, get_auth_session, get_family_record
+from backend.security import AuthSession, get_family_record
+from backend.services.authorization import Capability, require_capabilities
 
 router = APIRouter(prefix='/subjects', tags=['subjects'])
 
@@ -13,7 +14,7 @@ router = APIRouter(prefix='/subjects', tags=['subjects'])
 @router.get('', response_model=list[SubjectRead])
 async def list_subjects(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view subjects')),
 ) -> list[Subject]:
     result = await db.execute(select(Subject).where(Subject.family_id == auth.family_id).order_by(Subject.name))
     return list(result.scalars().all())
@@ -23,7 +24,7 @@ async def list_subjects(
 async def create_subject(
     payload: SubjectCreate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage subjects')),
 ) -> Subject:
     existing = await db.execute(
         select(Subject).where(Subject.family_id == auth.family_id, Subject.name == payload.name.strip())
@@ -42,7 +43,7 @@ async def create_subject(
 async def get_subject(
     subject_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view subjects')),
 ) -> Subject:
     subject = await get_family_record(db, Subject, subject_id, auth.family_id)
     if not subject:
@@ -55,7 +56,7 @@ async def update_subject(
     subject_id: int,
     payload: SubjectUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage subjects')),
 ) -> Subject:
     subject = await get_family_record(db, Subject, subject_id, auth.family_id)
     if not subject:
@@ -82,7 +83,7 @@ async def update_subject(
 async def delete_subject(
     subject_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage subjects')),
 ) -> None:
     subject = await get_family_record(db, Subject, subject_id, auth.family_id)
     if not subject:

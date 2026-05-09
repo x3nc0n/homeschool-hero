@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import type { FamilyRole } from '@/types/api'
 import { AppShell } from '@/components/layout/AppShell'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import { CapabilitiesProvider } from '@/context/CapabilitiesContext'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { AcceptInvitationPage } from '@/pages/AcceptInvitationPage'
 import { AssignmentsPage } from '@/pages/AssignmentsPage'
@@ -118,12 +119,14 @@ function AcceptInvitationRoute() {
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route path="/login" element={<LoginRoute />} />
-        <Route path="/setup" element={<SetupRoute />} />
-        <Route path="/accept-invite/:invitationId" element={<AcceptInvitationRoute />} />
-        <Route path="*" element={<ProtectedRoutes />} />
-      </Routes>
+      <CapabilitiesProvider>
+        <Routes>
+          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/setup" element={<SetupRoute />} />
+          <Route path="/accept-invite/:invitationId" element={<AcceptInvitationRoute />} />
+          <Route path="*" element={<ProtectedRoutes />} />
+        </Routes>
+      </CapabilitiesProvider>
     </AuthProvider>
   )
 }

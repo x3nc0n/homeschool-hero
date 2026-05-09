@@ -47,6 +47,7 @@ class SessionFamily(BaseModel):
 class SessionMembership(BaseModel):
     role: str
     is_owner: bool
+    student_id: int | None = None
 
 
 class AuthSessionResponse(BaseModel):

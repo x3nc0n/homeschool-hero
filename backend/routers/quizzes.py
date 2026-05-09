@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.models import Quiz, QuizAttempt, Student, Subject
 from backend.schemas.quizzes import QuizAttemptCreate, QuizAttemptRead, QuizCreate, QuizRead, QuizUpdate
-from backend.security import AuthSession, get_auth_session, get_family_record
+from backend.security import AuthSession, get_family_record
+from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
 
 router = APIRouter(prefix='/quizzes', tags=['quizzes'])
 
@@ -21,7 +22,7 @@ def _normalize_answer(value: Any) -> Any:
 @router.get('', response_model=list[QuizRead])
 async def list_quizzes(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view quizzes')),
 ) -> list[Quiz]:
     quizzes = (
         await db.execute(select(Quiz).where(Quiz.family_id == auth.family_id).order_by(Quiz.created_at.desc()))
@@ -33,7 +34,7 @@ async def list_quizzes(
 async def create_quiz(
     payload: QuizCreate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage quizzes')),
 ) -> Quiz:
     subject = await get_family_record(db, Subject, payload.subject_id, auth.family_id)
     if not subject:
@@ -54,7 +55,7 @@ async def create_quiz(
 async def get_quiz(
     quiz_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view quizzes')),
 ) -> Quiz:
     quiz = await get_family_record(db, Quiz, quiz_id, auth.family_id)
     if not quiz:
@@ -67,7 +68,7 @@ async def update_quiz(
     quiz_id: int,
     payload: QuizUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage quizzes')),
 ) -> Quiz:
     quiz = await get_family_record(db, Quiz, quiz_id, auth.family_id)
     if not quiz:
@@ -87,7 +88,7 @@ async def update_quiz(
 async def delete_quiz(
     quiz_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage quizzes')),
 ) -> None:
     quiz = await get_family_record(db, Quiz, quiz_id, auth.family_id)
     if not quiz:
@@ -101,7 +102,7 @@ async def take_quiz(
     quiz_id: int,
     payload: QuizAttemptCreate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='submit quiz attempts')),
 ) -> QuizAttempt:
     quiz = await get_family_record(db, Quiz, quiz_id, auth.family_id)
     if not quiz:
@@ -141,14 +142,13 @@ async def take_quiz(
 async def list_attempts(
     quiz_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view quiz attempts')),
 ) -> list[QuizAttempt]:
     quiz = await get_family_record(db, Quiz, quiz_id, auth.family_id)
     if not quiz:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Quiz not found')
-    attempts = (
-        await db.execute(
-            select(QuizAttempt).where(QuizAttempt.family_id == auth.family_id, QuizAttempt.quiz_id == quiz_id)
-        )
-    ).scalars().all()
+    stmt = select(QuizAttempt).where(QuizAttempt.family_id == auth.family_id, QuizAttempt.quiz_id == quiz_id)
+    if auth.role == 'student_viewer':
+        stmt = stmt.where(QuizAttempt.student_id == get_student_scope_id(auth))
+    attempts = (await db.execute(stmt)).scalars().all()
     return list(attempts)

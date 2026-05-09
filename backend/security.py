@@ -26,6 +26,7 @@ class AuthSession:
     role: str
     is_owner: bool
     family_name: str
+    student_id: int | None = None
 
 
 def normalize_email(email: str) -> str:
@@ -92,6 +93,7 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
         role=membership.role.value,
         is_owner=membership.is_owner,
         family_name=family.name,
+        student_id=membership.student_id,
     )
 
 

@@ -13,6 +13,12 @@ AUTH = {
     'me': f'{API_PREFIX}/auth/me',
 }
 
+INVITATIONS = {
+    'collection': f'{API_PREFIX}/invitations',
+    'accept': f'{API_PREFIX}/invitations/{{invitation_id}}/accept',
+    'revoke': f'{API_PREFIX}/invitations/{{invitation_id}}/revoke',
+}
+
 STUDENTS = {
     'collection': f'{API_PREFIX}/students',
     'detail': f'{API_PREFIX}/students/{{student_id}}',

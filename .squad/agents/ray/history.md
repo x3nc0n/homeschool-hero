@@ -2,6 +2,7 @@
 
 ## Learnings
 
+- 2026-05-08 — Added capability-based RBAC with student-linked memberships/invitations so student viewers are scoped to one student, and invitation delivery now falls back to copyable links when SMTP is unavailable.
 - Project: homeschool-hero — open-source homeschool platform for families
 - User: John
 - Core backend concerns: file upload/storage, OCR processing, AI-assisted grading, grade tracking DB

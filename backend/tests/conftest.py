@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from tests.contracts import (
     ASSIGNMENTS,
@@ -52,7 +52,6 @@ def _set_test_environment() -> None:
     os.environ['BOOTSTRAP_FAMILY_NAME'] = 'Test Family'
     os.environ['BOOTSTRAP_TIMEZONE'] = 'UTC'
     os.environ['BOOTSTRAP_GRADING_SCALE'] = 'letter'
-    os.environ['SECRET_KEY'] = 'test-secret-key-for-pytest'
     os.environ['FAMILY_PASSWORD'] = 'legacy-password'
     os.environ['CONFIDENCE_THRESHOLD'] = '0.8'
     os.environ['UPLOAD_DIR'] = str(UPLOADS_DIR.resolve())
@@ -148,6 +147,13 @@ async def secondary_client(app):
 
 
 @pytest_asyncio.fixture
+async def tertiary_client(app):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+        yield client
+
+
+@pytest_asyncio.fixture
 async def authorized_client(async_client: AsyncClient):
     response = await async_client.post(AUTH['register'], json=bootstrap_payload())
     assert response.status_code == 201, response.text
@@ -160,28 +166,64 @@ async def create_family_user(database_schema):
     models_module = _import_optional_module('backend.models')
     security_module = _import_optional_module('backend.security')
 
-    async def _create(*, family_name: str, email: str, password: str, display_name: str = 'Secondary User'):
+    async def _create(
+        *,
+        family_name: str,
+        email: str,
+        password: str,
+        display_name: str = 'Secondary User',
+        role: str = 'parent',
+        family_id: int | None = None,
+        student_id: int | None = None,
+        student_name: str | None = None,
+        is_owner: bool = False,
+    ):
         async with database_module.AsyncSessionLocal() as session:
-            family = models_module.Family(name=family_name, settings={'timezone': 'UTC', 'grading_scale': 'letter'})
+            family = None
+            if family_id is None:
+                family = models_module.Family(name=family_name, settings={'timezone': 'UTC', 'grading_scale': 'letter'})
+                session.add(family)
+                await session.flush()
+                session.add(models_module.FamilySettings(family=family, timezone='UTC', grading_scale='letter'))
+            else:
+                family = await session.get(models_module.Family, family_id)
+                if family is None:
+                    raise ValueError('family_id does not exist')
+
+            if student_name and student_id is None:
+                student = models_module.Student(family_id=family.id, name=student_name)
+                session.add(student)
+                await session.flush()
+                student_id = student.id
+
             user = models_module.User(
                 email=email,
                 display_name=display_name,
                 password_hash=security_module.hash_password(password),
                 is_active=True,
             )
+            session.add(user)
+            await session.flush()
+
             now = datetime.now(timezone.utc)
             membership = models_module.FamilyMembership(
-                user=user,
-                family=family,
-                role=models_module.FamilyRole.parent,
-                is_owner=True,
+                user_id=user.id,
+                family_id=family.id,
+                role=models_module.FamilyRole(role),
+                is_owner=is_owner,
+                student_id=student_id,
                 invited_at=now,
                 accepted_at=now,
             )
-            family_settings = models_module.FamilySettings(family=family, timezone='UTC', grading_scale='letter')
-            session.add_all([family, user, membership, family_settings])
+            session.add(membership)
             await session.commit()
-            return {'family_id': family.id, 'user_id': user.id, 'email': user.email, 'password': password}
+            return {
+                'family_id': family.id,
+                'user_id': user.id,
+                'email': user.email,
+                'password': password,
+                'student_id': student_id,
+            }
 
     return _create
 

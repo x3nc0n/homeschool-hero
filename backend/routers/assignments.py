@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.models import Assignment, AssignmentStatus, Subject
 from backend.schemas.assignments import AssignmentCreate, AssignmentRead, AssignmentStatusUpdate, AssignmentUpdate
-from backend.security import AuthSession, get_auth_session, get_family_record
+from backend.security import AuthSession, get_family_record
+from backend.services.authorization import Capability, require_capabilities
 
 router = APIRouter(prefix='/assignments', tags=['assignments'])
 
@@ -27,7 +28,7 @@ def _validate_transition(current: AssignmentStatus, nxt: AssignmentStatus) -> No
 @router.get('', response_model=list[AssignmentRead])
 async def list_assignments(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view assignments')),
 ) -> list[Assignment]:
     result = await db.execute(
         select(Assignment).where(Assignment.family_id == auth.family_id).order_by(Assignment.created_at.desc())
@@ -39,7 +40,7 @@ async def list_assignments(
 async def create_assignment(
     payload: AssignmentCreate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage assignments')),
 ) -> Assignment:
     subject = await get_family_record(db, Subject, payload.subject_id, auth.family_id)
     if not subject:
@@ -55,7 +56,7 @@ async def create_assignment(
 async def get_assignment(
     assignment_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view assignments')),
 ) -> Assignment:
     assignment = await get_family_record(db, Assignment, assignment_id, auth.family_id)
     if not assignment:
@@ -68,7 +69,7 @@ async def update_assignment(
     assignment_id: int,
     payload: AssignmentUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage assignments')),
 ) -> Assignment:
     assignment = await get_family_record(db, Assignment, assignment_id, auth.family_id)
     if not assignment:
@@ -89,7 +90,7 @@ async def update_assignment_status(
     assignment_id: int,
     payload: AssignmentStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage assignments')),
 ) -> Assignment:
     assignment = await get_family_record(db, Assignment, assignment_id, auth.family_id)
     if not assignment:
@@ -105,7 +106,7 @@ async def update_assignment_status(
 async def delete_assignment(
     assignment_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage assignments')),
 ) -> None:
     assignment = await get_family_record(db, Assignment, assignment_id, auth.family_id)
     if not assignment:

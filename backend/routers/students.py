@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.models import Student
 from backend.schemas.students import StudentCreate, StudentRead, StudentUpdate
-from backend.security import AuthSession, get_auth_session, get_family_record
+from backend.security import AuthSession, get_family_record
+from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
 
 router = APIRouter(prefix='/students', tags=['students'])
 
@@ -13,9 +14,12 @@ router = APIRouter(prefix='/students', tags=['students'])
 @router.get('', response_model=list[StudentRead])
 async def list_students(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_students, action='view students')),
 ) -> list[Student]:
-    result = await db.execute(select(Student).where(Student.family_id == auth.family_id).order_by(Student.name))
+    stmt = select(Student).where(Student.family_id == auth.family_id).order_by(Student.name)
+    if auth.role == 'student_viewer':
+        stmt = stmt.where(Student.id == get_student_scope_id(auth))
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
@@ -23,7 +27,7 @@ async def list_students(
 async def create_student(
     payload: StudentCreate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage students')),
 ) -> Student:
     existing = await db.execute(
         select(Student).where(Student.family_id == auth.family_id, Student.name == payload.name.strip())
@@ -42,11 +46,12 @@ async def create_student(
 async def get_student(
     student_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_students, action='view students')),
 ) -> Student:
     student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
+    ensure_student_scope(auth, student.id, action='view student records')
     return student
 
 
@@ -55,7 +60,7 @@ async def update_student(
     student_id: int,
     payload: StudentUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage students')),
 ) -> Student:
     student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:
@@ -81,7 +86,7 @@ async def update_student(
 async def delete_student(
     student_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage students')),
 ) -> None:
     student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:

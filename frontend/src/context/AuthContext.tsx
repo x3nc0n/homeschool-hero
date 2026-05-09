@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import type { AuthSession, RegisterPayload } from '@/types/api'
+import type { AcceptInvitationPayload, AuthSession, FamilyRole, RegisterPayload } from '@/types/api'
 import { api, ApiError } from '@/lib/api'
 
 type AuthContextValue = {
@@ -8,8 +8,17 @@ type AuthContextValue = {
   bootstrapRequired: boolean
   userName: string
   familyName: string
+  role: FamilyRole | null
+  studentId: number | null
+  canEditStudents: boolean
+  canManageCurriculum: boolean
+  canManageGrading: boolean
+  canManageInvitations: boolean
+  canUploadSubmissions: boolean
+  canReviewQueue: boolean
   login: (email: string, password: string) => Promise<void>
   register: (payload: RegisterPayload) => Promise<void>
+  acceptInvitation: (invitationId: number, payload: AcceptInvitationPayload) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -21,6 +30,10 @@ function getUserName(session: AuthSession | null) {
 
 function getFamilyName(session: AuthSession | null) {
   return session?.family.name || ''
+}
+
+function getRole(session: AuthSession | null): FamilyRole | null {
+  return session?.membership.role || null
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -56,13 +69,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void bootstrap()
   }, [])
 
-  const value = useMemo(
-    () => ({
+  const value = useMemo(() => {
+    const role = getRole(session)
+    const isParentAdmin = role === 'parent' || role === 'co-parent'
+    const isTutor = role === 'tutor'
+    return {
       isAuthenticated: Boolean(session?.authenticated),
       loading,
       bootstrapRequired,
       userName: getUserName(session),
       familyName: getFamilyName(session),
+      role,
+      studentId: session?.membership.student_id ?? null,
+      canEditStudents: isParentAdmin,
+      canManageCurriculum: isParentAdmin || isTutor,
+      canManageGrading: isParentAdmin || isTutor,
+      canManageInvitations: isParentAdmin,
+      canUploadSubmissions: isParentAdmin || isTutor,
+      canReviewQueue: isParentAdmin || isTutor,
       login: async (email: string, password: string) => {
         const nextSession = await api.login(email, password)
         setSession(nextSession)
@@ -73,14 +97,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(nextSession)
         setBootstrapRequired(false)
       },
+      acceptInvitation: async (invitationId: number, payload: AcceptInvitationPayload) => {
+        const nextSession = await api.acceptInvitation(invitationId, payload)
+        setSession(nextSession)
+        setBootstrapRequired(false)
+      },
       logout: async () => {
         await api.logout()
         setSession(null)
         setBootstrapRequired(false)
       },
-    }),
-    [bootstrapRequired, loading, session],
-  )
+    }
+  }, [bootstrapRequired, loading, session])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

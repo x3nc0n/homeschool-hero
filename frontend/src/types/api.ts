@@ -1,10 +1,27 @@
 export type AssignmentStatus = 'pending' | 'complete' | 'graded'
 export type ReviewAction = 'approve' | 'modify' | 'reject'
 export type FamilyRole = 'parent' | 'co-parent' | 'tutor' | 'student_viewer'
+export type CapabilityName = 'ai_grading' | 'email' | 'backup' | 'ocr'
 
 export interface ApiErrorPayload {
   detail?: string
   message?: string
+}
+
+export interface CapabilityStatus {
+  name: CapabilityName
+  enabled: boolean
+  configured: boolean
+  status: 'enabled' | 'disabled'
+  reason: string
+  details: Record<string, unknown>
+  checked_at: string
+}
+
+export interface CapabilitiesResponse {
+  status: 'ok' | 'degraded'
+  capabilities: Record<CapabilityName, CapabilityStatus>
+  optional_unavailable: CapabilityName[]
 }
 
 export interface User {

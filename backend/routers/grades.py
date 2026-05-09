@@ -12,7 +12,8 @@ from backend.schemas.grades import (
     GradeRead,
     GradeUpdate,
 )
-from backend.security import AuthSession, get_auth_session, get_family_record
+from backend.security import AuthSession, get_family_record
+from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
 
 router = APIRouter(prefix='/grades', tags=['grades'])
 
@@ -22,16 +23,22 @@ async def list_grades(
     student_id: int | None = Query(default=None),
     subject_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grades')),
 ) -> list[Grade]:
+    scoped_student_id = student_id
+    if auth.role == 'student_viewer':
+        scoped_student_id = get_student_scope_id(auth)
+        if student_id is not None and student_id != scoped_student_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Role 'student_viewer' is not allowed to view grades for another student.")
+
     stmt = (
         select(Grade)
         .join(Submission, Submission.id == Grade.submission_id)
         .join(Assignment, Assignment.id == Submission.assignment_id)
         .where(Grade.family_id == auth.family_id)
     )
-    if student_id:
-        stmt = stmt.where(Grade.student_id == student_id)
+    if scoped_student_id:
+        stmt = stmt.where(Grade.student_id == scoped_student_id)
     if subject_id:
         stmt = stmt.where(Assignment.subject_id == subject_id)
     stmt = stmt.order_by(Grade.created_at.desc())
@@ -43,7 +50,7 @@ async def list_grades(
 async def create_grade(
     payload: GradeCreate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='manage grades')),
 ) -> Grade:
     submission = await get_family_record(db, Submission, payload.submission_id, auth.family_id)
     if not submission:
@@ -51,6 +58,8 @@ async def create_grade(
     student = await get_family_record(db, Student, payload.student_id, auth.family_id)
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
+    if submission.student_id != payload.student_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Submission does not belong to the selected student')
 
     existing = await db.execute(
         select(Grade).where(Grade.family_id == auth.family_id, Grade.submission_id == payload.submission_id)
@@ -69,11 +78,12 @@ async def create_grade(
 async def averages_by_student(
     student_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grade averages')),
 ) -> list[GradeAverageByStudent]:
     student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
+    ensure_student_scope(auth, student.id, action='view grade averages')
     stmt = (
         select(
             Grade.student_id,
@@ -107,7 +117,7 @@ async def averages_by_student(
 async def averages_by_subject(
     subject_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grade averages')),
 ) -> list[GradeAverageBySubject]:
     subject = await get_family_record(db, Subject, subject_id, auth.family_id)
     if not subject:
@@ -128,6 +138,8 @@ async def averages_by_subject(
         .group_by(Subject.id, Subject.name, Grade.student_id, Student.name)
         .order_by(Student.name)
     )
+    if auth.role == 'student_viewer':
+        stmt = stmt.where(Grade.student_id == get_student_scope_id(auth))
     rows = (await db.execute(stmt)).all()
     return [
         GradeAverageBySubject(
@@ -146,8 +158,14 @@ async def grade_history(
     student_id: int | None = Query(default=None),
     subject_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grade history')),
 ) -> list[GradeHistoryItem]:
+    scoped_student_id = student_id
+    if auth.role == 'student_viewer':
+        scoped_student_id = get_student_scope_id(auth)
+        if student_id is not None and student_id != scoped_student_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Role 'student_viewer' is not allowed to view grade history for another student.")
+
     stmt = (
         select(
             Grade.id,
@@ -169,8 +187,8 @@ async def grade_history(
         .join(Subject, Subject.id == Assignment.subject_id)
         .where(Grade.family_id == auth.family_id)
     )
-    if student_id:
-        stmt = stmt.where(Grade.student_id == student_id)
+    if scoped_student_id:
+        stmt = stmt.where(Grade.student_id == scoped_student_id)
     if subject_id:
         stmt = stmt.where(Subject.id == subject_id)
     stmt = stmt.order_by(Grade.created_at.desc())
@@ -198,7 +216,7 @@ async def grade_history(
 @router.get('/gradebook')
 async def gradebook(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view gradebook')),
 ):
     rows = await grade_history(student_id=None, subject_id=None, db=db, auth=auth)
     return {'items': rows}
@@ -208,11 +226,12 @@ async def gradebook(
 async def get_grade(
     grade_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grades')),
 ) -> Grade:
     grade = await get_family_record(db, Grade, grade_id, auth.family_id)
     if not grade:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Grade not found')
+    ensure_student_scope(auth, grade.student_id, action='view grades')
     return grade
 
 
@@ -221,7 +240,7 @@ async def update_grade(
     grade_id: int,
     payload: GradeUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='manage grades')),
 ) -> Grade:
     grade = await get_family_record(db, Grade, grade_id, auth.family_id)
     if not grade:
@@ -237,7 +256,7 @@ async def update_grade(
 async def delete_grade(
     grade_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='manage grades')),
 ) -> None:
     grade = await get_family_record(db, Grade, grade_id, auth.family_id)
     if not grade:

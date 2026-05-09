@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+import pytest
+
+from tests.contracts import ASSIGNMENTS, AUTH, GRADES, INVITATIONS, STUDENTS, assignment_payload, bootstrap_payload, student_payload
+from tests.helpers import response_id
+
+
+@pytest.mark.asyncio
+async def test_rbac_enforces_role_permissions(authorized_client, secondary_client, create_family_user, seeded_subject, seeded_student, seeded_assignment, seeded_submission, seeded_grade):
+    me = await authorized_client.get(AUTH['me'])
+    family_id = me.json()['family']['id']
+    student_id = response_id(seeded_student)
+
+    await create_family_user(
+        family_name='Test Family',
+        family_id=family_id,
+        email='coparent@example.com',
+        password='strongpass234',
+        display_name='Co Parent',
+        role='co-parent',
+    )
+    await create_family_user(
+        family_name='Test Family',
+        family_id=family_id,
+        email='tutor@example.com',
+        password='strongpass345',
+        display_name='Tutor User',
+        role='tutor',
+    )
+    await create_family_user(
+        family_name='Test Family',
+        family_id=family_id,
+        email='viewer@example.com',
+        password='strongpass456',
+        display_name='Viewer User',
+        role='student_viewer',
+        student_id=student_id,
+    )
+    await authorized_client.post(STUDENTS['collection'], json=student_payload('Grace Hopper'))
+
+    login = await secondary_client.post(AUTH['login'], json={'email': 'tutor@example.com', 'password': 'strongpass345', 'family_id': family_id})
+    assert login.status_code == 200, login.text
+
+    tutor_assignment = await secondary_client.post(ASSIGNMENTS['collection'], json=assignment_payload(response_id(seeded_subject)))
+    assert tutor_assignment.status_code == 201, tutor_assignment.text
+
+    tutor_student = await secondary_client.post(STUDENTS['collection'], json=student_payload('Tutor Cannot Add'))
+    assert tutor_student.status_code == 403, tutor_student.text
+    assert 'manage students' in tutor_student.json()['detail']
+
+    tutor_invite = await secondary_client.post(INVITATIONS['collection'], json={'email': 'blocked@example.com', 'role': 'tutor', 'expires_in_days': 7})
+    assert tutor_invite.status_code == 403, tutor_invite.text
+    assert 'create invitations' in tutor_invite.json()['detail']
+
+    await secondary_client.post(AUTH['logout'])
+    viewer_login = await secondary_client.post(AUTH['login'], json={'email': 'viewer@example.com', 'password': 'strongpass456', 'family_id': family_id})
+    assert viewer_login.status_code == 200, viewer_login.text
+    assert viewer_login.json()['membership']['student_id'] == student_id
+
+    viewer_students = await secondary_client.get(STUDENTS['collection'])
+    assert viewer_students.status_code == 200, viewer_students.text
+    assert [item['id'] for item in viewer_students.json()] == [student_id]
+
+    other_student = await authorized_client.get(STUDENTS['collection'])
+    other_student_id = [item['id'] for item in other_student.json() if item['id'] != student_id][0]
+    forbidden_student = await secondary_client.get(STUDENTS['detail'].format(student_id=other_student_id))
+    assert forbidden_student.status_code == 403, forbidden_student.text
+
+    forbidden_upload = await secondary_client.post(
+        '/api/submissions',
+        data={'assignment_id': str(response_id(seeded_assignment)), 'student_id': str(student_id)},
+        files={'file': ('fractions.txt', b'test', 'text/plain')},
+    )
+    assert forbidden_upload.status_code == 403, forbidden_upload.text
+
+    viewer_grade = await secondary_client.get(GRADES['detail'].format(grade_id=response_id(seeded_grade)))
+    assert viewer_grade.status_code == 200, viewer_grade.text
+
+    forbidden_grade_history = await secondary_client.get(f"{GRADES['history']}?student_id={other_student_id}")
+    assert forbidden_grade_history.status_code == 403, forbidden_grade_history.text
+
+
+@pytest.mark.asyncio
+async def test_tenant_isolation_blocks_cross_family_reads_for_same_role(authorized_client, secondary_client, tertiary_client, create_family_user, seeded_subject):
+    assignment = await authorized_client.post(ASSIGNMENTS['collection'], json=assignment_payload(response_id(seeded_subject)))
+    assert assignment.status_code == 201, assignment.text
+    assignment_id = response_id(assignment.json())
+
+    parent_login = await authorized_client.get(AUTH['me'])
+    family_a_id = parent_login.json()['family']['id']
+    await create_family_user(
+        family_name='Family A',
+        family_id=family_a_id,
+        email='tutor-a@example.com',
+        password='strongpass567',
+        display_name='Tutor A',
+        role='tutor',
+    )
+
+    other_family = await create_family_user(
+        family_name='Other Family',
+        email='owner-other@example.com',
+        password='strongpass678',
+        display_name='Owner Other',
+        role='parent',
+        is_owner=True,
+    )
+    await create_family_user(
+        family_name='Other Family',
+        family_id=other_family['family_id'],
+        email='tutor-b@example.com',
+        password='strongpass789',
+        display_name='Tutor B',
+        role='tutor',
+    )
+
+    login = await tertiary_client.post(AUTH['login'], json={'email': 'tutor-b@example.com', 'password': 'strongpass789', 'family_id': other_family['family_id']})
+    assert login.status_code == 200, login.text
+
+    detail = await tertiary_client.get(ASSIGNMENTS['detail'].format(assignment_id=assignment_id))
+    assert detail.status_code == 404, detail.text

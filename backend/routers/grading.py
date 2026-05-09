@@ -9,7 +9,8 @@ from sqlalchemy.orm import selectinload
 
 from backend.database import get_db
 from backend.models import Grade, GradedBy, GradingJob, GradingJobStatus, Submission
-from backend.security import AuthSession, get_auth_session
+from backend.security import AuthSession
+from backend.services.authorization import Capability, require_capabilities
 
 router = APIRouter(prefix='/grading', tags=['grading'])
 
@@ -117,7 +118,7 @@ class ReviewDecisionPayload(BaseModel):
 @router.get('/review-queue')
 async def review_queue(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='review grading jobs')),
 ):
     jobs = (
         await db.execute(
@@ -138,7 +139,7 @@ async def submit_review(
     job_id: int,
     payload: ReviewDecisionPayload,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='review grading jobs')),
 ):
     job = await _load_job(job_id, auth.family_id, db)
 
@@ -172,7 +173,7 @@ async def approve_review(
     job_id: int,
     payload: ReviewApprovePayload,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='review grading jobs')),
 ):
     job = await _load_job(job_id, auth.family_id, db)
     await _upsert_grade(
@@ -195,7 +196,7 @@ async def reject_review(
     job_id: int,
     payload: ReviewRejectPayload,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(get_auth_session),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='review grading jobs')),
 ):
     job = await _load_job(job_id, auth.family_id, db)
     job.status = GradingJobStatus.queued
