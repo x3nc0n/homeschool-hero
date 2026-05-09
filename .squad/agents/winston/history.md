@@ -23,3 +23,28 @@
 - 33 tests passing: auth, CRUD, submissions, quizzes, review queue flows ✓
 - All tests runnable before external dependencies (Postgres, Tesseract, Ollama) deployed
 - Ready for phase 2 integration (tasks 23-24) and CI/CD integration
+
+### Phase 3 Task DX-04 Completion (2026-05-08T22:48:51Z)
+- CI/CD quality gates fully implemented: PR checks for code, migrations, frontend, container, secrets
+- Backend coverage floor set to 76% with automated enforcement
+- Container image security scanning with Trivy enabled; HIGH/CRITICAL failures block merge
+- Dependabot automation configured for weekly dependency updates
+- CodeQL analysis runs on PRs and weekly; all security checks automated
+- Release automation publishes `v*` tagged containers to ghcr.io with release notes
+- Alembic upgrade/downgrade verified in PostgreSQL test database
+- Backend tests: 39 passed, 2 skipped; frontend build passed; Docker build verified
+- All CI jobs integrated into main branch protection rules
+- Committed as db55ab4 ✅ COMPLETE
+
+### Phase 3 Task CP-01 Progress (2026-05-08T22:48:51Z)
+- Ray completed multi-family tenancy work: owner bootstrap, per-user email/password sessions, family-scoped models
+- Tenancy isolation enforced at router level; tenant-scoped filters in every API
+- 41 tests passing (includes new tenancy isolation tests); 2 skipped
+- Alembic migration: creates default family + owner account from legacy FAMILY_PASSWORD
+- Frontend auth flows integrated with new per-user login
+- Committed as 02b59df ✅ COMPLETE
+
+### Team Governance Update (2026-05-08T22:48:51Z)
+- User directive: OIDC + Microsoft Entra ID + SAML 2.0 authentication required
+- John will integrate Entra ID; team to capture as future RBAC/SSO workstream
+- All inbox decisions consolidated and merged into active registry
