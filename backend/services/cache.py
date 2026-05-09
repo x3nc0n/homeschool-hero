@@ -13,6 +13,10 @@ from fastapi import Request
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_log_value(value: str) -> str:
+    return value.replace('\n', '\\n').replace('\r', '\\r')
+
+
 @dataclass(slots=True)
 class CacheEntry:
     key: str
@@ -51,10 +55,10 @@ class MemoryTTLCache:
         now = self._now()
         entry = self._entries.get(key)
         if entry is not None and entry.expires_at > now:
-            logger.info('cache_hit key=%s', key)
+            logger.info('cache_hit key=%s', _sanitize_log_value(key))
             return entry
 
-        logger.info('cache_miss key=%s', key)
+        logger.info('cache_miss key=%s', _sanitize_log_value(key))
         value = await factory()
         created_at = self._now()
         entry = CacheEntry(
@@ -71,7 +75,7 @@ class MemoryTTLCache:
         keys = [key for key in self._entries if key.startswith(prefix)]
         for key in keys:
             self._entries.pop(key, None)
-        logger.info('cache_invalidate prefix=%s count=%s', prefix, len(keys))
+        logger.info('cache_invalidate prefix=%s count=%s', _sanitize_log_value(prefix), len(keys))
         return len(keys)
 
     def clear(self) -> None:

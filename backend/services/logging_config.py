@@ -135,9 +135,10 @@ def log_action(
     details: dict[str, Any] | None = None,
     exc_info: Any = None,
 ) -> None:
+    sanitized_message = message.replace('\n', '\\n').replace('\r', '\\r')
     logger.log(
         level,
-        message,
+        sanitized_message,
         extra={
             'correlation_id': correlation_id,
             'user_id': user_id,

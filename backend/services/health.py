@@ -63,13 +63,14 @@ async def check_database_health() -> dict[str, Any]:
         async with engine.connect() as connection:
             await connection.execute(text('SELECT 1'))
     except Exception as exc:
+        logger.error('Database health check failed: %s', exc)
         return _service_payload(
             'database',
             'Database',
             status='unhealthy',
             required=True,
             configured=True,
-            message=f'Database query failed: {exc}',
+            message='Database query failed.',
             response_time_ms=(perf_counter() - started) * 1000,
             details={},
         )
@@ -120,13 +121,14 @@ def _check_cache_health_sync(config: Settings = settings) -> dict[str, Any]:
         finally:
             sock.close()
     except Exception as exc:
+        logger.error('Redis health check failed: %s', exc)
         return _service_payload(
             'cache',
             'Redis / cache',
             status='degraded',
             required=False,
             configured=True,
-            message=f'Redis is unreachable: {exc}',
+            message='Redis is unreachable.',
             response_time_ms=(perf_counter() - started) * 1000,
             details={'host': host, 'port': port},
         )

@@ -1,7 +1,7 @@
 # Homeschool Hero
 
 [![CI](https://github.com/x3nc0n/homeschool-hero/actions/workflows/ci.yml/badge.svg)](https://github.com/x3nc0n/homeschool-hero/actions/workflows/ci.yml)
-[![Security](https://github.com/x3nc0n/homeschool-hero/actions/workflows/security.yml/badge.svg)](https://github.com/x3nc0n/homeschool-hero/actions/workflows/security.yml)
+[![Security](https://github.com/x3nc0n/homeschool-hero/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/x3nc0n/homeschool-hero/actions/workflows/security.yml)
 [![Container Image](https://img.shields.io/badge/container-ghcr.io%2Fx3nc0n%2Fhomeschool--hero-2496ED?logo=docker&logoColor=white)](https://github.com/x3nc0n/homeschool-hero/pkgs/container/homeschool-hero)
 
 Homeschool Hero is a self-hosted homeschool platform for roster management, curriculum planning, assignments, attendance, grading, compliance, reporting, and family administration.
@@ -23,6 +23,15 @@ cd homeschool-hero
 docker compose up --build
 # Open http://localhost:8000
 ```
+
+> **Tip:** Demo mode (`DEMO_MODE=true` in `.env.example`) seeds sample data on first
+> startup only when the database is empty. If you see stale data from a previous run,
+> tear down the Docker volumes first:
+>
+> ```bash
+> docker compose down -v
+> docker compose up --build
+> ```
 
 The default stack starts:
 

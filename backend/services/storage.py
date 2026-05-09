@@ -104,8 +104,10 @@ def store_submission_file(
         submission_id=submission_id,
         file_name=sanitized_name,
     )
-    upload_root_path = Path(upload_root)
-    destination = upload_root_path / relative_path
+    upload_root_path = Path(upload_root).resolve()
+    destination = (upload_root_path / relative_path).resolve()
+    if not str(destination).startswith(str(upload_root_path)):
+        raise ValueError('Path traversal detected')
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(contents)
     image_width, image_height, page_count = extract_file_metadata(content_type, contents)

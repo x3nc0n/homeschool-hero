@@ -105,7 +105,8 @@ export function FileUpload({
     if (previewUrl) URL.revokeObjectURL(previewUrl)
     setFile(picked)
     setError('')
-    setPreviewUrl(URL.createObjectURL(picked))
+    const objectUrl = URL.createObjectURL(picked)
+    setPreviewUrl(objectUrl.startsWith('blob:') ? objectUrl : '')
   }
 
   const handleSubmit = async () => {
@@ -272,7 +273,7 @@ export function FileUpload({
                 {isImage ? (
                   <img alt="Submission preview" src={previewUrl} className="max-h-56 rounded-md border object-contain" />
                 ) : isPdf ? (
-                  <iframe title="PDF preview" src={previewUrl} className="h-64 w-full rounded-md border" />
+                  <iframe title="PDF preview" src={previewUrl} sandbox="" className="h-64 w-full rounded-md border" />
                 ) : (
                   <p className="text-xs text-muted-foreground">Preview is unavailable for this file type, but the upload is supported.</p>
                 )}
