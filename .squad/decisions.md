@@ -164,6 +164,12 @@
 - **Decision:** Standardize example secrets on explicit allowlisted placeholder values (for example `change-me-in-production`) and require `docker build --load` in CI jobs that build with Buildx and then hand the image to local-daemon tools such as Trivy.
 - **Impact:** Secret scan and container scan stay aligned with policy intent, and future CI edits should preserve placeholder-safe sample values plus local image loading whenever downstream steps expect `docker images` visibility.
 
+### Ray Azure Scaffold Decision (2026-05-09)
+- **Author:** Ray
+- **Context:** The Azure architecture doc labels the database subnet as a PostgreSQL private-endpoint subnet, but Azure Database for PostgreSQL Flexible Server private access is implemented through delegated subnet + private DNS wiring rather than a standalone private endpoint resource.
+- **Decision:** In the initial `Spaidoso/homeschool-hero-azure` scaffold, model PostgreSQL private access with a delegated `db` subnet and the PostgreSQL private DNS zone, while keeping the reusable private-endpoint module for Blob, Key Vault, Redis, Azure OpenAI, and Document Intelligence.
+- **Impact:** The scaffold stays aligned with the architecture's private-networking intent while remaining compatible with the supported Azure Flexible Server deployment model and allowing `az bicep build` validation to pass across the repo.
+
 ## Governance
 
 - All meaningful changes require team consensus

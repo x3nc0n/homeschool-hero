@@ -66,3 +66,11 @@
 - **Admin Guide:** Created `docs/admin-guide.md` covering deployment, Docker Compose setup, security hardening, CI/CD operations, database management, troubleshooting. Linked from README. 2400+ words with runbooks.
 - **Decisions:** Merged 1 inbox decision (Ray CI Fixes) documenting placeholder standardization + Buildx/load pattern.
 - **Impact:** Main branch CI passing; new admin onboarding path established; team has centralized operations reference.
+- 2026-05-09T15:39:42.704-05:00 — Scaffolded the separate Spaidoso/homeschool-hero-azure IaC repo with full Bicep/workflow/script/docs structure and validated every Bicep entrypoint with az bicep build, keeping the Azure scaffold deployable from day one.
+
+### CI Fix & Azure Scaffold (2026-05-09T15:38–15:39)
+- **CI Polyglot Fix:** Upgraded CodeQL v3→v4, fixed Buildx `--load` for Trivy image availability, standardized `.dockerignore`/`.trivyignores` consistency. 210 backend tests pass; CI reaches real Trivy policy gate. Commit 6889c31.
+- **Azure Scaffold:** Cloned `Spaidoso/homeschool-hero-azure`, created 30-file Bicep module structure, CI/CD workflows, environment configs, deployment scripts, comprehensive docs. PostgreSQL private access modeled with delegated `db` subnet + private DNS zone (not standalone private endpoint). Commit 809f38f pushed to Azure repo.
+- **Decisions:** Merged Ray Azure Scaffold decision — database subnet handling aligned with supported Azure Flexible Server private access model.
+- **Pattern:** All migrations require `ROLLBACK_NOTES` string-literal; SSL contexts set `context.minimum_version = ssl.TLSv1_2`; example secrets on allowlisted placeholders.
+
