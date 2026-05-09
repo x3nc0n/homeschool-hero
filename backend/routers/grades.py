@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import Float, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
-from backend.models import Assignment, Grade, Student, Subject, Submission
+from backend.models import Assignment, AuditAction, Grade, Student, Subject, Submission
 from backend.schemas.grades import (
     GradeAverageByStudent,
     GradeAverageBySubject,
@@ -13,9 +13,24 @@ from backend.schemas.grades import (
     GradeUpdate,
 )
 from backend.security import AuthSession, get_family_record
+from backend.services.audit import log_event
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
 
 router = APIRouter(prefix='/grades', tags=['grades'])
+
+
+def _grade_snapshot(grade: Grade) -> dict[str, object | None]:
+    return {
+        'id': grade.id,
+        'submission_id': grade.submission_id,
+        'student_id': grade.student_id,
+        'score': grade.score,
+        'max_score': grade.max_score,
+        'letter_grade': grade.letter_grade,
+        'notes': grade.notes,
+        'graded_by': grade.graded_by.value,
+        'ai_confidence': grade.ai_confidence,
+    }
 
 
 @router.get('', response_model=list[GradeRead])
@@ -49,6 +64,7 @@ async def list_grades(
 @router.post('', response_model=GradeRead, status_code=status.HTTP_201_CREATED)
 async def create_grade(
     payload: GradeCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='manage grades')),
 ) -> Grade:
@@ -69,6 +85,18 @@ async def create_grade(
 
     grade = Grade(family_id=auth.family_id, **payload.model_dump())
     db.add(grade)
+    await db.flush()
+    await log_event(
+        db,
+        action=AuditAction.grade_create,
+        actor=auth,
+        family_id=auth.family_id,
+        target_type='grade',
+        target_id=grade.id,
+        before=None,
+        after=_grade_snapshot(grade),
+        request=request,
+    )
     await db.commit()
     await db.refresh(grade)
     return grade
@@ -239,14 +267,28 @@ async def get_grade(
 async def update_grade(
     grade_id: int,
     payload: GradeUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='manage grades')),
 ) -> Grade:
     grade = await get_family_record(db, Grade, grade_id, auth.family_id)
     if not grade:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Grade not found')
+    before_snapshot = _grade_snapshot(grade)
     for key, value in payload.model_dump().items():
         setattr(grade, key, value)
+    await db.flush()
+    await log_event(
+        db,
+        action=AuditAction.grade_update,
+        actor=auth,
+        family_id=auth.family_id,
+        target_type='grade',
+        target_id=grade.id,
+        before=before_snapshot,
+        after=_grade_snapshot(grade),
+        request=request,
+    )
     await db.commit()
     await db.refresh(grade)
     return grade

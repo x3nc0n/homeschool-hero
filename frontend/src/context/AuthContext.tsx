@@ -14,6 +14,7 @@ type AuthContextValue = {
   canManageCurriculum: boolean
   canManageGrading: boolean
   canManageInvitations: boolean
+  canViewAuditLog: boolean
   canUploadSubmissions: boolean
   canReviewQueue: boolean
   login: (email: string, password: string) => Promise<void>
@@ -85,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       canManageCurriculum: isParentAdmin || isTutor,
       canManageGrading: isParentAdmin || isTutor,
       canManageInvitations: isParentAdmin,
+      canViewAuditLog: isParentAdmin,
       canUploadSubmissions: isParentAdmin || isTutor,
       canReviewQueue: isParentAdmin || isTutor,
       login: async (email: string, password: string) => {

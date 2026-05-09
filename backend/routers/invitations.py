@@ -3,18 +3,19 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import Family, FamilyMembership, FamilyRole, Invitation, Student, User
+from backend.models import AuditAction, Family, FamilyMembership, FamilyRole, Invitation, Student, User
 from backend.routers.auth import _session_response, _set_session_cookie
 from backend.schemas.auth import SessionResponse
 from backend.schemas.invitations import InvitationAccept, InvitationCreate, InvitationRead
-from backend.security import AuthSession, get_auth_session, get_family_record, hash_password, normalize_email, verify_password
+from backend.security import AuthSession, get_family_record, hash_password, normalize_email, verify_password
+from backend.services.audit import log_event
 from backend.services.authorization import Capability, require_capabilities
 from backend.services.invitations import build_invitation_link, dispatch_invitation
 
@@ -48,6 +49,17 @@ def _serialize_invitation(invitation: Invitation, *, delivery_method: str = 'lin
     )
 
 
+def _invitation_snapshot(invitation: Invitation) -> dict[str, object | None]:
+    return {
+        'id': invitation.id,
+        'email': invitation.email,
+        'role': invitation.role.value,
+        'student_id': invitation.student_id,
+        'expires_at': invitation.expires_at.isoformat() if invitation.expires_at else None,
+        'accepted_at': invitation.accepted_at.isoformat() if invitation.accepted_at else None,
+    }
+
+
 @router.get('', response_model=list[InvitationRead])
 async def list_invitations(
     db: AsyncSession = Depends(get_db),
@@ -66,6 +78,7 @@ async def list_invitations(
 @router.post('', response_model=InvitationRead, status_code=status.HTTP_201_CREATED)
 async def create_invitation(
     payload: InvitationCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.manage_invitations, action='create invitations')),
 ) -> InvitationRead:
@@ -95,6 +108,18 @@ async def create_invitation(
         expires_at=expires_at,
     )
     db.add(invitation)
+    await db.flush()
+    await log_event(
+        db,
+        action=AuditAction.invitation_create,
+        actor=auth,
+        family_id=auth.family_id,
+        target_type='invitation',
+        target_id=invitation.id,
+        before=None,
+        after=_invitation_snapshot(invitation),
+        request=request,
+    )
     await db.commit()
     await db.refresh(invitation, attribute_names=['student'])
 
@@ -113,6 +138,7 @@ async def create_invitation(
 async def accept_invitation(
     invitation_id: int,
     payload: InvitationAccept,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> SessionResponse:
@@ -191,12 +217,30 @@ async def accept_invitation(
         family_id=family.id,
         email=user.email,
         display_name=user.display_name,
+        auth_provider=user.auth_provider,
         role=membership.role.value,
         is_owner=membership.is_owner,
         family_name=family.name,
         student_id=membership.student_id,
     )
-    _set_session_cookie(response, user_id=user.id, family_id=family.id)
+    _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
+    await log_event(
+        db,
+        action=AuditAction.invitation_accept,
+        actor=user,
+        family_id=family.id,
+        target_type='invitation',
+        target_id=invitation.id,
+        before={**_invitation_snapshot(invitation), 'accepted_at': None},
+        after={
+            **_invitation_snapshot(invitation),
+            'accepted_by_user_id': user.id,
+            'membership_role': membership.role.value,
+            'membership_student_id': membership.student_id,
+        },
+        request=request,
+    )
+    await db.commit()
     return _session_response(auth, message='Invitation accepted')
 
 

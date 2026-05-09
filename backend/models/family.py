@@ -30,6 +30,7 @@ class Family(TimestampMixin, Base):
     family_settings = relationship('FamilySettings', back_populates='family', cascade='all, delete-orphan', uselist=False)
     memberships = relationship('FamilyMembership', back_populates='family', cascade='all, delete-orphan')
     invitations = relationship('Invitation', back_populates='family', cascade='all, delete-orphan')
+    audit_events = relationship('AuditEvent', back_populates='family', cascade='all, delete-orphan')
 
 
 class FamilySettings(TimestampMixin, Base):

@@ -30,11 +30,12 @@ from tests.contracts import (
     student_payload,
     subject_payload,
 )
-from tests.helpers import response_id
+from tests.helpers import response_id, sync_csrf_header
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = BACKEND_ROOT.parent
 DB_DIR = BACKEND_ROOT / '.pytest-state'
+TEST_DB_PATH = DB_DIR / f'test-{os.getpid()}.db'
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -43,10 +44,13 @@ if str(PROJECT_ROOT) not in sys.path:
 def _set_test_environment() -> None:
     DB_DIR.mkdir(exist_ok=True)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    sqlite_url = f"sqlite+aiosqlite:///{(DB_DIR / 'test.db').resolve().as_posix()}"
+    if TEST_DB_PATH.exists():
+        TEST_DB_PATH.unlink()
+    sqlite_url = f"sqlite+aiosqlite:///{TEST_DB_PATH.resolve().as_posix()}"
     os.environ['APP_ENV'] = 'test'
     os.environ['TESTING'] = '1'
     os.environ['DATABASE_URL'] = sqlite_url
+    os.environ['SECRET_KEY'] = 'test-secret-key-1234567890'
     os.environ['BOOTSTRAP_OWNER_EMAIL'] = 'owner@example.com'
     os.environ['BOOTSTRAP_OWNER_DISPLAY_NAME'] = 'Parent User'
     os.environ['BOOTSTRAP_FAMILY_NAME'] = 'Test Family'
@@ -58,6 +62,21 @@ def _set_test_environment() -> None:
 
 
 _set_test_environment()
+
+import backend.config as backend_config
+
+backend_config.settings = backend_config.Settings()
+
+
+class CSRFAwareAsyncClient(AsyncClient):
+    async def request(self, method: str, url: str, *args, **kwargs):
+        headers = dict(kwargs.pop('headers', {}) or {})
+        if method.upper() not in {'GET', 'HEAD', 'OPTIONS'}:
+            csrf_cookie = self.cookies.get(os.environ.get('CSRF_COOKIE_NAME', 'homeschool_csrf'))
+            header_keys = {key.lower() for key in headers} | {key.lower() for key in self.headers}
+            if csrf_cookie and 'x-csrf-token' not in header_keys:
+                headers['x-csrf-token'] = csrf_cookie
+        return await super().request(method, url, *args, headers=headers, **kwargs)
 
 
 def _clear_uploads_dir() -> None:
@@ -98,17 +117,18 @@ def backend_module(test_environment):
 
 
 @pytest_asyncio.fixture(scope='session')
-    db_path = DB_DIR / 'test.db'
-    if db_path.exists(): db_path.unlink()
-async def database_schema(test_environment):
+async def database_schema(test_environment, backend_module):
     database_module = _import_optional_module('backend.database')
-    _import_optional_module('backend.models.calendar')
     models_module = _import_optional_module('backend.models')
+    _import_optional_module('backend.models.calendar')
+    if TEST_DB_PATH.exists():
+        TEST_DB_PATH.unlink()
     async with database_module.engine.begin() as connection:
         await connection.run_sync(models_module.Base.metadata.create_all)
     yield
     await database_module.engine.dispose()
-    if db_path.exists(): db_path.unlink()
+    if TEST_DB_PATH.exists():
+        TEST_DB_PATH.unlink()
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -137,21 +157,21 @@ def app(backend_module, database_schema):
 @pytest_asyncio.fixture
 async def async_client(app):
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+    async with CSRFAwareAsyncClient(transport=transport, base_url='http://testserver') as client:
         yield client
 
 
 @pytest_asyncio.fixture
 async def secondary_client(app):
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+    async with CSRFAwareAsyncClient(transport=transport, base_url='http://testserver') as client:
         yield client
 
 
 @pytest_asyncio.fixture
 async def tertiary_client(app):
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+    async with CSRFAwareAsyncClient(transport=transport, base_url='http://testserver') as client:
         yield client
 
 
@@ -159,6 +179,7 @@ async def tertiary_client(app):
 async def authorized_client(async_client: AsyncClient):
     response = await async_client.post(AUTH['register'], json=bootstrap_payload())
     assert response.status_code == 201, response.text
+    sync_csrf_header(async_client)
     return async_client
 
 

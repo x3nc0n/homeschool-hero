@@ -1,5 +1,7 @@
 from backend.routers.assignments import router as assignments_router
+from backend.routers.audit import router as audit_router
 from backend.routers.auth import router as auth_router
+from backend.routers.calendar import router as calendar_router
 from backend.routers.grades import router as grades_router
 from backend.routers.grading import router as grading_router
 from backend.routers.invitations import router as invitations_router
@@ -10,7 +12,9 @@ from backend.routers.submissions import router as submissions_router
 
 __all__ = [
     'assignments_router',
+    'audit_router',
     'auth_router',
+    'calendar_router',
     'grades_router',
     'grading_router',
     'invitations_router',
