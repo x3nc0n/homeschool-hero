@@ -51,3 +51,8 @@
 - Replaced the legacy dashboard with a unified `/api/dashboard` aggregator that rolls up today’s schedule, next-7-day assignments, recent grades, attendance snapshots, pacing alerts, compliance warnings, per-student summary cards, and system health in one response with student-viewer filtering.
 - Rebuilt the frontend landing experience around that single API call: dashboard is now the home route, student profile drill-down pages were added, dashboard widgets are collapsible, refreshable, and responsive, and navigation moved to a grouped sidebar with breadcrumbs and active states.
 - Validated with `cd backend && python -m pytest -q` (`184 passed, 1 skipped`) plus `cd frontend && npm run build`.
+
+### UX-05 Mobile-responsive PWA (2026-05-09T04:19:50-05:00)
+- Added a mobile-ready PWA shell with `vite-plugin-pwa`, a checked-in manifest, generated 192/512 SVG icons, service-worker caching for the app shell/static assets/API reads, install prompting, offline-ready/update banners, and an offline status indicator.
+- Reworked the app shell for handheld use with a hamburger drawer, bottom tab navigation, larger touch targets, mobile-safe form controls, and pull-to-refresh support on dashboard, student detail, upload, and attendance views.
+- Upgraded assignment upload and attendance mobile UX with camera capture + preview flow, swipe-to-mark attendance cards on small screens, and responsive attendance card/table layouts; validated with `cd frontend && npm run build`, `cd frontend && npm run test:i18n`, and a manifest JSON validation check.

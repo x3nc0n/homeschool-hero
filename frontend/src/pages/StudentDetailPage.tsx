@@ -4,6 +4,7 @@ import { useDashboard } from '@/hooks/useDashboard'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { LoadingState } from '@/components/common/LoadingState'
+import { PullToRefresh } from '@/components/common/PullToRefresh'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -49,8 +50,9 @@ export function StudentDetailPage() {
   const attendance = dashboard.attendance_today.find((item) => item.student_id === summary.student_id)
 
   return (
-    <div className="space-y-4">
-      <Card>
+    <PullToRefresh onRefresh={reload}>
+      <div className="space-y-4">
+        <Card>
         <CardHeader>
           <div>
             <CardTitle>{summary.student_name}</CardTitle>
@@ -250,7 +252,8 @@ export function StudentDetailPage() {
             </CardContent>
           </Card>
         </div>
+        </div>
       </div>
-    </div>
+    </PullToRefresh>
   )
 }

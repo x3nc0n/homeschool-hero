@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Paperclip, ShieldCheck, UserCheck } from 'lucide-react'
 import { api } from '@/lib/api'
 import type {
@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { EmptyState } from '@/components/common/EmptyState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { LoadingState } from '@/components/common/LoadingState'
+import { PullToRefresh } from '@/components/common/PullToRefresh'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -110,6 +111,7 @@ export function AttendancePage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
+  const touchStartX = useRef<Record<number, number>>({})
 
   const selectedStudent = useMemo(
     () => students.find((student) => student.id === selectedStudentId) || null,
@@ -284,6 +286,18 @@ export function AttendancePage() {
     }
   }
 
+  const updateDailyDraft = (studentId: number, patch: Partial<DailyDraft>) => {
+    setDailyDrafts((current) => ({
+      ...current,
+      [studentId]: { ...current[studentId], ...patch },
+    }))
+  }
+
+  const applySwipeStatus = (studentId: number, status: AttendanceStatus) => {
+    updateDailyDraft(studentId, { status })
+    setStatusMessage(`Set ${students.find((student) => student.id === studentId)?.name || 'student'} to ${status}.`)
+  }
+
   if (loading) return <LoadingState message="Loading attendance…" />
   if (error) return <ErrorState message={error} onRetry={() => void load()} />
   if (!students.length) {
@@ -291,10 +305,11 @@ export function AttendancePage() {
   }
 
   return (
-    <div className="space-y-4">
-      {statusMessage ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{statusMessage}</div>
-      ) : null}
+    <PullToRefresh onRefresh={load}>
+      <div className="space-y-4">
+        {statusMessage ? (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{statusMessage}</div>
+        ) : null}
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
@@ -330,105 +345,127 @@ export function AttendancePage() {
             <CardDescription>Mark present, absent, tardy, or excused for every student on one date.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="space-y-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+              <div className="w-full space-y-2 sm:w-auto">
                 <Label>Date</Label>
                 <Input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
               </div>
-              <Button onClick={() => void saveDailyAttendance()} disabled={saving}>
+              <Button className="w-full sm:w-auto" onClick={() => void saveDailyAttendance()} disabled={saving}>
                 <UserCheck className="mr-2 h-4 w-4" />
                 Save day
               </Button>
             </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Student</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Hours</TableHead>
-                  <TableHead>Check in</TableHead>
-                  <TableHead>Check out</TableHead>
-                  <TableHead>Notes</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {students.map((student) => (
-                  <TableRow key={student.id}>
-                    <TableCell className="font-medium">{student.name}</TableCell>
-                    <TableCell>
-                      <Select
-                        value={dailyDrafts[student.id]?.status || 'present'}
-                        onValueChange={(value) =>
-                          setDailyDrafts((current) => ({
-                            ...current,
-                            [student.id]: { ...current[student.id], status: value as AttendanceStatus },
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="min-w-[130px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {statusOptions.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {status}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={dailyDrafts[student.id]?.instructional_hours || '0.00'}
-                        onChange={(event) =>
-                          setDailyDrafts((current) => ({
-                            ...current,
-                            [student.id]: { ...current[student.id], instructional_hours: event.target.value },
-                          }))
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="time"
-                        value={dailyDrafts[student.id]?.check_in_time || ''}
-                        onChange={(event) =>
-                          setDailyDrafts((current) => ({
-                            ...current,
-                            [student.id]: { ...current[student.id], check_in_time: event.target.value },
-                          }))
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="time"
-                        value={dailyDrafts[student.id]?.check_out_time || ''}
-                        onChange={(event) =>
-                          setDailyDrafts((current) => ({
-                            ...current,
-                            [student.id]: { ...current[student.id], check_out_time: event.target.value },
-                          }))
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={dailyDrafts[student.id]?.notes || ''}
-                        onChange={(event) =>
-                          setDailyDrafts((current) => ({
-                            ...current,
-                            [student.id]: { ...current[student.id], notes: event.target.value },
-                          }))
-                        }
-                        placeholder="Optional note"
-                      />
-                    </TableCell>
+            <div className="space-y-3 md:hidden">
+              {students.map((student) => {
+                const draft = dailyDrafts[student.id] || emptyDailyDraft()
+                return (
+                  <div
+                    key={student.id}
+                    className="rounded-lg border p-4"
+                    onTouchStart={(event) => {
+                      touchStartX.current[student.id] = event.changedTouches[0]?.clientX || 0
+                    }}
+                    onTouchEnd={(event) => {
+                      const deltaX = (event.changedTouches[0]?.clientX || 0) - (touchStartX.current[student.id] || 0)
+                      if (deltaX >= 60) applySwipeStatus(student.id, 'present')
+                      if (deltaX <= -60) applySwipeStatus(student.id, 'absent')
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{student.name}</p>
+                        <p className="text-xs text-muted-foreground">Swipe right for present, left for absent.</p>
+                      </div>
+                      <Badge variant={statusBadgeVariant(draft.status)}>{draft.status}</Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {statusOptions.map((status) => (
+                        <Button
+                          key={status}
+                          type="button"
+                          variant={draft.status === status ? 'default' : 'outline'}
+                          className="capitalize"
+                          onClick={() => updateDailyDraft(student.id, { status })}
+                        >
+                          {status}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="mt-3 grid gap-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label>Hours</Label>
+                          <Input value={draft.instructional_hours || '0.00'} onChange={(event) => updateDailyDraft(student.id, { instructional_hours: event.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Check in</Label>
+                          <Input type="time" value={draft.check_in_time || ''} onChange={(event) => updateDailyDraft(student.id, { check_in_time: event.target.value })} />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label>Check out</Label>
+                          <Input type="time" value={draft.check_out_time || ''} onChange={(event) => updateDailyDraft(student.id, { check_out_time: event.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Notes</Label>
+                          <Input value={draft.notes || ''} placeholder="Optional note" onChange={(event) => updateDailyDraft(student.id, { notes: event.target.value })} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Student</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Hours</TableHead>
+                    <TableHead>Check in</TableHead>
+                    <TableHead>Check out</TableHead>
+                    <TableHead>Notes</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {students.map((student) => (
+                    <TableRow key={student.id}>
+                      <TableCell className="font-medium">{student.name}</TableCell>
+                      <TableCell>
+                        <Select value={dailyDrafts[student.id]?.status || 'present'} onValueChange={(value) => updateDailyDraft(student.id, { status: value as AttendanceStatus })}>
+                          <SelectTrigger className="min-w-[130px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {statusOptions.map((status) => (
+                              <SelectItem key={status} value={status}>
+                                {status}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Input value={dailyDrafts[student.id]?.instructional_hours || '0.00'} onChange={(event) => updateDailyDraft(student.id, { instructional_hours: event.target.value })} />
+                      </TableCell>
+                      <TableCell>
+                        <Input type="time" value={dailyDrafts[student.id]?.check_in_time || ''} onChange={(event) => updateDailyDraft(student.id, { check_in_time: event.target.value })} />
+                      </TableCell>
+                      <TableCell>
+                        <Input type="time" value={dailyDrafts[student.id]?.check_out_time || ''} onChange={(event) => updateDailyDraft(student.id, { check_out_time: event.target.value })} />
+                      </TableCell>
+                      <TableCell>
+                        <Input value={dailyDrafts[student.id]?.notes || ''} onChange={(event) => updateDailyDraft(student.id, { notes: event.target.value })} placeholder="Optional note" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 
@@ -687,6 +724,7 @@ export function AttendancePage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PullToRefresh>
   )
 }

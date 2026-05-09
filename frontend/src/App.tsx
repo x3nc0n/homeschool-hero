@@ -5,6 +5,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { CapabilitiesProvider } from '@/context/CapabilitiesContext'
 import { NotificationsProvider } from '@/context/NotificationsContext'
+import { PwaProvider } from '@/context/PwaContext'
 import { api, MAINTENANCE_EVENT } from '@/lib/api'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { BackupsPage } from '@/pages/BackupsPage'
@@ -43,19 +44,20 @@ import { SubjectsPage } from '@/pages/SubjectsPage'
 import { TranscriptsPage } from '@/pages/TranscriptsPage'
 import { UploadPage } from '@/pages/UploadPage'
 import { MaintenancePage } from '@/pages/MaintenancePage'
+import { StatusPage } from '@/pages/StatusPage'
 
 function LoadingScreen() {
   return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
 }
 
-function defaultRouteForRole(_role: FamilyRole | null) {
+function defaultRouteForRole() {
   return '/'
 }
 
 function RoleRoute({ allowedRoles, element }: { allowedRoles: FamilyRole[]; element: JSX.Element }) {
   const { role } = useAuth()
   if (!role || !allowedRoles.includes(role)) {
-    return <Navigate to={defaultRouteForRole(role)} replace />
+    return <Navigate to={defaultRouteForRole()} replace />
   }
   return element
 }
@@ -111,6 +113,7 @@ function ProtectedRoutes() {
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/settings/family" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<FamilySettingsPage />} />} />
         <Route path="/settings/notifications" element={<NotificationPreferencesPage />} />
+        <Route path="/settings/status" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<StatusPage />} />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AppShell>
@@ -118,14 +121,14 @@ function ProtectedRoutes() {
 }
 
 function LoginRoute() {
-  const { isAuthenticated, loading, bootstrapRequired, role } = useAuth()
+  const { isAuthenticated, loading, bootstrapRequired } = useAuth()
 
   if (loading) {
     return <LoadingScreen />
   }
 
   if (isAuthenticated) {
-    return <Navigate to={defaultRouteForRole(role)} replace />
+    return <Navigate to={defaultRouteForRole()} replace />
   }
 
   if (bootstrapRequired) {
@@ -136,14 +139,14 @@ function LoginRoute() {
 }
 
 function SetupRoute() {
-  const { isAuthenticated, loading, bootstrapRequired, role } = useAuth()
+  const { isAuthenticated, loading, bootstrapRequired } = useAuth()
 
   if (loading) {
     return <LoadingScreen />
   }
 
   if (isAuthenticated) {
-    return <Navigate to={defaultRouteForRole(role)} replace />
+    return <Navigate to={defaultRouteForRole()} replace />
   }
 
   if (!bootstrapRequired) {
@@ -154,14 +157,14 @@ function SetupRoute() {
 }
 
 function AcceptInvitationRoute() {
-  const { isAuthenticated, loading, role } = useAuth()
+  const { isAuthenticated, loading } = useAuth()
 
   if (loading) {
     return <LoadingScreen />
   }
 
   if (isAuthenticated) {
-    return <Navigate to={defaultRouteForRole(role)} replace />
+    return <Navigate to={defaultRouteForRole()} replace />
   }
 
   return <AcceptInvitationPage />
@@ -239,9 +242,11 @@ export default function App() {
   return (
     <AuthProvider>
       <CapabilitiesProvider>
-        <NotificationsProvider>
-          <AppRoutes />
-        </NotificationsProvider>
+        <PwaProvider>
+          <NotificationsProvider>
+            <AppRoutes />
+          </NotificationsProvider>
+        </PwaProvider>
       </CapabilitiesProvider>
     </AuthProvider>
   )

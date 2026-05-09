@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Homeschool Hero icon">
+  <rect width="512" height="512" rx="128" fill="#2563eb"/>
+  <rect x="80" y="80" width="352" height="352" rx="96" fill="#1d4ed8"/>
+  <path d="M152 180c0-19.88 16.12-36 36-36h136c19.88 0 36 16.12 36 36v156c0 19.88-16.12 36-36 36H188c-19.88 0-36-16.12-36-36V180Z" fill="#eff6ff"/>
+  <path d="M256 120 326 157v86c0 50.94-28.84 97.59-70 118.46-41.16-20.87-70-67.52-70-118.46v-86l70-37Z" fill="#93c5fd"/>
+  <path d="M256 164 294 184v56c0 30.18-16.82 58.17-38 70.02-21.18-11.85-38-39.84-38-70.02v-56l38-20Z" fill="#2563eb"/>
+  <path d="M256 203v69M220 237h72" stroke="#eff6ff" stroke-linecap="round" stroke-width="20"/>
+</svg>

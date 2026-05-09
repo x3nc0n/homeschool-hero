@@ -9,6 +9,7 @@ import type { Assignment, Student, Submission, SubmissionDetail, SubmissionVersi
 import { LoadingState } from '@/components/common/LoadingState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { EmptyState } from '@/components/common/EmptyState'
+import { PullToRefresh } from '@/components/common/PullToRefresh'
 import { Progress } from '@/components/ui/progress'
 
 function formatBytes(bytes?: number) {
@@ -147,8 +148,9 @@ export function UploadPage() {
   }
 
   return (
-    <div className="space-y-4">
-      {!capabilities.ai_grading.enabled || !capabilities.ocr.enabled ? (
+    <PullToRefresh onRefresh={load}>
+      <div className="space-y-4">
+        {!capabilities.ai_grading.enabled || !capabilities.ocr.enabled ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {!capabilities.ocr.enabled
             ? 'Uploads will be stored, but OCR text extraction is currently unavailable.'
@@ -298,7 +300,8 @@ export function UploadPage() {
             )}
           </CardContent>
         </Card>
+        </div>
       </div>
-    </div>
+    </PullToRefresh>
   )
 }
