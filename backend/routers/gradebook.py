@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from datetime import timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
@@ -18,16 +20,19 @@ from backend.schemas.gradebook import (
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
 from backend.services.gradebook import (
+    build_gradebook_summary,
+    build_gradebook_trends,
     calculate_gradebook,
-    calculate_gradebook_summary,
-    calculate_gradebook_trends,
     list_grade_scales,
     list_or_build_grade_categories,
     save_grade_categories,
     save_grade_scales,
 )
+from backend.services.cache import cache_headers, get_cache, invalidate_gradebook_cache, is_not_modified
 
 router = APIRouter(prefix='/gradebook', tags=['gradebook'])
+GRADEBOOK_TTL = timedelta(seconds=30)
+GRADEBOOK_MAX_AGE = 30
 
 
 def _resolve_student_scope(auth: AuthSession, requested_student_id: int) -> int:
@@ -73,6 +78,7 @@ async def upsert_grade_categories(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     await db.commit()
+    invalidate_gradebook_cache(family_id=auth.family_id)
     return [GradeCategoryRead(**{'id': category.id, 'name': category.name, 'weight': category.weight, 'drop_lowest': category.drop_lowest or 0}) for category in categories]
 
 
@@ -95,12 +101,15 @@ async def upsert_grade_scales(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     await db.commit()
+    invalidate_gradebook_cache(family_id=auth.family_id)
     return scales
 
 
 @router.get('/{student_id}', response_model=GradebookView)
 async def get_gradebook(
     student_id: int,
+    request: Request,
+    response: Response,
     subject_id: int | None = Query(default=None, gt=0),
     grading_period_id: int | None = Query(default=None, gt=0),
     db: AsyncSession = Depends(get_db),
@@ -111,13 +120,24 @@ async def get_gradebook(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
     ensure_student_scope(auth, student.id, action='view gradebook')
     try:
-        return await calculate_gradebook(
-            db,
-            family_id=auth.family_id,
-            student_id=student.id,
-            subject_id=subject_id,
-            grading_period_id=grading_period_id,
+        cache_key = f'gradebook:{auth.family_id}:{student.id}:detail:{subject_id or "all"}:{grading_period_id or "all"}'
+        entry = await get_cache().get_or_set(
+            cache_key,
+            ttl=GRADEBOOK_TTL,
+            factory=lambda: calculate_gradebook(
+                db,
+                family_id=auth.family_id,
+                student_id=student.id,
+                subject_id=subject_id,
+                grading_period_id=grading_period_id,
+            ),
         )
+        headers = cache_headers(entry, max_age_seconds=GRADEBOOK_MAX_AGE)
+        if request is not None and is_not_modified(request, entry):
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+        if response is not None:
+            response.headers.update(headers)
+        return entry.value
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -125,18 +145,33 @@ async def get_gradebook(
 @router.get('/{student_id}/summary', response_model=GradebookSummary)
 async def get_gradebook_summary(
     student_id: int,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grade summaries')),
 ) -> dict[str, object]:
     student = await get_family_record(db, Student, _resolve_student_scope(auth, student_id), auth.family_id)
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
-    return await calculate_gradebook_summary(db, family_id=auth.family_id, student_id=student.id)
+    cache_key = f'gradebook:{auth.family_id}:{student.id}:detail:all:all'
+    entry = await get_cache().get_or_set(
+        cache_key,
+        ttl=GRADEBOOK_TTL,
+        factory=lambda: calculate_gradebook(db, family_id=auth.family_id, student_id=student.id),
+    )
+    headers = cache_headers(entry, max_age_seconds=GRADEBOOK_MAX_AGE)
+    if request is not None and is_not_modified(request, entry):
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+    if response is not None:
+        response.headers.update(headers)
+    return build_gradebook_summary(entry.value)
 
 
 @router.get('/{student_id}/trends', response_model=GradebookTrends)
 async def get_grade_trends(
     student_id: int,
+    request: Request,
+    response: Response,
     subject_id: int | None = Query(default=None, gt=0),
     grading_period_id: int | None = Query(default=None, gt=0),
     db: AsyncSession = Depends(get_db),
@@ -145,13 +180,24 @@ async def get_grade_trends(
     student = await get_family_record(db, Student, _resolve_student_scope(auth, student_id), auth.family_id)
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
-    return await calculate_gradebook_trends(
-        db,
-        family_id=auth.family_id,
-        student_id=student.id,
-        subject_id=subject_id,
-        grading_period_id=grading_period_id,
+    cache_key = f'gradebook:{auth.family_id}:{student.id}:detail:{subject_id or "all"}:{grading_period_id or "all"}'
+    entry = await get_cache().get_or_set(
+        cache_key,
+        ttl=GRADEBOOK_TTL,
+        factory=lambda: calculate_gradebook(
+            db,
+            family_id=auth.family_id,
+            student_id=student.id,
+            subject_id=subject_id,
+            grading_period_id=grading_period_id,
+        ),
     )
+    headers = cache_headers(entry, max_age_seconds=GRADEBOOK_MAX_AGE)
+    if request is not None and is_not_modified(request, entry):
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+    if response is not None:
+        response.headers.update(headers)
+    return build_gradebook_trends(entry.value)
 
 
 @router.post('/calculate', response_model=GradebookView)
@@ -163,6 +209,7 @@ async def recalculate_gradebook(
     student = await get_family_record(db, Student, _resolve_student_scope(auth, payload.student_id), auth.family_id)
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
+    invalidate_gradebook_cache(family_id=auth.family_id, student_id=student.id)
     return await calculate_gradebook(
         db,
         family_id=auth.family_id,

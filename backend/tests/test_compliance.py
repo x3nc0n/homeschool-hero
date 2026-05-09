@@ -24,6 +24,7 @@ from backend.models import (
     Student,
     Subject,
 )
+from backend.services.cache import invalidate_compliance_cache
 
 
 async def _auth_context(client) -> tuple[int, int]:
@@ -140,6 +141,7 @@ async def _add_quiz_attempt(*, family_id: int, student_id: int, subject_id: int,
             )
         )
         await session.commit()
+    invalidate_compliance_cache(family_id=family_id, student_id=student_id)
 
 
 @pytest.mark.asyncio

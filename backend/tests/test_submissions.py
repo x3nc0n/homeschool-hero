@@ -57,7 +57,10 @@ async def test_submissions_list_and_detail_return_current_submission_history(aut
 
     listing = await authorized_client.get(SUBMISSIONS['collection'])
     assert listing.status_code == 200, listing.text
-    assert [response_id(item) for item in listing.json()] == [submission_id]
+    payload = listing.json()
+    assert payload['total'] == 1
+    assert payload['page'] == 1
+    assert [response_id(item) for item in payload['items']] == [submission_id]
 
     detail = await authorized_client.get(SUBMISSIONS['detail'].format(submission_id=submission_id))
     assert detail.status_code == 200, detail.text
@@ -168,7 +171,9 @@ async def test_submissions_resubmission_preserves_version_history_and_current_fl
 
     listing = await authorized_client.get(SUBMISSIONS['collection'])
     assert listing.status_code == 200, listing.text
-    assert [item['id'] for item in listing.json()] == [resubmission['id']]
+    payload = listing.json()
+    assert payload['total'] == 1
+    assert [item['id'] for item in payload['items']] == [resubmission['id']]
 
     detail = await authorized_client.get(SUBMISSIONS['detail'].format(submission_id=first_submission['id']))
     assert detail.status_code == 200, detail.text

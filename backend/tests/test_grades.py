@@ -18,7 +18,7 @@ async def test_grades_crud_happy_path(authorized_client, seeded_submission, seed
 
     listing = await authorized_client.get(GRADES["collection"])
     assert listing.status_code == 200, listing.text
-    assert any(response_id(item) == grade_id for item in listing.json())
+    assert any(response_id(item) == grade_id for item in listing.json()["items"])
 
     detail = await authorized_client.get(GRADES["detail"].format(grade_id=grade_id))
     assert detail.status_code == 200, detail.text
@@ -46,7 +46,7 @@ async def test_grades_crud_happy_path(authorized_client, seeded_submission, seed
 async def test_grade_queries_return_history_and_averages(authorized_client, seeded_grade, seeded_student, seeded_subject):
     history = await authorized_client.get(GRADES["history"])
     assert history.status_code == 200, history.text
-    history_payload = history.json()
+    history_payload = history.json()["items"]
     assert history_payload, "expected at least one grade history row"
     assert history_payload[0]["student_id"] == response_id(seeded_student)
 

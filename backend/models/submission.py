@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin
@@ -9,6 +9,11 @@ from backend.models.base import Base, TimestampMixin
 
 class Submission(TimestampMixin, Base):
     __tablename__ = 'submissions'
+    __table_args__ = (
+        Index('ix_submissions_family_student_current_uploaded_at', 'family_id', 'student_id', 'is_current', 'uploaded_at'),
+        Index('ix_submissions_assignment_student_current', 'assignment_id', 'student_id', 'is_current'),
+        Index('ix_submissions_parent_current', 'parent_submission_id', 'is_current'),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     family_id: Mapped[int] = mapped_column(ForeignKey('families.id', ondelete='CASCADE'), nullable=False, index=True)

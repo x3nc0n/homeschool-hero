@@ -429,8 +429,10 @@ async def compute_student_statuses(
     student: Student,
     school_year: SchoolYear,
     state_code: str,
+    rules: list[ComplianceRule] | None = None,
+    subject_names: list[str] | None = None,
 ) -> list[ComplianceStatus]:
-    rules = await list_rules_for_state(db, family_id=family_id, state_code=state_code)
+    active_rules = rules if rules is not None else await list_rules_for_state(db, family_id=family_id, state_code=state_code)
     checked_at = datetime.now(UTC)
     progress = _school_year_progress(school_year)
     attendance_days, attendance_hours = await _attendance_progress(
@@ -439,11 +441,11 @@ async def compute_student_statuses(
         student_id=student.id,
         school_year=school_year,
     )
-    subject_names = await _family_subject_names(db, family_id=family_id)
+    normalized_subject_names = subject_names if subject_names is not None else await _family_subject_names(db, family_id=family_id)
     entries = await _supporting_entries(db, family_id=family_id, student_id=student.id, school_year=school_year)
 
     computations: list[ComplianceComputation] = []
-    for rule in rules:
+    for rule in active_rules:
         required_value = _decimal(rule.threshold_value)
         current_value = Decimal('0.00')
         missing_subjects: list[str] | None = None
@@ -452,7 +454,7 @@ async def compute_student_statuses(
         elif rule.rule_type == ComplianceRuleType.attendance_hours:
             current_value = attendance_hours
         elif rule.rule_type == ComplianceRuleType.subjects_required:
-            current_value, missing_subjects = _subject_coverage(rule, subject_names)
+            current_value, missing_subjects = _subject_coverage(rule, normalized_subject_names)
         elif rule.rule_type == ComplianceRuleType.assessment_required:
             current_value = await _assessment_count(
                 db,
@@ -539,6 +541,8 @@ async def get_dashboard_payload(
     students = await list_students_for_compliance(db, family_id=family_id)
     if school_year is None:
         return state_code, None, [(student, []) for student in students]
+    rules = await list_rules_for_state(db, family_id=family_id, state_code=state_code)
+    subject_names = await _family_subject_names(db, family_id=family_id)
     payload: list[tuple[Student, list[ComplianceStatus]]] = []
     for student in students:
         statuses = await compute_student_statuses(
@@ -547,6 +551,8 @@ async def get_dashboard_payload(
             student=student,
             school_year=school_year,
             state_code=state_code,
+            rules=rules,
+            subject_names=subject_names,
         )
         payload.append((student, statuses))
     await db.commit()

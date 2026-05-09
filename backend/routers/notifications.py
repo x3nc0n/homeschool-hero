@@ -22,7 +22,7 @@ router = APIRouter(prefix='/notifications', tags=['notifications'])
 async def list_notifications(
     read: bool | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(get_auth_session),
 ) -> NotificationListResponse:

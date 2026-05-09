@@ -62,6 +62,7 @@ export type ResourceType = 'file' | 'link' | 'note'
 export type LessonPlanStatus = 'planned' | 'in_progress' | 'completed' | 'skipped' | 'rescheduled'
 export type ImportEntityType = 'students' | 'subjects' | 'assignments' | 'grades' | 'attendance' | 'curriculum_packages'
 export type ImportJobStatus = 'pending' | 'validating' | 'importing' | 'complete' | 'failed'
+export type ReportCardStatus = 'draft' | 'final' | 'archived'
 
 export interface ApiErrorPayload {
   detail?: string
@@ -336,6 +337,14 @@ export interface SubmissionDetail extends SubmissionVersion {
   version_history: SubmissionVersion[]
 }
 
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
 export interface PortfolioAssignmentSummary {
   id: number
   title: string
@@ -460,6 +469,8 @@ export interface Grade {
   subject?: Subject
   assignment?: Assignment
 }
+
+export type GradeListResponse = PaginatedResponse<Grade>
 
 export type QuizQuestionType = 'multiple_choice' | 'short_answer' | 'true_false'
 
@@ -784,6 +795,8 @@ export interface GradeHistoryItem {
   notes?: string | null
 }
 
+export type GradeHistoryResponse = PaginatedResponse<GradeHistoryItem>
+
 export interface GradeScaleRange {
   letter: string
   min: number
@@ -908,6 +921,53 @@ export interface GradebookTrends {
   subject_id?: number | null
   grading_period_id?: number | null
   series: GradeTrendSeries[]
+}
+
+export interface ReportCardEntry {
+  id: number
+  report_card_id: number
+  subject_id: number
+  letter_grade?: string | null
+  percentage?: number | null
+  gpa_points?: number | null
+  attendance_summary: {
+    start_date: string
+    end_date: string
+    total_records: number
+    present: number
+    absent: number
+    tardy: number
+    excused: number
+    attendance_rate: number
+    total_hours: number
+  }
+  teacher_comments?: string | null
+  category_breakdown: Record<string, number>
+  subject?: Subject | null
+}
+
+export interface ReportCardSummary {
+  id: number
+  family_id: number
+  student_id: number
+  school_year_id: number
+  grading_period_id: number
+  generated_at: string
+  generated_by_user_id?: number | null
+  generated_by_name?: string | null
+  status: ReportCardStatus
+  notes?: string | null
+  student_name: string
+  school_year_name: string
+  grading_period_name: string
+  entry_count: number
+  gpa?: number | null
+  overall_percentage?: number | null
+}
+
+export interface ReportCard extends ReportCardSummary {
+  student?: Student | null
+  entries: ReportCardEntry[]
 }
 
 export interface DashboardActivityItem {

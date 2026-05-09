@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Enum, Float, ForeignKey, String, Text
+from sqlalchemy import Enum, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin
@@ -14,6 +14,10 @@ class GradedBy(str, enum.Enum):
 
 class Grade(TimestampMixin, Base):
     __tablename__ = 'grades'
+    __table_args__ = (
+        Index('ix_grades_family_student_created_at', 'family_id', 'student_id', 'created_at'),
+        Index('ix_grades_family_student_submission', 'family_id', 'student_id', 'submission_id'),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     family_id: Mapped[int] = mapped_column(ForeignKey('families.id', ondelete='CASCADE'), nullable=False, index=True)

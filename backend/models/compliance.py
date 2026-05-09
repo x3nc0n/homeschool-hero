@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,8 @@ class ComplianceRule(TimestampMixin, Base):
     __tablename__ = 'compliance_rules'
     __table_args__ = (
         UniqueConstraint('family_id', 'state_code', 'rule_name', name='uq_compliance_rules_family_state_name'),
+        Index('ix_compliance_rules_family_state_active', 'family_id', 'state_code', 'is_active'),
+        Index('ix_compliance_rules_state_type_active', 'state_code', 'rule_type', 'is_active'),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -67,6 +69,8 @@ class ComplianceStatus(Base):
             'rule_id',
             name='uq_compliance_statuses_family_student_year_rule',
         ),
+        Index('ix_compliance_statuses_family_status_school_year', 'family_id', 'status', 'school_year_id'),
+        Index('ix_compliance_statuses_student_status', 'student_id', 'status'),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

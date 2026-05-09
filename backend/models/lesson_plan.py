@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Index, Integer, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin
@@ -24,6 +24,16 @@ class LessonPlan(TimestampMixin, Base):
             'student_id',
             'curriculum_lesson_id',
             name='uq_lesson_plans_student_id_curriculum_lesson_id',
+        ),
+        Index('ix_lesson_plans_family_student_status_target_date', 'family_id', 'student_id', 'status', 'target_date'),
+        Index('ix_lesson_plans_family_status_target_date', 'family_id', 'status', 'target_date'),
+        Index(
+            'ix_lesson_plans_family_student_active_target_date',
+            'family_id',
+            'student_id',
+            'target_date',
+            postgresql_where=text("status NOT IN ('completed', 'skipped')"),
+            sqlite_where=text("status NOT IN ('completed', 'skipped')"),
         ),
     )
 
@@ -75,6 +85,7 @@ class PacingTarget(TimestampMixin, Base):
             'curriculum_unit_id',
             name='uq_pacing_targets_student_id_curriculum_unit_id',
         ),
+        Index('ix_pacing_targets_family_student_window', 'family_id', 'student_id', 'target_start_date', 'target_end_date'),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -91,4 +102,3 @@ class PacingTarget(TimestampMixin, Base):
 
     curriculum_unit = relationship('CurriculumUnit', back_populates='pacing_targets', lazy='selectin')
     student = relationship('Student', back_populates='pacing_targets', lazy='selectin')
-

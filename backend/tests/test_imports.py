@@ -160,9 +160,9 @@ async def test_assignment_grade_and_attendance_imports_succeed(authorized_client
     grades_response = await authorized_client.get(GRADES['collection'])
     assert grades_response.status_code == 200, grades_response.text
     grades = grades_response.json()
-    assert len(grades) == 1
-    assert grades[0]['score'] == 94
-    assert grades[0]['letter_grade'] == 'A'
+    assert grades['total'] == 1
+    assert grades['items'][0]['score'] == 94
+    assert grades['items'][0]['letter_grade'] == 'A'
 
     attendance_job = await _upload_import_job(
         authorized_client,

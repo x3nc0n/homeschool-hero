@@ -72,6 +72,28 @@ class GradeRead(BaseModel):
     updated_at: datetime
 
 
+class GradeListItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    submission_id: int
+    student_id: int
+    score: float
+    max_score: float
+    letter_grade: str | None
+    graded_by: GradedBy
+    ai_confidence: float | None
+    created_at: datetime
+
+
+class GradeListResponse(BaseModel):
+    items: list[GradeListItem]
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1)
+    total_pages: int = Field(ge=0)
+
+
 class GradeAverageByStudent(BaseModel):
     student_id: int
     student_name: str
@@ -105,3 +127,11 @@ class GradeHistoryItem(BaseModel):
     grading_period_id: int | None = None
     grading_period_name: str | None = None
     notes: str | None = None
+
+
+class GradeHistoryResponse(BaseModel):
+    items: list[GradeHistoryItem]
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1)
+    total_pages: int = Field(ge=0)

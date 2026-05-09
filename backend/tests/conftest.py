@@ -145,10 +145,12 @@ async def database_schema(test_environment, backend_module):
 async def reset_database(database_schema):
     database_module = _import_optional_module('backend.database')
     models_module = _import_optional_module('backend.models')
+    cache_module = _import_optional_module('backend.services.cache')
     async with database_module.AsyncSessionLocal() as session:
         for table in reversed(models_module.Base.metadata.sorted_tables):
             await session.execute(delete(table))
         await session.commit()
+    cache_module.get_cache().clear()
     _clear_uploads_dir()
     yield
 

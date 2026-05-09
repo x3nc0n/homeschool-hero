@@ -22,13 +22,17 @@ from backend.schemas.grades import (
     GradeAverageByStudent,
     GradeAverageBySubject,
     GradeCreate,
+    GradeHistoryResponse,
     GradeHistoryItem,
+    GradeListItem,
+    GradeListResponse,
     GradeRead,
     GradeUpdate,
 )
 from backend.security import AuthSession, get_family_record
 from backend.services.audit import log_event
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.cache import invalidate_gradebook_cache
 from backend.services.gradebook import ensure_default_grade_scale, map_percent_to_grade
 from backend.services.notifications import create_grading_complete_notifications
 
@@ -61,13 +65,15 @@ def _grade_snapshot(grade: Grade) -> dict[str, object | None]:
     }
 
 
-@router.get('', response_model=list[GradeRead])
+@router.get('', response_model=GradeListResponse)
 async def list_grades(
     student_id: int | None = Query(default=None),
     subject_id: int | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grades')),
-) -> list[Grade]:
+) -> GradeListResponse:
     scoped_student_id = student_id
     if auth.role == 'student_viewer':
         scoped_student_id = get_student_scope_id(auth)
@@ -84,9 +90,14 @@ async def list_grades(
         stmt = stmt.where(Grade.student_id == scoped_student_id)
     if subject_id:
         stmt = stmt.where(Assignment.subject_id == subject_id)
-    stmt = stmt.order_by(Grade.created_at.desc())
+    total = (
+        await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
+    ).scalar_one()
+    stmt = stmt.order_by(Grade.created_at.desc(), Grade.id.desc()).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    items = [GradeListItem.model_validate(item) for item in result.scalars().all()]
+    total_pages = (int(total or 0) + page_size - 1) // page_size if total else 0
+    return GradeListResponse(items=items, total=int(total or 0), page=page, page_size=page_size, total_pages=total_pages)
 
 
 @router.post('', response_model=GradeRead, status_code=status.HTTP_201_CREATED)
@@ -161,6 +172,7 @@ async def create_grade(
         max_score=grade.max_score,
     )
     await db.commit()
+    invalidate_gradebook_cache(family_id=auth.family_id, student_id=payload.student_id)
     await db.refresh(grade)
     return grade
 
@@ -244,7 +256,7 @@ async def averages_by_subject(
     ]
 
 
-@router.get('/history', response_model=list[GradeHistoryItem])
+@router.get('/history', response_model=GradeHistoryResponse)
 async def grade_history(
     q: str | None = Query(default=None, min_length=1, max_length=200),
     student_id: int | None = Query(default=None),
@@ -255,9 +267,11 @@ async def grade_history(
     score_max: float | None = Query(default=None, ge=0),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grade history')),
-) -> list[GradeHistoryItem]:
+) -> GradeHistoryResponse:
     scoped_student_id = student_id
     if auth.role == 'student_viewer':
         scoped_student_id = get_student_scope_id(auth)
@@ -318,9 +332,12 @@ async def grade_history(
                 + func.coalesce(Grade.notes, '')
             ).like(lowered)
         )
-    stmt = stmt.order_by(Grade.created_at.desc())
+    total = (
+        await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
+    ).scalar_one()
+    stmt = stmt.order_by(Grade.created_at.desc(), Grade.id.desc()).offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).all()
-    return [
+    items = [
         GradeHistoryItem(
             grade_id=row[0],
             student_id=row[1],
@@ -341,6 +358,8 @@ async def grade_history(
         )
         for row in rows
     ]
+    total_pages = (int(total or 0) + page_size - 1) // page_size if total else 0
+    return GradeHistoryResponse(items=items, total=int(total or 0), page=page, page_size=page_size, total_pages=total_pages)
 
 
 @router.get('/gradebook')
@@ -348,8 +367,8 @@ async def gradebook(
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view gradebook')),
 ):
-    rows = await grade_history(student_id=None, subject_id=None, db=db, auth=auth)
-    return {'items': rows}
+    history = await grade_history(student_id=None, subject_id=None, page=1, page_size=100, db=db, auth=auth)
+    return {'items': history.items}
 
 
 @router.get('/{grade_id}', response_model=GradeRead)
@@ -403,6 +422,7 @@ async def update_grade(
         request=request,
     )
     await db.commit()
+    invalidate_gradebook_cache(family_id=auth.family_id, student_id=grade.student_id)
     await db.refresh(grade)
     return grade
 
@@ -416,5 +436,7 @@ async def delete_grade(
     grade = await get_family_record(db, Grade, grade_id, auth.family_id)
     if not grade:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Grade not found')
+    student_id = grade.student_id
     await db.delete(grade)
     await db.commit()
+    invalidate_gradebook_cache(family_id=auth.family_id, student_id=student_id)

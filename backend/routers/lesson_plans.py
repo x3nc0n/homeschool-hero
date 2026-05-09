@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -42,8 +42,11 @@ from backend.schemas.lesson_plans import (
 )
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.cache import cache_headers, get_cache, invalidate_pacing_cache, is_not_modified
 
 router = APIRouter(tags=['lesson-plans'])
+PACING_TTL = timedelta(seconds=45)
+PACING_MAX_AGE = 45
 
 _finished_statuses = {LessonPlanStatus.completed, LessonPlanStatus.skipped}
 
@@ -449,6 +452,7 @@ async def create_lesson_plan(
         unit_ids={lesson.unit_id},
     )
     await db.commit()
+    invalidate_pacing_cache(family_id=auth.family_id, student_id=payload.student_id)
     return await _get_lesson_plan_or_404(db, auth.family_id, lesson_plan.id)
 
 
@@ -504,6 +508,8 @@ async def update_lesson_plan(
             unit_ids=impacted_unit_ids,
         )
     await db.commit()
+    for student_id_value in impacted_student_ids:
+        invalidate_pacing_cache(family_id=auth.family_id, student_id=student_id_value)
     return await _get_lesson_plan_or_404(db, auth.family_id, lesson_plan.id)
 
 
@@ -529,6 +535,7 @@ async def delete_lesson_plan(
         unit_ids={unit_id},
     )
     await db.commit()
+    invalidate_pacing_cache(family_id=auth.family_id, student_id=lesson_plan.student_id)
 
 
 @router.post('/lesson-plans/generate', response_model=list[LessonPlanRead], status_code=status.HTTP_201_CREATED)
@@ -684,6 +691,7 @@ async def generate_lesson_plans(
         unit_ids=set(unit_ranges),
     )
     await db.commit()
+    invalidate_pacing_cache(family_id=auth.family_id, student_id=payload.student_id)
 
     result = await db.execute(
         select(LessonPlan)
@@ -731,6 +739,8 @@ async def bulk_update_lesson_plan_status(
             unit_ids=unit_ids,
         )
     await db.commit()
+    for student_id_value in impacted_units:
+        invalidate_pacing_cache(family_id=auth.family_id, student_id=student_id_value)
     return lesson_plans
 
 
@@ -870,6 +880,7 @@ async def create_pacing_target(
         unit_ids={payload.curriculum_unit_id},
     )
     await db.commit()
+    invalidate_pacing_cache(family_id=auth.family_id, student_id=payload.student_id)
     return await _get_pacing_target_or_404(db, auth.family_id, pacing_target.id)
 
 
@@ -892,6 +903,7 @@ async def update_pacing_target(
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage pacing targets')),
 ) -> PacingTarget:
     pacing_target = await _get_pacing_target_or_404(db, auth.family_id, pacing_target_id)
+    previous_student_id = pacing_target.student_id
     await _validate_pacing_target_payload(
         db,
         family_id=auth.family_id,
@@ -916,6 +928,9 @@ async def update_pacing_target(
         unit_ids={payload.curriculum_unit_id},
     )
     await db.commit()
+    invalidate_pacing_cache(family_id=auth.family_id, student_id=payload.student_id)
+    if previous_student_id != payload.student_id:
+        invalidate_pacing_cache(family_id=auth.family_id, student_id=previous_student_id)
     return await _get_pacing_target_or_404(db, auth.family_id, pacing_target.id)
 
 
@@ -926,36 +941,58 @@ async def delete_pacing_target(
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage pacing targets')),
 ) -> None:
     pacing_target = await _get_pacing_target_or_404(db, auth.family_id, pacing_target_id)
+    student_id = pacing_target.student_id
     await db.delete(pacing_target)
     await db.commit()
+    invalidate_pacing_cache(family_id=auth.family_id, student_id=student_id)
 
 
 @router.get('/pacing/{student_id}', response_model=PacingStatusSummaryRead)
 async def get_pacing_status(
     student_id: int,
+    request: Request,
+    response: Response,
     subject_id: int | None = Query(default=None, gt=0),
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view pacing status')),
 ) -> PacingStatusSummaryRead:
     await _get_student_or_404(db, student_id, auth.family_id)
     ensure_student_scope(auth, student_id, action='view pacing status')
+    entry = await get_cache().get_or_set(
+        f'pacing:{auth.family_id}:{student_id}:status:{subject_id or "all"}',
+        ttl=PACING_TTL,
+        factory=lambda: _build_pacing_status_payload(db, family_id=auth.family_id, student_id=student_id, subject_id=subject_id),
+    )
+    headers = cache_headers(entry, max_age_seconds=PACING_MAX_AGE)
+    if request is not None and is_not_modified(request, entry):
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+    if response is not None:
+        response.headers.update(headers)
+    return PacingStatusSummaryRead.model_validate(entry.value)
 
+
+async def _build_pacing_status_payload(
+    db: AsyncSession,
+    *,
+    family_id: int,
+    student_id: int,
+    subject_id: int | None,
+) -> dict[str, object]:
     stmt = (
         select(PacingTarget)
         .options(*_pacing_target_options())
         .join(CurriculumUnit, CurriculumUnit.id == PacingTarget.curriculum_unit_id)
         .join(CurriculumPackage, CurriculumPackage.id == CurriculumUnit.package_id)
         .where(
-            PacingTarget.family_id == auth.family_id,
+            PacingTarget.family_id == family_id,
             PacingTarget.student_id == student_id,
         )
     )
     if subject_id is not None:
         stmt = stmt.where(CurriculumPackage.subject_id == subject_id)
     pacing_targets = (await db.execute(stmt.order_by(PacingTarget.target_start_date, PacingTarget.id))).scalars().all()
-
     if not pacing_targets:
-        return PacingStatusSummaryRead(student_id=student_id, subject_id=subject_id, items=[])
+        return PacingStatusSummaryRead(student_id=student_id, subject_id=subject_id, items=[]).model_dump(mode='json')
 
     unit_ids = {target.curriculum_unit_id for target in pacing_targets}
     lesson_plans = (
@@ -964,7 +1001,7 @@ async def get_pacing_status(
             .options(selectinload(LessonPlan.curriculum_lesson).selectinload(CurriculumLesson.unit))
             .join(CurriculumLesson, CurriculumLesson.id == LessonPlan.curriculum_lesson_id)
             .where(
-                LessonPlan.family_id == auth.family_id,
+                LessonPlan.family_id == family_id,
                 LessonPlan.student_id == student_id,
                 CurriculumLesson.unit_id.in_(unit_ids),
             )
@@ -976,4 +1013,4 @@ async def get_pacing_status(
 
     today = datetime.now(UTC).date()
     items = [_build_pacing_status(pacing_target, plans_by_unit.get(pacing_target.curriculum_unit_id, []), today) for pacing_target in pacing_targets]
-    return PacingStatusSummaryRead(student_id=student_id, subject_id=subject_id, items=items)
+    return PacingStatusSummaryRead(student_id=student_id, subject_id=subject_id, items=items).model_dump(mode='json')

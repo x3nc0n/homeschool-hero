@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, Enum, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin
@@ -19,6 +19,17 @@ class NotificationType(str, enum.Enum):
 
 class Notification(TimestampMixin, Base):
     __tablename__ = 'notifications'
+    __table_args__ = (
+        Index('ix_notifications_user_read_created_at', 'user_id', 'read', 'created_at'),
+        Index('ix_notifications_family_user_read', 'family_id', 'user_id', 'read'),
+        Index(
+            'ix_notifications_unread_created_at',
+            'user_id',
+            'created_at',
+            postgresql_where=text('read = false'),
+            sqlite_where=text('read = 0'),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     family_id: Mapped[int] = mapped_column(ForeignKey('families.id', ondelete='CASCADE'), nullable=False, index=True)

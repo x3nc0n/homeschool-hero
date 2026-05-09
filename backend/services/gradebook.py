@@ -507,6 +507,10 @@ async def calculate_gradebook_trends(
         subject_id=subject_id,
         grading_period_id=grading_period_id,
     )
+    return build_gradebook_trends(gradebook)
+
+
+def build_gradebook_trends(gradebook: dict[str, Any]) -> dict[str, Any]:
     trends = []
     for subject in gradebook['subjects']:
         points = []
@@ -534,8 +538,8 @@ async def calculate_gradebook_trends(
     return {
         'student_id': gradebook['student_id'],
         'student_name': gradebook['student_name'],
-        'subject_id': subject_id,
-        'grading_period_id': grading_period_id,
+        'subject_id': gradebook.get('subject_id'),
+        'grading_period_id': gradebook.get('grading_period_id'),
         'series': trends,
     }
 
@@ -547,6 +551,10 @@ async def calculate_gradebook_summary(
     student_id: int,
 ) -> dict[str, Any]:
     gradebook = await calculate_gradebook(db, family_id=family_id, student_id=student_id)
+    return build_gradebook_summary(gradebook)
+
+
+def build_gradebook_summary(gradebook: dict[str, Any]) -> dict[str, Any]:
     return {
         'student_id': gradebook['student_id'],
         'student_name': gradebook['student_name'],

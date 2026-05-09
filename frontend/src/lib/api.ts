@@ -40,15 +40,16 @@ import type {
   CapabilitiesResponse,
   CreateInvitationPayload,
   Grade,
+  GradeHistoryResponse,
   GradeCategory,
   GradebookSummary,
   GradebookTrends,
   GradebookView,
+  GradeListResponse,
   GradeScale,
   GradeScaleInput,
   GradingJob,
   GradeHistoryFilters,
-  GradeHistoryItem,
   HealthResponse,
   GradingPeriod,
   InstructionalDayCount,
@@ -72,6 +73,9 @@ import type {
   Quiz,
   QuizAttempt,
   RegisterPayload,
+  ReportCard,
+  ReportCardSummary,
+  ReportCardStatus,
   Resource,
   ResourceType,
   ReviewApprovePayload,
@@ -94,6 +98,7 @@ import type {
   WeeklyAgenda,
   SearchFilters,
   SearchResponse,
+  PaginatedResponse,
 } from '@/types/api'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
@@ -756,8 +761,15 @@ export const api = {
     return request<void>(`/assignments/${id}`, { method: 'DELETE' })
   },
 
-  listGrades() {
-    return request<Grade[]>('/grades')
+  listGrades(params: { page?: number; page_size?: number; student_id?: number; subject_id?: number } = {}) {
+    const resolved = { page: 1, page_size: 100, ...params }
+    const search = new URLSearchParams()
+    Object.entries(resolved).forEach(([key, value]) => {
+      if (value === undefined || value === null) return
+      search.set(key, String(value))
+    })
+    const query = search.toString()
+    return request<GradeListResponse>(`/grades${query ? `?${query}` : ''}`).then((payload) => payload.items)
   },
 
   listGradeHistory(filters: GradeHistoryFilters = {}) {
@@ -769,7 +781,7 @@ export const api = {
       params.set(key, String(value))
     })
     const query = params.toString()
-    return request<GradeHistoryItem[]>(`/grades/history${query ? `?${query}` : ''}`)
+    return request<GradeHistoryResponse>(`/grades/history${query ? `?${query}` : ''}`)
   },
 
   createGrade(payload: Partial<Grade>) {
@@ -835,6 +847,45 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     })
+  },
+
+  listReportCards(filters: { student_id?: number; grading_period_id?: number; status?: ReportCardStatus } = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null) return
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<ReportCardSummary[]>(`/report-cards${query ? `?${query}` : ''}`)
+  },
+
+  generateReportCard(payload: { student_id: number; grading_period_id: number; notes?: string | null }) {
+    return request<ReportCard>('/report-cards/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getReportCard(id: number) {
+    return request<ReportCard>(`/report-cards/${id}`)
+  },
+
+  updateReportCard(
+    id: number,
+    payload: { notes?: string | null; status?: ReportCardStatus; entries?: Array<{ entry_id: number; teacher_comments?: string | null }> },
+  ) {
+    return request<ReportCard>(`/report-cards/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  finalizeReportCard(id: number) {
+    return request<ReportCard>(`/report-cards/${id}/finalize`, { method: 'POST' })
+  },
+
+  getReportCardPdfUrl(id: number) {
+    return `${API_BASE_URL}/report-cards/${id}/pdf`
   },
 
   listQuizzes() {
@@ -990,8 +1041,15 @@ export const api = {
     })
   },
 
-  listSubmissions() {
-    return request<Submission[]>('/submissions')
+  listSubmissions(params: { page?: number; page_size?: number } = {}) {
+    const resolved = { page: 1, page_size: 100, ...params }
+    const search = new URLSearchParams()
+    Object.entries(resolved).forEach(([key, value]) => {
+      if (value === undefined || value === null) return
+      search.set(key, String(value))
+    })
+    const query = search.toString()
+    return request<PaginatedResponse<Submission>>(`/submissions${query ? `?${query}` : ''}`).then((payload) => payload.items)
   },
 
   getSubmission(id: number) {

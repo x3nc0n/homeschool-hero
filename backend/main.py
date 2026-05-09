@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 
 from backend.config import settings
 from backend.database import engine, get_db
@@ -31,6 +32,7 @@ from backend.routers import (
     notifications_router,
     portfolio_router,
     quizzes_router,
+    report_cards_router,
     reviews_router,
     schedule_router,
     search_router,
@@ -229,6 +231,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.rate_limiter = RateLimiter()
     install_monitoring(app)
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
@@ -414,6 +417,7 @@ def create_app() -> FastAPI:
     app.include_router(grades_router, prefix=API_PREFIX)
     app.include_router(imports_router, prefix=API_PREFIX)
     app.include_router(quizzes_router, prefix=API_PREFIX)
+    app.include_router(report_cards_router, prefix=API_PREFIX)
     app.include_router(schedule_router, prefix=API_PREFIX)
     app.include_router(grading_router, prefix=API_PREFIX)
     app.include_router(reviews_router, prefix=API_PREFIX)

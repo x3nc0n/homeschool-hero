@@ -9,6 +9,7 @@ from backend.models import Quiz, QuizAttempt, Student, Subject
 from backend.schemas.quizzes import QuizAttemptCreate, QuizAttemptRead, QuizCreate, QuizRead, QuizUpdate
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.cache import invalidate_compliance_cache
 
 router = APIRouter(prefix='/quizzes', tags=['quizzes'])
 
@@ -134,6 +135,7 @@ async def take_quiz(
     )
     db.add(attempt)
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id, student_id=payload.student_id)
     await db.refresh(attempt)
     return attempt
 

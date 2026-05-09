@@ -2,7 +2,7 @@ import enum
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import JSON, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +40,17 @@ class AssignmentTargetStatus(str, enum.Enum):
 
 class Assignment(TimestampMixin, Base):
     __tablename__ = 'assignments'
+    __table_args__ = (
+        Index('ix_assignments_family_subject_grading_period', 'family_id', 'subject_id', 'grading_period_id'),
+        Index('ix_assignments_family_status_due_date', 'family_id', 'status', 'due_date'),
+        Index(
+            'ix_assignments_family_due_date_active',
+            'family_id',
+            'due_date',
+            postgresql_where=text("status <> 'graded'"),
+            sqlite_where=text("status != 'graded'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     family_id: Mapped[int] = mapped_column(ForeignKey('families.id', ondelete='CASCADE'), nullable=False, index=True)
@@ -87,7 +98,10 @@ class Assignment(TimestampMixin, Base):
 
 class AssignmentTarget(TimestampMixin, Base):
     __tablename__ = 'assignment_targets'
-    __table_args__ = (UniqueConstraint('assignment_id', 'student_id', name='uq_assignment_targets_assignment_id_student_id'),)
+    __table_args__ = (
+        UniqueConstraint('assignment_id', 'student_id', name='uq_assignment_targets_assignment_id_student_id'),
+        Index('ix_assignment_targets_student_status', 'student_id', 'status'),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     assignment_id: Mapped[int] = mapped_column(ForeignKey('assignments.id', ondelete='CASCADE'), nullable=False, index=True)

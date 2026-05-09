@@ -38,6 +38,7 @@ from backend.schemas.subjects import SubjectRead
 from backend.schemas.submissions import SubmissionVersionRead
 from backend.security import AuthSession, get_auth_session
 from backend.services.audit import log_event
+from backend.services.cache import invalidate_compliance_cache
 from backend.services.authorization import ensure_student_scope
 from backend.validation import sanitize_filename
 
@@ -394,6 +395,7 @@ async def create_portfolio_entry(
         request=request,
     )
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id, student_id=entry.student_id)
     return _serialize_entry(await _get_entry_or_404(db, family_id=auth.family_id, entry_id=entry.id))
 
 
@@ -417,6 +419,7 @@ async def update_portfolio_entry(
     auth: AuthSession = Depends(get_auth_session),
 ) -> PortfolioEntryRead:
     entry = await _get_entry_or_404(db, family_id=auth.family_id, entry_id=entry_id)
+    previous_student_id = entry.student_id
     _ensure_portfolio_access(auth, student_id=entry.student_id, action='manage portfolio entries')
     _ensure_portfolio_access(auth, student_id=payload.student_id, action='manage portfolio entries')
     await _validate_entry_references(db, family_id=auth.family_id, payload=payload)
@@ -444,6 +447,9 @@ async def update_portfolio_entry(
         request=request,
     )
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id, student_id=payload.student_id)
+    if previous_student_id != payload.student_id:
+        invalidate_compliance_cache(family_id=auth.family_id, student_id=previous_student_id)
     return _serialize_entry(await _get_entry_or_404(db, family_id=auth.family_id, entry_id=entry.id))
 
 
@@ -455,6 +461,7 @@ async def delete_portfolio_entry(
     auth: AuthSession = Depends(get_auth_session),
 ) -> None:
     entry = await _get_entry_or_404(db, family_id=auth.family_id, entry_id=entry_id)
+    student_id = entry.student_id
     _ensure_portfolio_access(auth, student_id=entry.student_id, action='manage portfolio entries')
     before = _entry_audit_snapshot(entry)
     collections = list(
@@ -483,6 +490,7 @@ async def delete_portfolio_entry(
     )
     await db.delete(entry)
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id, student_id=student_id)
 
 
 @router.post('/entries/{entry_id}/attach', response_model=PortfolioEntryRead)
@@ -514,6 +522,7 @@ async def attach_portfolio_files(
         request=request,
     )
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id, student_id=entry.student_id)
     return _serialize_entry(await _get_entry_or_404(db, family_id=auth.family_id, entry_id=entry.id))
 
 

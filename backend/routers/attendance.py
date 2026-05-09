@@ -37,6 +37,7 @@ from backend.schemas.attendance import (
 from backend.security import AuthSession, get_family_record
 from backend.services.audit import log_event
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.cache import invalidate_compliance_cache
 from backend.validation import normalize_text, sanitize_filename
 
 router = APIRouter(prefix='/attendance', tags=['attendance'])
@@ -333,6 +334,8 @@ async def record_daily_attendance(
         updated_records.append(record)
 
     await db.commit()
+    for student_id in student_ids:
+        invalidate_compliance_cache(family_id=auth.family_id, student_id=student_id)
     return [await _get_record_or_404(db, record.id, auth.family_id) for record in updated_records]
 
 
@@ -381,6 +384,7 @@ async def log_instructional_time(
         request=request,
     )
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id, student_id=payload.student_id)
     return await _get_record_or_404(db, record.id, auth.family_id)
 
 
@@ -426,6 +430,7 @@ async def add_or_update_excuse(
         request=request,
     )
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id, student_id=record.student_id)
     if uploaded_path is not None and old_document_path and old_document_path != uploaded_path:
         _remove_document(old_document_path)
     await db.refresh(excuse)
@@ -463,6 +468,7 @@ async def approve_excuse(
         request=request,
     )
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id, student_id=excuse.attendance_record.student_id)
     await db.refresh(excuse)
     return excuse
 

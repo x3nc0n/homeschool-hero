@@ -1,17 +1,24 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import or_, select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.config import settings
 from backend.database import get_db
 from backend.models import Assignment, AssignmentTarget, AssignmentTargetStatus, GradingJob, GradingJobStatus, Student, Submission
-from backend.schemas.submissions import SubmissionDetail, SubmissionRead, SubmissionVersionRead
+from backend.schemas.submissions import (
+    SubmissionDetail,
+    SubmissionListItem,
+    SubmissionListResponse,
+    SubmissionRead,
+    SubmissionVersionRead,
+)
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.cache import invalidate_gradebook_cache
 from backend.services.logging_config import log_action
 from backend.services.storage import normalize_upload_type, store_submission_file
 
@@ -119,11 +126,13 @@ async def _mark_superseded_versions(
             job.completed_at = datetime.now(timezone.utc)
 
 
-@router.get('', response_model=list[SubmissionRead])
+@router.get('', response_model=SubmissionListResponse)
 async def list_submissions(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.read_submissions, action='view submissions')),
-) -> list[Submission]:
+) -> SubmissionListResponse:
     stmt = (
         select(Submission)
         .options(selectinload(Submission.grading_job))
@@ -131,9 +140,17 @@ async def list_submissions(
     )
     if auth.role == 'student_viewer':
         stmt = stmt.where(Submission.student_id == get_student_scope_id(auth))
-    stmt = stmt.order_by(Submission.uploaded_at.desc())
+    total = (await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one()
+    stmt = stmt.order_by(Submission.uploaded_at.desc(), Submission.id.desc()).offset((page - 1) * page_size).limit(page_size)
     submissions = (await db.execute(stmt)).scalars().all()
-    return list(submissions)
+    total_pages = (int(total or 0) + page_size - 1) // page_size if total else 0
+    return SubmissionListResponse(
+        items=[SubmissionListItem.model_validate(item) for item in submissions],
+        total=int(total or 0),
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
 
 
 @router.get('/{submission_id}', response_model=SubmissionDetail)
@@ -253,6 +270,7 @@ async def upload_submission(
     )
     db.add(job)
     await db.commit()
+    invalidate_gradebook_cache(family_id=auth.family_id, student_id=student_id)
     await db.refresh(submission)
     await db.refresh(job)
     log_action(

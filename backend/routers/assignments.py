@@ -4,9 +4,10 @@ from datetime import date, datetime, time, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, inspect, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import NO_VALUE, init_collection
 
 from backend.database import get_db
 from backend.models import (
@@ -34,6 +35,7 @@ from backend.schemas.assignments import (
 from backend.security import AuthSession, get_family_record
 from backend.services.audit import log_event
 from backend.services.authorization import Capability, get_student_scope_id, require_capabilities
+from backend.services.cache import invalidate_gradebook_cache
 
 router = APIRouter(prefix='/assignments', tags=['assignments'])
 
@@ -209,10 +211,21 @@ def _track_assignment_changes(assignment: Assignment, payload: AssignmentUpdate)
             _append_history(assignment, field=field, before=before, after=after)
 
 
+def _assignment_target_collection(assignment: Assignment):
+    attr = inspect(assignment).attrs.targets
+    if attr.loaded_value is NO_VALUE:
+        return init_collection(assignment, 'targets').data
+    return attr.loaded_value
+
+
+def _assignment_targets(assignment: Assignment) -> list[AssignmentTarget]:
+    return list(_assignment_target_collection(assignment))
+
+
 def _track_target_changes(assignment: Assignment, payload: AssignmentUpdate) -> None:
     if payload.targets is None:
         return
-    existing_by_student = {target.student_id: target for target in assignment.targets}
+    existing_by_student = {target.student_id: target for target in _assignment_targets(assignment)}
     incoming_by_student = {target.student_id: target for target in payload.targets}
 
     for student_id, target in existing_by_student.items():
@@ -261,12 +274,13 @@ def _track_target_changes(assignment: Assignment, payload: AssignmentUpdate) -> 
 def _replace_targets(assignment: Assignment, payload: AssignmentCreate | AssignmentUpdate) -> None:
     if payload.targets is None:
         return
-    existing_by_student = {target.student_id: target for target in assignment.targets}
+    current_targets = _assignment_target_collection(assignment)
+    existing_by_student = {target.student_id: target for target in current_targets}
     incoming_student_ids = {target.student_id for target in payload.targets}
 
-    for target in list(assignment.targets):
+    for target in list(current_targets):
         if target.student_id not in incoming_student_ids:
-            assignment.targets.remove(target)
+            current_targets.remove(target)
 
     for target_payload in payload.targets:
         existing = existing_by_student.get(target_payload.student_id)
@@ -274,7 +288,7 @@ def _replace_targets(assignment: Assignment, payload: AssignmentCreate | Assignm
             existing.due_date = target_payload.due_date
             existing.status = target_payload.status
             continue
-        assignment.targets.append(
+        current_targets.append(
             AssignmentTarget(
                 student_id=target_payload.student_id,
                 due_date=target_payload.due_date,
@@ -404,7 +418,10 @@ async def create_assignment(
     db.add(assignment)
     _apply_assignment_updates(assignment, payload)
     _replace_targets(assignment, payload)
+    impacted_student_ids = [target.student_id for target in (payload.targets or [])]
     await db.commit()
+    for student_id in impacted_student_ids:
+        invalidate_gradebook_cache(family_id=auth.family_id, student_id=student_id)
     return await _get_assignment_or_404(db, auth, assignment.id)
 
 
@@ -425,6 +442,7 @@ async def update_assignment(
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage assignments')),
 ) -> Assignment:
     assignment = await _get_assignment_or_404(db, auth, assignment_id)
+    impacted_student_ids = {target.student_id for target in _assignment_targets(assignment)}
     subject = await get_family_record(db, Subject, payload.subject_id, auth.family_id)
     if not subject:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Subject not found')
@@ -435,7 +453,10 @@ async def update_assignment(
     _track_target_changes(assignment, payload)
     _apply_assignment_updates(assignment, payload)
     _replace_targets(assignment, payload)
+    impacted_student_ids.update(target.student_id for target in _assignment_targets(assignment))
     await db.commit()
+    for student_id in impacted_student_ids:
+        invalidate_gradebook_cache(family_id=auth.family_id, student_id=student_id)
     return await _get_assignment_or_404(db, auth, assignment_id)
 
 
@@ -447,11 +468,14 @@ async def update_assignment_status(
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage assignments')),
 ) -> Assignment:
     assignment = await _get_assignment_or_404(db, auth, assignment_id)
+    impacted_student_ids = {target.student_id for target in _assignment_targets(assignment)}
     _validate_transition(assignment.status, payload.status)
     if assignment.status != payload.status:
         _append_history(assignment, field='status', before=assignment.status, after=payload.status, change_type='status_update')
     assignment.status = payload.status
     await db.commit()
+    for student_id in impacted_student_ids:
+        invalidate_gradebook_cache(family_id=auth.family_id, student_id=student_id)
     return await _get_assignment_or_404(db, auth, assignment_id)
 
 
@@ -474,6 +498,7 @@ async def upsert_answer_key(
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage answer keys')),
 ) -> AnswerKey:
     assignment = await _get_assignment_or_404(db, auth, assignment_id)
+    impacted_student_ids = [target.student_id for target in _assignment_targets(assignment)]
     answer_key = assignment.answer_key
     before_snapshot = answer_key.questions if answer_key else None
     if answer_key is None:
@@ -494,6 +519,8 @@ async def upsert_answer_key(
         request=request,
     )
     await db.commit()
+    for student_id in impacted_student_ids:
+        invalidate_gradebook_cache(family_id=auth.family_id, student_id=student_id)
     await db.refresh(answer_key)
     return answer_key
 
@@ -505,5 +532,8 @@ async def delete_assignment(
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage assignments')),
 ) -> None:
     assignment = await _get_assignment_or_404(db, auth, assignment_id)
+    impacted_student_ids = {target.student_id for target in _assignment_targets(assignment)}
     await db.delete(assignment)
     await db.commit()
+    for student_id in impacted_student_ids:
+        invalidate_gradebook_cache(family_id=auth.family_id, student_id=student_id)

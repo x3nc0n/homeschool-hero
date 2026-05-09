@@ -7,6 +7,7 @@ from backend.models import GradeScale, Subject
 from backend.schemas.subjects import SubjectCreate, SubjectRead, SubjectUpdate
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, require_capabilities
+from backend.services.cache import invalidate_compliance_cache
 
 router = APIRouter(prefix='/subjects', tags=['subjects'])
 
@@ -45,6 +46,7 @@ async def create_subject(
     )
     db.add(subject)
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id)
     await db.refresh(subject)
     return subject
 
@@ -91,6 +93,7 @@ async def update_subject(
     subject.grading_mode = payload.grading_mode
     subject.grade_scale_id = payload.grade_scale_id
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id)
     await db.refresh(subject)
     return subject
 
@@ -106,3 +109,4 @@ async def delete_subject(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Subject not found')
     await db.delete(subject)
     await db.commit()
+    invalidate_compliance_cache(family_id=auth.family_id)

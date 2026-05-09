@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,6 +37,10 @@ class AuditAction(str, enum.Enum):
 
 class AuditEvent(Base):
     __tablename__ = 'audit_events'
+    __table_args__ = (
+        Index('ix_audit_events_family_action_timestamp', 'family_id', 'action', 'timestamp'),
+        Index('ix_audit_events_family_target_entity', 'family_id', 'target_entity_type', 'target_entity_id'),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     family_id: Mapped[int] = mapped_column(ForeignKey('families.id', ondelete='CASCADE'), nullable=False, index=True)
