@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from datetime import datetime, timedelta, timezone
+from typing import Any, TypedDict, TypeVar
 
 import bcrypt
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +17,15 @@ from backend.models import Family, FamilyMembership, User
 
 serializer = URLSafeTimedSerializer(settings.secret_key, salt='homeschool-session')
 ModelT = TypeVar('ModelT')
+SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
+
+
+class SessionClaims(TypedDict):
+    user_id: int
+    family_id: int
+    csrf: str
+    sid: str
+    issued_at: int
 
 
 @dataclass(slots=True)
@@ -23,6 +34,7 @@ class AuthSession:
     family_id: int
     email: str
     display_name: str
+    auth_provider: str
     role: str
     is_owner: bool
     family_name: str
@@ -41,11 +53,64 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
 
-def create_session_token(user_id: int, family_id: int) -> str:
-    return serializer.dumps({'user_id': user_id, 'family_id': family_id})
+def _build_session_claims(user_id: int, family_id: int) -> SessionClaims:
+    return {
+        'user_id': user_id,
+        'family_id': family_id,
+        'csrf': secrets.token_urlsafe(24),
+        'sid': secrets.token_urlsafe(24),
+        'issued_at': int(datetime.now(timezone.utc).timestamp()),
+    }
 
 
-def verify_session_token(token: str | None) -> dict[str, int] | None:
+def create_session_token(user_id: int, family_id: int) -> tuple[str, SessionClaims]:
+    claims = _build_session_claims(user_id, family_id)
+    return serializer.dumps(claims), claims
+
+
+def is_secure_request(request: Request | None = None) -> bool:
+    if settings.session_cookie_secure:
+        return True
+    if request is None:
+        return False
+    forwarded_proto = request.headers.get('x-forwarded-proto', '')
+    if forwarded_proto:
+        proto = forwarded_proto.split(',')[0].strip().lower()
+        return proto == 'https'
+    return request.url.scheme == 'https'
+
+
+def set_session_cookies(response: Response, request: Request | None, *, user_id: int, family_id: int) -> SessionClaims:
+    token, claims = create_session_token(user_id=user_id, family_id=family_id)
+    secure = is_secure_request(request)
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=token,
+        httponly=True,
+        samesite='lax',
+        secure=secure,
+        max_age=settings.session_max_age_seconds,
+        path='/',
+    )
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=claims['csrf'],
+        httponly=False,
+        samesite='lax',
+        secure=secure,
+        max_age=settings.session_max_age_seconds,
+        path='/',
+    )
+    return claims
+
+
+def clear_session_cookies(response: Response, request: Request | None = None) -> None:
+    secure = is_secure_request(request)
+    response.delete_cookie(settings.session_cookie_name, path='/', secure=secure, httponly=True, samesite='lax')
+    response.delete_cookie(settings.csrf_cookie_name, path='/', secure=secure, samesite='lax')
+
+
+def verify_session_token(token: str | None) -> SessionClaims | None:
     if not token:
         return None
     try:
@@ -56,9 +121,51 @@ def verify_session_token(token: str | None) -> dict[str, int] | None:
         return None
     user_id = data.get('user_id')
     family_id = data.get('family_id')
+    csrf = data.get('csrf')
+    session_id = data.get('sid')
+    issued_at = data.get('issued_at')
     if not isinstance(user_id, int) or not isinstance(family_id, int):
         return None
-    return {'user_id': user_id, 'family_id': family_id}
+    if not isinstance(csrf, str) or not csrf:
+        return None
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    if not isinstance(issued_at, int):
+        return None
+    return {
+        'user_id': user_id,
+        'family_id': family_id,
+        'csrf': csrf,
+        'sid': session_id,
+        'issued_at': issued_at,
+    }
+
+
+def session_needs_rotation(claims: SessionClaims) -> bool:
+    age_seconds = int(datetime.now(timezone.utc).timestamp()) - claims['issued_at']
+    threshold = min(settings.session_rotation_seconds, settings.session_max_age_seconds)
+    return age_seconds >= threshold
+
+
+def require_csrf(request: Request, claims: SessionClaims) -> None:
+    if request.method.upper() in SAFE_METHODS:
+        return
+    cookie_token = request.cookies.get(settings.csrf_cookie_name)
+    header_token = request.headers.get('x-csrf-token')
+    if not cookie_token or not header_token or cookie_token != header_token or header_token != claims['csrf']:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='CSRF validation failed')
+
+
+def get_request_ip(request: Request) -> str:
+    forwarded_for = request.headers.get('x-forwarded-for', '')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    client = request.client
+    return client.host if client else 'unknown'
+
+
+def get_lockout_deadline() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(minutes=settings.auth_lockout_minutes)
 
 
 async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db)) -> AuthSession:
@@ -90,6 +197,7 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
         family_id=family.id,
         email=user.email,
         display_name=user.display_name,
+        auth_provider=user.auth_provider,
         role=membership.role.value,
         is_owner=membership.is_owner,
         family_name=family.name,

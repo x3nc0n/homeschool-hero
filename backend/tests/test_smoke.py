@@ -31,6 +31,7 @@ def test_capabilities_endpoint_returns_current_flags(app) -> None:
     assert payload["status"] in {"ok", "degraded"}
     assert "capabilities" in payload
     assert {"ai_grading", "email", "backup", "ocr"} <= set(payload["capabilities"])
+    assert payload["auth"]["local_enabled"] is True
 
 
 def test_auth_protects_api_routes(app) -> None:

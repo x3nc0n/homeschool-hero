@@ -1,22 +1,24 @@
 from pathlib import Path
 
 from backend.config import Settings
-from backend.services.capabilities import CapabilityRegistry
+from backend.services.capabilities import CapabilityRegistry, get_auth_providers
 
 
 def test_capability_detection_uses_mocked_service_checks(monkeypatch, tmp_path: Path) -> None:
-    config = Settings(
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
-        secret_key='required-test-secret',
-        upload_dir=str(tmp_path / 'uploads'),
-        ai_provider='ollama',
-        ollama_host='http://ollama.test:11434',
-        ollama_model='llama3.2',
-        smtp_host='smtp.test',
-        smtp_port=2525,
-        smtp_from_email='robot@test.local',
-        backup_target=str(tmp_path / 'backup'),
-        testing=True,
+    config = Settings().model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'ai_provider': 'ollama',
+            'ollama_host': 'http://ollama.test:11434',
+            'ollama_model': 'llama3.2',
+            'smtp_host': 'smtp.test',
+            'smtp_port': 2525,
+            'smtp_from_email': 'robot@test.local',
+            'backup_target': str(tmp_path / 'backup'),
+            'testing': True,
+        }
     )
     registry = CapabilityRegistry(config)
 
@@ -75,3 +77,25 @@ def test_capability_detection_uses_mocked_service_checks(monkeypatch, tmp_path: 
     assert result['email']['enabled'] is False
     assert result['backup']['enabled'] is True
     assert result['ocr']['reason'] == 'Tesseract missing'
+
+
+def test_auth_provider_capabilities_report_selected_provider(tmp_path: Path) -> None:
+    config = Settings().model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'auth_provider': 'oidc',
+            'oidc_client_id': 'client-id',
+            'oidc_client_secret': 'client-secret',
+            'oidc_discovery_url': 'https://login.example/.well-known/openid-configuration',
+            'testing': True,
+        }
+    )
+
+    auth = get_auth_providers(config)
+
+    assert auth['current_provider'] == 'oidc'
+    assert auth['local_enabled'] is True
+    assert auth['oidc_enabled'] is True
+    assert auth['saml_enabled'] is False

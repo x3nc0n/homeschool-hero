@@ -4,22 +4,19 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.models import FamilyRole
-from backend.security import normalize_email
+from backend.validation import normalize_email_address, normalize_text, validate_password_policy
 
 
 class InvitationCreate(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     role: FamilyRole
-    student_id: int | None = None
+    student_id: int | None = Field(default=None, gt=0)
     expires_in_days: int = Field(default=7, ge=1, le=30)
 
     @field_validator('email')
     @classmethod
     def validate_email(cls, value: str) -> str:
-        email = normalize_email(value)
-        if '@' not in email:
-            raise ValueError('Enter a valid email address')
-        return email
+        return normalize_email_address(value)
 
     @model_validator(mode='after')
     def validate_student_binding(self) -> 'InvitationCreate':
@@ -50,12 +47,19 @@ class InvitationAccept(BaseModel):
     token: str = Field(min_length=16, max_length=255)
     email: str = Field(min_length=3, max_length=255)
     display_name: str = Field(min_length=1, max_length=160)
-    password: str = Field(min_length=8, max_length=255)
+    password: str = Field(min_length=12, max_length=255)
 
     @field_validator('email')
     @classmethod
     def validate_email(cls, value: str) -> str:
-        email = normalize_email(value)
-        if '@' not in email:
-            raise ValueError('Enter a valid email address')
-        return email
+        return normalize_email_address(value)
+
+    @field_validator('display_name')
+    @classmethod
+    def validate_display_name(cls, value: str) -> str:
+        return normalize_text(value, field_name='Display name')
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_policy(value)

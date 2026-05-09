@@ -1,3 +1,4 @@
+import mimetypes
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,6 +12,7 @@ from backend.models import Assignment, GradingJob, GradingJobStatus, Student, Su
 from backend.schemas.submissions import SubmissionRead
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.validation import sanitize_filename
 
 router = APIRouter(prefix='/submissions', tags=['submissions'])
 
@@ -43,8 +45,8 @@ async def get_submission(
 
 @router.post('', response_model=SubmissionRead, status_code=status.HTTP_201_CREATED)
 async def upload_submission(
-    assignment_id: int = Form(...),
-    student_id: int = Form(...),
+    assignment_id: int = Form(..., gt=0),
+    student_id: int = Form(..., gt=0),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.manage_submissions, action='upload submissions')),
@@ -55,17 +57,27 @@ async def upload_submission(
     student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
-    if not file.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Filename is required')
+    sanitized_name = sanitize_filename(file.filename or '')
+    suffix = Path(sanitized_name).suffix.lower()
+    expected_mime, _ = mimetypes.guess_type(sanitized_name)
+    content_type = (file.content_type or expected_mime or 'application/octet-stream').lower()
+    allowed_mime_types = settings.upload_allowed_mime_types
+    if content_type not in allowed_mime_types:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unsupported file type')
+    if expected_mime and expected_mime.lower() not in allowed_mime_types:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unsupported file type')
 
     upload_dir = Path(settings.upload_dir)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    suffix = Path(file.filename).suffix
     safe_name = f'{uuid4().hex}{suffix}'
     destination = upload_dir / safe_name
 
     contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Uploaded file is empty')
+    if len(contents) > settings.upload_max_bytes:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail='Uploaded file exceeds size limit')
     destination.write_bytes(contents)
 
     submission = Submission(
@@ -73,7 +85,7 @@ async def upload_submission(
         assignment_id=assignment_id,
         student_id=student_id,
         file_path=str(destination),
-        file_type=file.content_type or 'application/octet-stream',
+        file_type=content_type,
     )
     db.add(submission)
     await db.flush()

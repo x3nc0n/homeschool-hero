@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
+from backend.config import settings
 from tests.contracts import VALIDATION_STATUS_CODES
 
 
@@ -32,6 +33,12 @@ async def update_resource(client: AsyncClient, path: str, payload: dict[str, Any
     if response.status_code in {404, 405}:
         response = await client.patch(path, json=payload)
     return response
+
+
+def sync_csrf_header(client: AsyncClient) -> None:
+    csrf_cookie = client.cookies.get(settings.csrf_cookie_name)
+    if csrf_cookie:
+        client.headers['x-csrf-token'] = csrf_cookie
 
 
 def response_id(payload: dict[str, Any]) -> Any:

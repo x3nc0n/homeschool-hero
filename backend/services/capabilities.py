@@ -33,6 +33,20 @@ def _status(name: str, *, enabled: bool, configured: bool, reason: str, details:
     }
 
 
+def get_auth_providers(config: Settings = settings) -> dict[str, Any]:
+    provider = (config.auth_provider or 'local').strip().lower() or 'local'
+    available_providers = ['local']
+    if provider in {'oidc', 'saml'}:
+        available_providers.append(provider)
+    return {
+        'current_provider': provider,
+        'available_providers': available_providers,
+        'local_enabled': True,
+        'oidc_enabled': provider == 'oidc',
+        'saml_enabled': provider == 'saml',
+    }
+
+
 def check_ai_grading(config: Settings = settings) -> dict[str, Any]:
     provider = config.ai_provider.strip().lower() or 'ollama'
 

@@ -1,35 +1,46 @@
 from pydantic import BaseModel, Field, field_validator
 
+from backend.validation import normalize_email_address, normalize_text, validate_password_policy
+
 
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=255)
-    password: str = Field(min_length=8, max_length=255)
-    family_id: int | None = None
+    password: str = Field(min_length=1, max_length=255)
+    family_id: int | None = Field(default=None, gt=0)
 
     @field_validator('email')
     @classmethod
     def validate_email(cls, value: str) -> str:
-        email = value.strip().lower()
-        if '@' not in email:
-            raise ValueError('Enter a valid email address')
-        return email
+        return normalize_email_address(value)
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return value.strip()
 
 
 class RegisterRequest(BaseModel):
     family_name: str = Field(min_length=1, max_length=160)
     email: str = Field(min_length=3, max_length=255)
     display_name: str = Field(min_length=1, max_length=160)
-    password: str = Field(min_length=8, max_length=255)
+    password: str = Field(min_length=12, max_length=255)
     timezone: str = Field(default='UTC', min_length=1, max_length=64)
     grading_scale: str = Field(default='letter', min_length=1, max_length=64)
 
     @field_validator('email')
     @classmethod
     def validate_email(cls, value: str) -> str:
-        email = value.strip().lower()
-        if '@' not in email:
-            raise ValueError('Enter a valid email address')
-        return email
+        return normalize_email_address(value)
+
+    @field_validator('family_name', 'display_name', 'timezone', 'grading_scale')
+    @classmethod
+    def validate_text_fields(cls, value: str, info) -> str:
+        return normalize_text(value, field_name=info.field_name.replace('_', ' ').title())
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_policy(value)
 
 
 class SessionUser(BaseModel):
@@ -37,6 +48,7 @@ class SessionUser(BaseModel):
     email: str
     display_name: str
     is_active: bool = True
+    auth_provider: str = 'local'
 
 
 class SessionFamily(BaseModel):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,10 +90,11 @@ def _validate_secret_key(config: Settings) -> None:
 
 
 def _validate_migration_mode(config: Settings) -> str:
-    mode = config.migration_mode.strip().lower()
+    mode = str(getattr(config, 'migration_mode', os.getenv('MIGRATION_MODE', 'apply'))).strip().lower()
     if mode not in _VALID_MIGRATION_MODES:
         raise StartupValidationError(
-            f"MIGRATION_MODE must be one of {sorted(_VALID_MIGRATION_MODES)}. Received '{config.migration_mode}'."
+            f"MIGRATION_MODE must be one of {sorted(_VALID_MIGRATION_MODES)}. "
+            f"Received '{getattr(config, 'migration_mode', os.getenv('MIGRATION_MODE', 'apply'))}'."
         )
     return mode
 
@@ -161,7 +163,7 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
     database_summary: dict[str, str] = {}
     auth_summary: dict[str, str] = {}
     upload_dir = config.upload_dir
-    migration_mode = config.migration_mode
+    migration_mode = str(getattr(config, 'migration_mode', os.getenv('MIGRATION_MODE', 'apply')))
 
     try:
         database_summary = _validate_database_url(config)

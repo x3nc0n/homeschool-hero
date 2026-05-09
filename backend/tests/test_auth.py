@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tests.contracts import AUTH, STUDENTS, bootstrap_payload, student_payload
-from tests.helpers import response_id
+from tests.helpers import response_id, sync_csrf_header
 
 
 @pytest.mark.asyncio
@@ -15,6 +15,7 @@ async def test_bootstrap_register_creates_owner_session(async_client):
     response = await async_client.post(AUTH['register'], json=bootstrap_payload())
 
     assert response.status_code == 201, response.text
+    sync_csrf_header(async_client)
     payload = response.json()
     assert payload['authenticated'] is True
     assert payload['user']['email'] == 'owner@example.com'
@@ -77,6 +78,7 @@ async def test_tenant_isolation_blocks_cross_family_reads(authorized_client, sec
         json={'email': 'other@example.com', 'password': 'strongpass456'},
     )
     assert login.status_code == 200, login.text
+    sync_csrf_header(secondary_client)
 
     collection = await secondary_client.get(STUDENTS['collection'])
     assert collection.status_code == 200, collection.text

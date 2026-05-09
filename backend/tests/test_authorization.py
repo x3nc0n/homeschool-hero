@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tests.contracts import ASSIGNMENTS, AUTH, GRADES, INVITATIONS, STUDENTS, assignment_payload, bootstrap_payload, student_payload
-from tests.helpers import response_id
+from tests.helpers import response_id, sync_csrf_header
 
 
 @pytest.mark.asyncio
@@ -41,6 +41,7 @@ async def test_rbac_enforces_role_permissions(authorized_client, secondary_clien
 
     login = await secondary_client.post(AUTH['login'], json={'email': 'tutor@example.com', 'password': 'strongpass345', 'family_id': family_id})
     assert login.status_code == 200, login.text
+    sync_csrf_header(secondary_client)
 
     tutor_assignment = await secondary_client.post(ASSIGNMENTS['collection'], json=assignment_payload(response_id(seeded_subject)))
     assert tutor_assignment.status_code == 201, tutor_assignment.text
@@ -56,6 +57,7 @@ async def test_rbac_enforces_role_permissions(authorized_client, secondary_clien
     await secondary_client.post(AUTH['logout'])
     viewer_login = await secondary_client.post(AUTH['login'], json={'email': 'viewer@example.com', 'password': 'strongpass456', 'family_id': family_id})
     assert viewer_login.status_code == 200, viewer_login.text
+    sync_csrf_header(secondary_client)
     assert viewer_login.json()['membership']['student_id'] == student_id
 
     viewer_students = await secondary_client.get(STUDENTS['collection'])
@@ -117,6 +119,7 @@ async def test_tenant_isolation_blocks_cross_family_reads_for_same_role(authoriz
 
     login = await tertiary_client.post(AUTH['login'], json={'email': 'tutor-b@example.com', 'password': 'strongpass789', 'family_id': other_family['family_id']})
     assert login.status_code == 200, login.text
+    sync_csrf_header(tertiary_client)
 
     detail = await tertiary_client.get(ASSIGNMENTS['detail'].format(assignment_id=assignment_id))
     assert detail.status_code == 404, detail.text
