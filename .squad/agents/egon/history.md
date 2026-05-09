@@ -39,3 +39,10 @@
 - Dependency graph validated; rollout strategy defined per area
 - Orchestration log recorded: Production-ready build plan ✅ COMPLETE
 - Team aligned on post-MVP direction; parallel execution model ready for phase 3
+
+### Security Issue Triage (2026-05-09T07:14:47Z)
+- Triaged 4 open security issues with squad member assignment
+- **Decision:** Backend service security issues → Ray; test code quality issues → Winston (separation of concerns)
+- #22 (insecure TLS protocol in backend/services/health.py) → squad:ray ✓
+- #23, #24, #25 (redundant assignments in backend/tests/contracts.py) → squad:winston ✓
+- Rationale: Ray owns production code hardening; Winston owns test code quality and maintainability
