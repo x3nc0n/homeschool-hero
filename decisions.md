@@ -180,3 +180,179 @@ Backend auth already used signed cookies, but session security, CSRF protection,
 1. Use stable hidden finding fingerprints inside auto-created security issues so repeated detections refresh the same issue and resolved findings can close automatically on later scans.
 2. Require `.trivyignore` entries to carry an adjacent reason comment; the issue automation copies that reason into a `suppressed`-labeled issue and fails if the reason is missing.
 3. Route all auto-created security findings through the base `squad` label, then let the existing squad triage workflow assign the right human owner.
+
+---
+
+## Wave 4 Decisions
+
+### Egon AZ-01 Compute Platform — Azure Container Apps
+
+- Date: 2026-05-09
+- Author: Egon
+
+#### Context
+
+We need a production-ready compute platform for hosting the FastAPI application and backup worker on Azure. AKS and App Service are not ideal for this workload.
+
+#### Decision
+
+Use Azure Container Apps (ACA) over AKS or App Service for hosting the FastAPI application and backup worker.
+
+#### Rationale
+
+- AKS requires cluster management, node pools, and Kubernetes expertise — overkill for this workload.
+- App Service lacks scale-to-zero and has limited multi-container support.
+- ACA provides serverless container hosting with scale-to-zero, managed infrastructure, VNet integration, and direct OCI image deployment.
+- The backup worker scales to 0 between runs; dev environments scale to 0 at night.
+- Operational burden is minimal — critical for John's operator profile.
+
+#### Trade-off
+
+Less flexibility than AKS for complex orchestration. Acceptable since we don't need it.
+
+#### Impact
+
+- Docker image deploys directly. No Kubernetes manifests, no Helm charts, no cluster upgrades.
+
+---
+
+### Egon AZ-02 Database HA — Zone-Redundant PostgreSQL Flexible Server
+
+- Date: 2026-05-09
+- Author: Egon
+
+#### Context
+
+We need a production-grade PostgreSQL deployment with HA that protects against availability zone failures while controlling costs.
+
+#### Decision
+
+Use Azure Database for PostgreSQL Flexible Server with zone-redundant HA for production; no HA for dev/test.
+
+#### Rationale
+
+- Zone-redundant HA costs ~50% more than standalone but protects against AZ failure with near-zero RPO and 60-120s RTO via synchronous replication.
+- Same-zone HA provides limited value (protects only against compute failure, not AZ failure).
+- Zone-redundant is the right balance of cost and resilience for a production workload handling student records.
+
+#### Impact
+
+- Production DB costs ~$220/month (GP D2ds_v5 with HA).
+- Dev uses Burstable B1ms at ~$13/month with no HA.
+
+---
+
+### Egon AZ-03 AI/OCR — Managed Azure Services Over Self-Hosted
+
+- Date: 2026-05-09
+- Author: Egon
+
+#### Context
+
+Current Tesseract OCR struggles with handwriting (student work is paper-based). Ollama requires 6GB container. Azure managed services offer superior quality.
+
+#### Decision
+
+Replace Tesseract OCR with Azure AI Document Intelligence; replace Ollama with Azure OpenAI Service (GPT-4o-mini) for Azure deployments. Keep self-hosted providers for local/on-prem deployments.
+
+#### Rationale
+
+- Document Intelligence handles handwriting well ($1.50/1000 pages).
+- GPT-4o-mini at $0.15/1M input tokens is essentially free at our scale.
+- Eliminating the Ollama container removes 6GB of memory requirements and operational complexity.
+
+#### Trade-off
+
+Vendor dependency on Azure AI APIs. Mitigated by keeping Tesseract/Ollama interfaces for self-hosted mode — the app already abstracts OCR and AI behind service interfaces.
+
+#### Impact
+
+- Two new provider implementations needed (AzureDocumentIntelligenceOCR, AzureOpenAI config).
+- Existing OpenAI-compatible API path covers the grading side with minimal changes.
+
+---
+
+### Egon AZ-04 Infrastructure as Code — Bicep
+
+- Date: 2026-05-09
+- Author: Egon
+
+#### Context
+
+Both Bicep and Terraform are viable for Azure IaC. We need to choose one for the `Spaidoso/homeschool-hero-azure` repository.
+
+#### Decision
+
+Use Bicep (not Terraform) for all Azure infrastructure in the `Spaidoso/homeschool-hero-azure` repository.
+
+#### Rationale
+
+1. Azure-only deployment — no multi-cloud requirement.
+2. Enterprise Scale Landing Zone modules are Bicep-first (ALZ-Bicep).
+3. No state file to manage, corrupt, or lock.
+4. `az deployment what-if` provides plan-like preview natively.
+5. Lower learning curve for an Azure-focused operator.
+
+#### Trade-off
+
+If multi-cloud becomes a requirement, IaC must be rewritten. Given the enterprise Azure commitment (Landing Zone, Entra ID, Front Door), this is an acceptable and unlikely risk.
+
+#### Impact
+
+- IaC repo uses `.bicep` and `.bicepparam` files.
+- CI/CD uses `az deployment` commands.
+- No Terraform state backend needed.
+
+---
+
+### Egon AZ-05 Multi-Region Strategy — Active-Passive with Front Door
+
+- Date: 2026-05-09
+- Author: Egon
+
+#### Context
+
+We need a multi-region availability strategy. Active-active adds significant complexity; active-passive provides automated failover without dual-write complexity.
+
+#### Decision
+
+Deploy active-passive across two Azure regions using Azure Front Door Premium for routing, with Region B as a DR/overflow target (Phase 5).
+
+#### Rationale
+
+- Active-active adds significant complexity (database write conflicts, cache coherence).
+- Active-passive with Front Door priority routing provides automated failover without dual-write complexity.
+- Front Door health probes detect Region A failure and automatically routes to Region B.
+- ACA in Region B runs scale-to-zero until activated.
+- PostgreSQL read replica in Region B can be promoted on failover.
+- Target: RTO < 5 min, RPO < 1 min.
+
+#### Trade-off
+
+Region B is not serving production traffic normally — it's a warm standby. Acceptable for cost-conscious HA. Active-active can be added later if geographic latency becomes important.
+
+#### Impact
+
+- Phase 1-4 are single-region.
+- Phase 5 adds Region B infrastructure.
+- Front Door is deployed in Phase 4 (single-region first, multi-origin in Phase 5).
+- Estimated additional cost for Region B: ~$166/month.
+
+---
+
+### Venkman VP-01 Student profile dashboard resilience
+
+- Date: 2026-05-09
+- Author: Venkman
+
+#### Context
+
+Student profile pages currently depend on the dashboard aggregator response. If one optional dashboard widget throws while building that payload, the whole student profile fails with a generic error even though the student record itself is valid.
+
+#### Decision
+
+Treat student-profile dashboard widgets as best-effort data. The backend should return the rest of the dashboard when optional sections like grade summaries, pacing, compliance, or system health fail, and the frontend should still render the student record even when dashboard widgets are partially unavailable.
+
+#### Impact
+
+Student profiles stay usable during partial backend failures or legacy-data issues. This same resilience pattern should be applied to future aggregated views instead of making the whole page depend on every widget succeeding.

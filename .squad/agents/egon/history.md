@@ -2,6 +2,10 @@
 
 ## Learnings
 
+- 2026-05-09T15:27:13-05:00 — Authored comprehensive Azure PaaS architecture proposal (`docs/azure-architecture.md`). Key decisions: ACA over AKS for compute, zone-redundant PostgreSQL Flexible Server, Azure AI Document Intelligence replacing Tesseract, Azure OpenAI replacing Ollama for cloud deployments, Bicep for IaC, active-passive multi-region with Front Door Premium. Five architecture decision records written to inbox. Estimated costs: ~$45/month dev, ~$700/month prod single-region, ~$866/month multi-region. Proposed `Spaidoso/homeschool-hero-azure` repo structure with Bicep modules and 5-phase implementation plan.
+
+- 2026-05-09T15:34:18-05:00 — Scribe merged 5 Azure architecture decisions (AZ-01 through AZ-05) and 1 frontend decision (VP-01) from inbox to decisions.md. Wrote orchestration log and session log. Post-merge decisions.md: 22,216 bytes.
+
 - 2026-05-09T15:00:00-05:00 — Cleared the remaining Dependabot backlog: merged #8, #9, #10, #12, #14, #15, and #20; closed #13 as a duplicate of #12; and closed #7, #11, and #16 after landing an equivalent dependency-alignment commit directly on `main`.
 - 2026-05-09T15:00:00-05:00 — Verified that `pytest==9.0.3` and `pytest-asyncio==1.3.0` work with `asyncio_mode = auto`; CI also requires pinned `requirements.txt` versions to stay aligned with `backend/requirements-test.txt` because both files are installed in sequence.
 

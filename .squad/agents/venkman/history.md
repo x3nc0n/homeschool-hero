@@ -92,3 +92,8 @@
 ### Student profile dashboard hardening (2026-05-09T14:45:14.180-05:00)
 - The student profile page was backed entirely by the dashboard aggregator, so any optional widget failure (grade summary, pacing, compliance, or system health) surfaced as a generic "An unexpected error occurred" page after opening a student.
 - Fixed it by making backend dashboard widget loading best-effort instead of all-or-nothing, and by having the frontend fetch the student record separately so the profile still renders basic student info even if dashboard widgets fail.
+
+### Architecture Decision VP-01: Student profile dashboard resilience (2026-05-09T15:34:18-05:00)
+- Formalized the resilience pattern fix as a team decision: backend returns partial dashboard data when optional sections fail, frontend renders profile with best-effort widget sections.
+- This pattern should be applied to future aggregated views instead of making the whole page depend on every widget succeeding.
+- Decision merged to decisions.md.
