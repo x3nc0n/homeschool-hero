@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
 from backend.models import Family, FamilyMembership, FamilyRole, FamilySettings, Invitation, User
 from backend.security import hash_password, normalize_email
+from backend.services.gradebook import ensure_default_grade_scale
 
 
 @dataclass(slots=True)
@@ -89,6 +90,7 @@ async def _ensure_default_family(db: AsyncSession) -> Family:
     result = await db.execute(select(Family).where(Family.name == family_name).order_by(Family.id))
     family = result.scalars().first()
     if family is not None:
+        await ensure_default_grade_scale(db, family.id)
         return family
 
     family = Family(
@@ -104,6 +106,7 @@ async def _ensure_default_family(db: AsyncSession) -> Family:
             grading_scale=settings.bootstrap_grading_scale,
         )
     )
+    await ensure_default_grade_scale(db, family.id)
     return family
 
 

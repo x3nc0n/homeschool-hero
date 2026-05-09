@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
-from backend.models import Subject
+from backend.models import GradeScale, Subject
 from backend.schemas.subjects import SubjectCreate, SubjectRead, SubjectUpdate
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, require_capabilities
@@ -26,13 +26,23 @@ async def create_subject(
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage subjects')),
 ) -> Subject:
+    if payload.grade_scale_id is not None:
+        grade_scale = await get_family_record(db, GradeScale, payload.grade_scale_id, auth.family_id)
+        if not grade_scale:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Grade scale not found')
     existing = await db.execute(
         select(Subject).where(Subject.family_id == auth.family_id, Subject.name == payload.name.strip())
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Subject already exists')
 
-    subject = Subject(family_id=auth.family_id, name=payload.name.strip(), color=payload.color)
+    subject = Subject(
+        family_id=auth.family_id,
+        name=payload.name.strip(),
+        color=payload.color,
+        grading_mode=payload.grading_mode,
+        grade_scale_id=payload.grade_scale_id,
+    )
     db.add(subject)
     await db.commit()
     await db.refresh(subject)
@@ -61,6 +71,10 @@ async def update_subject(
     subject = await get_family_record(db, Subject, subject_id, auth.family_id)
     if not subject:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Subject not found')
+    if payload.grade_scale_id is not None:
+        grade_scale = await get_family_record(db, GradeScale, payload.grade_scale_id, auth.family_id)
+        if not grade_scale:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Grade scale not found')
 
     existing = await db.execute(
         select(Subject).where(
@@ -74,6 +88,8 @@ async def update_subject(
 
     subject.name = payload.name.strip()
     subject.color = payload.color
+    subject.grading_mode = payload.grading_mode
+    subject.grade_scale_id = payload.grade_scale_id
     await db.commit()
     await db.refresh(subject)
     return subject

@@ -1,81 +1,128 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { RefreshCcw } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
-import type { GradeHistoryItem, GradingPeriod, Student, Subject } from '@/types/api'
+import type { GradebookSummary, GradebookTrends, GradebookView, GradingPeriod, Student, Subject } from '@/types/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { LoadingState } from '@/components/common/LoadingState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { EmptyState } from '@/components/common/EmptyState'
-import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 type GradeFilters = {
-  q: string
   student_id: string
   subject_id: string
   grading_period_id: string
-  score_min: string
-  score_max: string
-  date_from: string
-  date_to: string
 }
 
 function readInitialFilters(searchParams: URLSearchParams): GradeFilters {
   return {
-    q: searchParams.get('q') || searchParams.get('search') || '',
-    student_id: searchParams.get('student_id') || 'all',
+    student_id: searchParams.get('student_id') || '',
     subject_id: searchParams.get('subject_id') || 'all',
     grading_period_id: searchParams.get('grading_period_id') || 'all',
-    score_min: searchParams.get('score_min') || '',
-    score_max: searchParams.get('score_max') || '',
-    date_from: searchParams.get('date_from') || '',
-    date_to: searchParams.get('date_to') || '',
   }
+}
+
+function TrendChart({ trends }: { trends: GradebookTrends['series'][number]['points'] }) {
+  if (!trends.length) {
+    return <p className="text-sm text-muted-foreground">No graded work yet.</p>
+  }
+  const width = 480
+  const height = 180
+  const padding = 20
+  const maxX = Math.max(trends.length - 1, 1)
+  const points = trends.map((point, index) => {
+    const x = padding + (index / maxX) * (width - padding * 2)
+    const y = height - padding - (point.overall_percent / 100) * (height - padding * 2)
+    return `${x},${y}`
+  })
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
+      <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="currentColor" strokeOpacity="0.15" />
+      <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="currentColor" strokeOpacity="0.15" />
+      <polyline fill="none" stroke="currentColor" strokeWidth="2.5" points={points.join(' ')} />
+      {trends.map((point, index) => {
+        const [x, y] = points[index].split(',').map(Number)
+        return <circle key={point.assignment_id} cx={x} cy={y} r="3.5" fill="currentColor" />
+      })}
+    </svg>
+  )
 }
 
 export function GradesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [grades, setGrades] = useState<GradeHistoryItem[]>([])
+  const [gradebook, setGradebook] = useState<GradebookView | null>(null)
+  const [summary, setSummary] = useState<GradebookSummary | null>(null)
+  const [trends, setTrends] = useState<GradebookTrends | null>(null)
   const [students, setStudents] = useState<Student[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [gradingPeriods, setGradingPeriods] = useState<GradingPeriod[]>([])
   const [filters, setFilters] = useState<GradeFilters>(() => readInitialFilters(searchParams))
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const schoolYears = await api.listSchoolYears()
-      const schoolYearDetails = await Promise.all(schoolYears.map((year) => api.getSchoolYear(year.id)))
-      const allGradingPeriods = schoolYearDetails.flatMap((year) => year.terms.flatMap((term) => term.grading_periods))
-      const [gradeData, studentData, subjectData] = await Promise.all([
-        api.listGradeHistory({
-          q: filters.q || undefined,
-          student_id: filters.student_id === 'all' ? undefined : Number(filters.student_id),
+  const selectedStudentId = filters.student_id ? Number(filters.student_id) : undefined
+
+  const loadReferenceData = useCallback(async () => {
+    const schoolYears = await api.listSchoolYears()
+    const schoolYearDetails = await Promise.all(schoolYears.map((year) => api.getSchoolYear(year.id)))
+    const allGradingPeriods = schoolYearDetails.flatMap((year) => year.terms.flatMap((term) => term.grading_periods))
+    const [studentData, subjectData] = await Promise.all([api.listStudents(), api.listSubjects()])
+    return { studentData, subjectData, allGradingPeriods }
+  }, [])
+
+  const load = useCallback(
+    async (recalculate = false) => {
+      setLoading(true)
+      setRefreshing(recalculate)
+      setError('')
+      try {
+        const { studentData, subjectData, allGradingPeriods } = await loadReferenceData()
+        setStudents(studentData)
+        setSubjects(subjectData)
+        setGradingPeriods(allGradingPeriods)
+        const resolvedStudentId = selectedStudentId || studentData[0]?.id
+        if (!resolvedStudentId) {
+          setGradebook(null)
+          setSummary(null)
+          setTrends(null)
+          return
+        }
+        if (!selectedStudentId) {
+          setFilters((current) => ({ ...current, student_id: String(resolvedStudentId) }))
+        }
+
+        const query = {
           subject_id: filters.subject_id === 'all' ? undefined : Number(filters.subject_id),
           grading_period_id: filters.grading_period_id === 'all' ? undefined : Number(filters.grading_period_id),
-          score_min: filters.score_min ? Number(filters.score_min) : undefined,
-          score_max: filters.score_max ? Number(filters.score_max) : undefined,
-          date_from: filters.date_from || undefined,
-          date_to: filters.date_to || undefined,
-        }),
-        api.listStudents(),
-        api.listSubjects(),
-      ])
-      setGrades(gradeData)
-      setStudents(studentData)
-      setSubjects(subjectData)
-      setGradingPeriods(allGradingPeriods)
-    } catch (gradeError) {
-      setError(gradeError instanceof Error ? gradeError.message : 'Unable to load grade book')
-    } finally {
-      setLoading(false)
-    }
-  }, [filters])
+        }
+
+        if (recalculate) {
+          await api.recalculateGradebook({ student_id: resolvedStudentId, ...query })
+        }
+
+        const [detail, summaryData, trendData] = await Promise.all([
+          api.getGradebook(resolvedStudentId, query),
+          api.getGradebookSummary(resolvedStudentId),
+          api.getGradeTrends(resolvedStudentId, query),
+        ])
+        setGradebook(detail)
+        setSummary(summaryData)
+        setTrends(trendData)
+      } catch (gradeError) {
+        setError(gradeError instanceof Error ? gradeError.message : 'Unable to load grade book')
+      } finally {
+        setLoading(false)
+        setRefreshing(false)
+      }
+    },
+    [filters.grading_period_id, filters.subject_id, loadReferenceData, selectedStudentId],
+  )
 
   useEffect(() => {
     void load()
@@ -85,155 +132,176 @@ export function GradesPage() {
     const params = new URLSearchParams()
     Object.entries(filters).forEach(([key, value]) => {
       if (!value || value === 'all') return
-      params.set(key === 'q' ? 'search' : key, value)
+      params.set(key, value)
     })
     setSearchParams(params, { replace: true })
   }, [filters, setSearchParams])
 
-  const averageByStudent = useMemo(() => {
-    const buckets = new Map<number, { total: number; count: number }>()
-    grades.forEach((grade) => {
-      const current = buckets.get(grade.student_id) || { total: 0, count: 0 }
-      current.total += grade.percent
-      current.count += 1
-      buckets.set(grade.student_id, current)
-    })
-    return Array.from(buckets.entries()).map(([studentId, bucket]) => ({
-      studentId,
-      average: bucket.total / bucket.count,
-    }))
-  }, [grades])
+  const filteredSummarySubjects = useMemo(() => {
+    if (!summary) return []
+    if (filters.subject_id === 'all') return summary.subjects
+    return summary.subjects.filter((subject) => subject.subject_id === Number(filters.subject_id))
+  }, [filters.subject_id, summary])
 
   if (loading) return <LoadingState message="Loading grade book…" />
-  if (error) return <ErrorState message={error} onRetry={() => void load()} />
-  if (!grades.length) return <EmptyState title="No grades yet" description="Grades will appear after submissions are scored." />
+  if (error && !gradebook) return <ErrorState message={error} onRetry={() => void load()} />
+  if (!students.length) return <EmptyState title="No students yet" description="Add a student before opening the gradebook." />
+  if (!gradebook || !gradebook.subjects.length) {
+    return <EmptyState title="No graded work yet" description="Grades will appear here after assignments are scored." />
+  }
 
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Grade book</CardTitle>
-          <CardDescription>Filter by keyword, student, subject, grading period, score range, and date.</CardDescription>
+          <CardTitle>Gradebook</CardTitle>
+          <CardDescription>Weighted categories, running grades, GPA, and trends by subject.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-3">
-            <div className="space-y-2 xl:col-span-3">
-              <Label>Search</Label>
-              <Input value={filters.q} onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))} placeholder="Assignment title, subject, notes, or student" />
-            </div>
-            <div className="space-y-2">
-              <Label>Student</Label>
-              <Select value={filters.student_id} onValueChange={(value) => setFilters((current) => ({ ...current, student_id: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All students" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All students</SelectItem>
-                  {students.map((student) => (
-                    <SelectItem key={student.id} value={String(student.id)}>
-                      {student.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Subject</Label>
-              <Select value={filters.subject_id} onValueChange={(value) => setFilters((current) => ({ ...current, subject_id: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All subjects" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All subjects</SelectItem>
-                  {subjects.map((subject) => (
-                    <SelectItem key={subject.id} value={String(subject.id)}>
-                      {subject.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Grading period</Label>
-              <Select value={filters.grading_period_id} onValueChange={(value) => setFilters((current) => ({ ...current, grading_period_id: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All periods" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All periods</SelectItem>
-                  {gradingPeriods.map((gradingPeriod) => (
-                    <SelectItem key={gradingPeriod.id} value={String(gradingPeriod.id)}>
-                      {gradingPeriod.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Min grade %</Label>
-              <Input type="number" min="0" max="100" value={filters.score_min} onChange={(event) => setFilters((current) => ({ ...current, score_min: event.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Max grade %</Label>
-              <Input type="number" min="0" max="100" value={filters.score_max} onChange={(event) => setFilters((current) => ({ ...current, score_max: event.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>From</Label>
-              <Input type="date" value={filters.date_from} onChange={(event) => setFilters((current) => ({ ...current, date_from: event.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>To</Label>
-              <Input type="date" value={filters.date_to} onChange={(event) => setFilters((current) => ({ ...current, date_to: event.target.value }))} />
-            </div>
+        <CardContent className="grid gap-4 lg:grid-cols-4">
+          <div className="space-y-2">
+            <Label>Student</Label>
+            <Select value={filters.student_id} onValueChange={(value) => setFilters((current) => ({ ...current, student_id: value }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a student" />
+              </SelectTrigger>
+              <SelectContent>
+                {students.map((student) => (
+                  <SelectItem key={student.id} value={String(student.id)}>
+                    {student.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Student</TableHead>
-                <TableHead>Assignment</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead>Period</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead>Letter</TableHead>
-                <TableHead>Graded</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {grades.map((grade) => (
-                <TableRow key={grade.grade_id}>
-                  <TableCell>{grade.student_name || students.find((student) => student.id === grade.student_id)?.name || grade.student_id}</TableCell>
-                  <TableCell>
-                    <div className="font-medium">{grade.assignment_title}</div>
-                    {grade.notes ? <div className="text-xs text-muted-foreground">{grade.notes}</div> : null}
-                  </TableCell>
-                  <TableCell>{grade.subject_name || subjects.find((subject) => subject.id === grade.subject_id)?.name || '—'}</TableCell>
-                  <TableCell>{grade.grading_period_name || '—'}</TableCell>
-                  <TableCell>
-                    {grade.score}/{grade.max_score} ({grade.percent.toFixed(1)}%)
-                  </TableCell>
-                  <TableCell>{grade.letter_grade || '—'}</TableCell>
-                  <TableCell>{new Date(grade.created_at).toLocaleDateString()}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="space-y-2">
+            <Label>Subject</Label>
+            <Select value={filters.subject_id} onValueChange={(value) => setFilters((current) => ({ ...current, subject_id: value }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="All subjects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All subjects</SelectItem>
+                {subjects.map((subject) => (
+                  <SelectItem key={subject.id} value={String(subject.id)}>
+                    {subject.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Grading period</Label>
+            <Select value={filters.grading_period_id} onValueChange={(value) => setFilters((current) => ({ ...current, grading_period_id: value }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="All periods" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All periods</SelectItem>
+                {gradingPeriods.map((gradingPeriod) => (
+                  <SelectItem key={gradingPeriod.id} value={String(gradingPeriod.id)}>
+                    {gradingPeriod.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-end">
+            <Button variant="outline" onClick={() => void load(true)} disabled={refreshing}>
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              {refreshing ? 'Refreshing…' : 'Recalculate'}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Averages</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {averageByStudent.map((entry) => (
-            <div key={entry.studentId} className="flex items-center justify-between rounded-md border p-3 text-sm">
-              <span>{students.find((student) => student.id === entry.studentId)?.name || `Student #${entry.studentId}`}</span>
-              <span className="font-semibold">{entry.average.toFixed(1)}%</span>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Overall GPA</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{summary?.gpa?.toFixed(2) ?? '—'}</p>
+          </CardContent>
+        </Card>
+        {filteredSummarySubjects.map((subject) => (
+          <Card key={subject.subject_id}>
+            <CardHeader>
+              <CardTitle>{subject.subject_name}</CardTitle>
+              <CardDescription>{subject.graded_assignments}/{subject.assignments} graded</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{subject.overall_percent?.toFixed(1) ?? '—'}%</p>
+              <p className="text-sm text-muted-foreground">
+                {subject.letter_grade || '—'} · GPA {subject.gpa_points?.toFixed(2) ?? '—'}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {gradebook.subjects.map((subject) => {
+        const trendSeries = trends?.series.find((series) => series.subject_id === subject.subject_id)
+        return (
+          <div key={subject.subject_id} className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{subject.subject_name}</CardTitle>
+                <CardDescription>
+                  {subject.overall_percent?.toFixed(1) ?? '—'}% · {subject.letter_grade || '—'} · GPA {subject.gpa_points?.toFixed(2) ?? '—'} ·{' '}
+                  {subject.grading_mode === 'percentage' ? 'Percentage mode' : 'Points mode'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <TrendChart trends={trendSeries?.points ?? []} />
+              </CardContent>
+            </Card>
+
+            {subject.categories.map((category) => (
+              <Card key={`${subject.subject_id}-${category.name}`}>
+                <CardHeader>
+                  <CardTitle className="capitalize">{category.name.replace('_', ' ')}</CardTitle>
+                  <CardDescription>
+                    Weight {(category.weight * 100).toFixed(0)}% · Average {category.average_percent?.toFixed(1) ?? '—'}% · Drop lowest {category.drop_lowest}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {category.items.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Assignment</TableHead>
+                          <TableHead>Due</TableHead>
+                          <TableHead>Score</TableHead>
+                          <TableHead>Running total</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {category.items.map((item) => (
+                          <TableRow key={item.assignment_id}>
+                            <TableCell>
+                              <div className="font-medium">{item.assignment_title}</div>
+                              {item.is_dropped ? <div className="text-xs text-muted-foreground">Dropped from category average</div> : null}
+                            </TableCell>
+                            <TableCell>{item.due_date ? new Date(item.due_date).toLocaleDateString() : '—'}</TableCell>
+                            <TableCell>{item.score !== null && item.score !== undefined ? `${item.score}/${item.max_score} (${item.percent?.toFixed(1)}%)` : 'Not graded'}</TableCell>
+                            <TableCell>{item.running_overall_percent !== null && item.running_overall_percent !== undefined ? `${item.running_overall_percent.toFixed(1)}%` : '—'}</TableCell>
+                            <TableCell>{item.status}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No assignments in this category yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )
+      })}
+
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
   )
 }

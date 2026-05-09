@@ -26,7 +26,7 @@ import { ErrorState } from '@/components/common/ErrorState'
 
 const assignmentStatuses: AssignmentStatus[] = ['pending', 'complete', 'graded']
 const targetStatuses: AssignmentTargetStatus[] = ['assigned', 'submitted', 'graded', 'excused']
-const categories: AssignmentCategory[] = ['homework', 'quiz', 'test', 'project', 'other']
+const categories: AssignmentCategory[] = ['homework', 'quiz', 'test', 'project', 'participation', 'extra_credit', 'other']
 const recurrences = ['none', 'daily', 'weekly'] as const
 const emptyAnswerKeyQuestion = (): AnswerKeyQuestion => ({
   question_number: '',

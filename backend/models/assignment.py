@@ -20,6 +20,8 @@ class AssignmentCategory(str, enum.Enum):
     quiz = 'quiz'
     test = 'test'
     project = 'project'
+    participation = 'participation'
+    extra_credit = 'extra_credit'
     other = 'other'
 
 

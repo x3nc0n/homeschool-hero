@@ -95,6 +95,8 @@ def _clear_uploads_dir() -> None:
                 if attempt == 4:
                     raise
                 time.sleep(0.1 * (attempt + 1))
+            except FileNotFoundError:
+                break
 
 
 def _import_optional_module(*names: str):
@@ -216,6 +218,20 @@ async def create_family_user(database_schema):
                 session.add(family)
                 await session.flush()
                 session.add(models_module.FamilySettings(family=family, timezone='UTC', grading_scale='letter'))
+                session.add(
+                    models_module.GradeScale(
+                        family_id=family.id,
+                        name='Default 4.0 Scale',
+                        is_default=True,
+                        ranges=[
+                            {'letter': 'A', 'min': 90, 'max': 100, 'gpa_points': 4.0},
+                            {'letter': 'B', 'min': 80, 'max': 89.99, 'gpa_points': 3.0},
+                            {'letter': 'C', 'min': 70, 'max': 79.99, 'gpa_points': 2.0},
+                            {'letter': 'D', 'min': 60, 'max': 69.99, 'gpa_points': 1.0},
+                            {'letter': 'F', 'min': 0, 'max': 59.99, 'gpa_points': 0.0},
+                        ],
+                    )
+                )
             else:
                 family = await session.get(models_module.Family, family_id)
                 if family is None:

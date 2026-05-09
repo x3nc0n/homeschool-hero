@@ -3,6 +3,7 @@ from datetime import date, datetime, time, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import Float, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.database import get_db
 from backend.models import (
@@ -28,6 +29,7 @@ from backend.schemas.grades import (
 from backend.security import AuthSession, get_family_record
 from backend.services.audit import log_event
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.gradebook import ensure_default_grade_scale, map_percent_to_grade
 from backend.services.notifications import create_grading_complete_notifications
 
 router = APIRouter(prefix='/grades', tags=['grades'])
@@ -114,7 +116,19 @@ async def create_grade(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Grade already exists for submission')
 
-    grade = Grade(family_id=auth.family_id, **payload.model_dump())
+    assignment = await get_family_record(db, Assignment, submission.assignment_id, auth.family_id)
+    subject = (
+        await get_family_record(db, Subject, assignment.subject_id, auth.family_id, options=(selectinload(Subject.grade_scale),))
+        if assignment is not None
+        else None
+    )
+    default_scale = await ensure_default_grade_scale(db, auth.family_id)
+    letter_grade = payload.letter_grade
+    if letter_grade is None and assignment is not None:
+        scale = subject.grade_scale if subject and subject.grade_scale else default_scale
+        letter_grade, _ = map_percent_to_grade(scale, (payload.score / payload.max_score) * 100)
+
+    grade = Grade(family_id=auth.family_id, **payload.model_dump(exclude={'letter_grade'}), letter_grade=letter_grade)
     db.add(grade)
     await db.flush()
     assignment_target = (
@@ -138,7 +152,6 @@ async def create_grade(
         after=_grade_snapshot(grade),
         request=request,
     )
-    assignment = await get_family_record(db, Assignment, submission.assignment_id, auth.family_id)
     await create_grading_complete_notifications(
         db,
         family_id=auth.family_id,
@@ -366,6 +379,17 @@ async def update_grade(
     before_snapshot = _grade_snapshot(grade)
     for key, value in payload.model_dump().items():
         setattr(grade, key, value)
+    if payload.letter_grade is None:
+        submission = await get_family_record(db, Submission, grade.submission_id, auth.family_id)
+        assignment = await get_family_record(db, Assignment, submission.assignment_id, auth.family_id) if submission else None
+        subject = (
+            await get_family_record(db, Subject, assignment.subject_id, auth.family_id, options=(selectinload(Subject.grade_scale),))
+            if assignment is not None
+            else None
+        )
+        default_scale = await ensure_default_grade_scale(db, auth.family_id)
+        scale = subject.grade_scale if subject and subject.grade_scale else default_scale
+        grade.letter_grade, _ = map_percent_to_grade(scale, (grade.score / grade.max_score) * 100)
     await db.flush()
     await log_event(
         db,

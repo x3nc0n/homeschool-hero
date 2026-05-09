@@ -73,6 +73,15 @@ GRADES = {
     'subject_averages': f'{API_PREFIX}/grades/averages/subject/{{subject_id}}',
 }
 
+GRADEBOOK = {
+    'detail': f'{API_PREFIX}/gradebook/{{student_id}}',
+    'summary': f'{API_PREFIX}/gradebook/{{student_id}}/summary',
+    'trends': f'{API_PREFIX}/gradebook/{{student_id}}/trends',
+    'categories': f'{API_PREFIX}/gradebook/categories',
+    'scales': f'{API_PREFIX}/gradebook/scales',
+    'calculate': f'{API_PREFIX}/gradebook/calculate',
+}
+
 QUIZZES = {
     'collection': f'{API_PREFIX}/quizzes',
     'detail': f'{API_PREFIX}/quizzes/{{quiz_id}}',
