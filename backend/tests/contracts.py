@@ -94,6 +94,8 @@ QUIZZES = {
 }
 
 GRADING = {
+    'jobs': f'{API_PREFIX}/grading/jobs',
+    'review': f'{API_PREFIX}/grading/review/{{job_id}}',
     'review_queue': f'{API_PREFIX}/grading/review-queue',
     'approve': f'{API_PREFIX}/grading/review-queue/{{job_id}}/approve',
     'reject': f'{API_PREFIX}/grading/review-queue/{{job_id}}/reject',

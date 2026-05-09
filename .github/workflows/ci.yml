@@ -14,15 +14,84 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: write
   security-events: write
 
 env:
-  COVERAGE_FAIL_UNDER: '76'
+  COVERAGE_FAIL_UNDER: '80'
   CI_IMAGE_NAME: homeschool-hero:ci
 
 jobs:
-  backend-tests:
-    name: Backend quality gate
+  backend-test-matrix:
+    name: Backend tests (${{ matrix.python-version }} / ${{ matrix.category }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+        category: [unit, integration, performance]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            backend/requirements-test.txt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r ../requirements.txt
+          if [ -f requirements-test.txt ]; then
+            python -m pip install -r requirements-test.txt
+          fi
+
+      - name: Select pytest marker expression
+        id: marker
+        run: |
+          case "${{ matrix.category }}" in
+            unit)
+              echo "expression=not integration and not performance" >> "$GITHUB_OUTPUT"
+              ;;
+            integration)
+              echo "expression=integration" >> "$GITHUB_OUTPUT"
+              ;;
+            performance)
+              echo "expression=performance" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Run pytest category
+        env:
+          TESTING: '1'
+        run: |
+          rm -rf .pytest-state
+          python -m pytest -q -m "${{ steps.marker.outputs.expression }}" --junitxml="test-results-${{ matrix.python-version }}-${{ matrix.category }}.xml"
+
+      - name: Upload junit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-junit-${{ matrix.python-version }}-${{ matrix.category }}
+          path: backend/test-results-${{ matrix.python-version }}-${{ matrix.category }}.xml
+          if-no-files-found: ignore
+
+  backend-coverage:
+    name: Backend coverage
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -59,15 +128,32 @@ jobs:
           TESTING: '1'
         run: |
           rm -rf .pytest-state
-          python -m pytest -vv --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=${COVERAGE_FAIL_UNDER}
+          python -m pytest -q --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=test-results-coverage.xml --cov-fail-under=${COVERAGE_FAIL_UNDER}
 
-      - name: Upload coverage report
+      - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-coverage
-          path: backend/coverage.xml
+          path: |
+            backend/coverage.xml
+            backend/test-results-coverage.xml
           if-no-files-found: ignore
+
+  backend-tests:
+    name: Backend quality gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - backend-test-matrix
+      - backend-coverage
+    steps:
+      - name: Enforce backend gate
+        run: |
+          if [ "${{ needs.backend-test-matrix.result }}" != "success" ] || [ "${{ needs.backend-coverage.result }}" != "success" ]; then
+            echo "Backend matrix or coverage failed."
+            exit 1
+          fi
 
   migration-checks:
     name: Migration checks
@@ -241,3 +327,74 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
           GITLEAKS_ENABLE_SUMMARY: 'true'
+
+  pr-test-summary:
+    name: PR test summary
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && always()
+    needs:
+      - backend-test-matrix
+      - backend-coverage
+      - frontend-tests
+    steps:
+      - name: Download junit artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: backend-junit-*
+          path: artifacts/junit
+          merge-multiple: true
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: backend-coverage
+          path: artifacts/coverage
+          merge-multiple: true
+
+      - name: Build summary comment
+        env:
+          BACKEND_MATRIX_RESULT: ${{ needs.backend-test-matrix.result }}
+          BACKEND_COVERAGE_RESULT: ${{ needs.backend-coverage.result }}
+          FRONTEND_RESULT: ${{ needs.frontend-tests.result }}
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import os
+          import xml.etree.ElementTree as ET
+
+          junit_dir = Path('artifacts/junit')
+          rows = []
+          for path in sorted(junit_dir.glob('*.xml')):
+              root = ET.parse(path).getroot()
+              suite = root if root.tag == 'testsuite' else root.find('testsuite')
+              tests = int(suite.attrib.get('tests', 0))
+              failures = int(suite.attrib.get('failures', 0))
+              errors = int(suite.attrib.get('errors', 0))
+              skipped = int(suite.attrib.get('skipped', 0))
+              rows.append((path.stem.replace('test-results-', ''), tests, failures, errors, skipped))
+
+          coverage_path = Path('artifacts/coverage/coverage.xml')
+          coverage_value = 'n/a'
+          if coverage_path.exists():
+              root = ET.parse(coverage_path).getroot()
+              coverage_value = f"{float(root.attrib.get('line-rate', 0)) * 100:.2f}%"
+
+          lines = [
+              '## CI test summary',
+              '',
+              f"- Backend matrix: **{os.environ['BACKEND_MATRIX_RESULT']}**",
+              f"- Backend coverage: **{coverage_value}** ({os.environ['BACKEND_COVERAGE_RESULT']})",
+              f"- Frontend checks: **{os.environ['FRONTEND_RESULT']}**",
+              '',
+              '| Suite | Tests | Failures | Errors | Skipped |',
+              '| --- | ---: | ---: | ---: | ---: |',
+          ]
+          for suite, tests, failures, errors, skipped in rows:
+              lines.append(f'| {suite} | {tests} | {failures} | {errors} | {skipped} |')
+          Path('pr-test-summary.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
+      - name: Publish sticky comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: pr-test-summary.md

@@ -1,14 +1,29 @@
 from __future__ import annotations
 
-from datetime import date
+import csv
+import io
+import time
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import inspect
 
 from backend.database import AsyncSessionLocal, engine
-from backend.models import ComplianceRule, ComplianceRuleType
-from tests.contracts import ATTENDANCE, CALENDAR, GRADEBOOK, GRADES, STUDENTS
+from backend.models import (
+    Assignment,
+    ComplianceRule,
+    ComplianceRuleType,
+    ExportFormat,
+    ExportType,
+    Grade,
+    Student,
+    Subject,
+    Submission,
+)
+from tests.contracts import ASSIGNMENTS, ATTENDANCE, CALENDAR, DASHBOARD, GRADEBOOK, GRADES, STUDENTS
 from tests.helpers import response_id
+
+pytestmark = pytest.mark.performance
 
 
 async def _index_map(table_names: list[str]) -> dict[str, dict[str, tuple[str, ...]]]:
@@ -204,3 +219,145 @@ async def test_grade_and_submission_pagination_handles_empty_pages(
     empty_submissions_page = await authorized_client.get('/api/submissions', params={'page': 2, 'page_size': 1})
     assert empty_submissions_page.status_code == 200, empty_submissions_page.text
     assert empty_submissions_page.json()['items'] == []
+
+
+async def _auth_context(client) -> tuple[int, int]:
+    response = await client.get('/api/auth/me')
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    return payload['family']['id'], payload['user']['id']
+
+
+@pytest.mark.asyncio
+async def test_gradebook_handles_large_assignment_volume(authorized_client):
+    family_id, _ = await _auth_context(authorized_client)
+    student = await authorized_client.post(STUDENTS['collection'], json={'name': 'Performance Student'})
+    assert student.status_code == 201, student.text
+    student_id = response_id(student.json())
+    subject = await authorized_client.post('/api/subjects', json={'name': 'Performance Math', 'color': '#2563eb'})
+    assert subject.status_code == 201, subject.text
+    subject_id = response_id(subject.json())
+    categories = await authorized_client.put(
+        '/api/gradebook/categories',
+        json={'subject_id': subject_id, 'categories': [{'name': 'homework', 'weight': 1.0, 'drop_lowest': 0}]},
+    )
+    assert categories.status_code == 200, categories.text
+
+    async with AsyncSessionLocal() as session:
+        assignments = []
+        submissions = []
+        grades = []
+        for index in range(120):
+            assignment = Assignment(
+                family_id=family_id,
+                subject_id=subject_id,
+                title=f'Performance Assignment {index}',
+                description='Bulk gradebook fixture',
+            )
+            session.add(assignment)
+            await session.flush()
+            assignments.append(assignment)
+            submission = Submission(
+                family_id=family_id,
+                assignment_id=assignment.id,
+                student_id=student_id,
+                file_path=f'performance/{index}.txt',
+                original_filename=f'{index}.txt',
+                file_name=f'{index}.txt',
+                file_type='text/plain',
+                file_size_bytes=8,
+            )
+            session.add(submission)
+            await session.flush()
+            submissions.append(submission)
+            grades.append(
+                Grade(
+                    family_id=family_id,
+                    submission_id=submission.id,
+                    student_id=student_id,
+                    score=90 + (index % 10),
+                    max_score=100,
+                    graded_by='human',
+                    notes='bulk grade',
+                )
+            )
+        session.add_all(grades)
+        await session.commit()
+
+    started = time.perf_counter()
+    response = await authorized_client.get(GRADEBOOK['detail'].format(student_id=student_id), params={'subject_id': subject_id})
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload['subjects'][0]['categories'][0]['assignment_count'] == 120
+    assert elapsed < 5.0
+
+
+@pytest.mark.asyncio
+async def test_dashboard_aggregates_multiple_students_quickly(authorized_client):
+    family_id, _ = await _auth_context(authorized_client)
+
+    async with AsyncSessionLocal() as session:
+        students = [Student(family_id=family_id, name=f'Dashboard Student {index}') for index in range(12)]
+        session.add_all(students)
+        await session.commit()
+
+    started = time.perf_counter()
+    response = await authorized_client.get(DASHBOARD['summary'])
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200, response.text
+    assert len(response.json()['student_summaries']) == 12
+    assert elapsed < 5.0
+
+
+@pytest.mark.asyncio
+async def test_search_handles_many_records(authorized_client):
+    family_id, _ = await _auth_context(authorized_client)
+
+    async with AsyncSessionLocal() as session:
+        session.add_all(Student(family_id=family_id, name=f'Perf Search Student {index}') for index in range(220))
+        await session.commit()
+
+    started = time.perf_counter()
+    response = await authorized_client.get('/api/search', params={'q': 'Perf Search', 'type': 'student', 'page_size': 50})
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200, response.text
+    assert response.json()['total'] == 220
+    assert elapsed < 5.0
+
+
+@pytest.mark.asyncio
+async def test_export_handles_large_student_dataset(authorized_client):
+    family_id, _ = await _auth_context(authorized_client)
+    async with AsyncSessionLocal() as session:
+        session.add_all(Student(family_id=family_id, name=f'Export Student {index}') for index in range(180))
+        await session.commit()
+
+    create_response = await authorized_client.post(
+        '/api/exports',
+        json={'export_type': ExportType.entity.value, 'format': ExportFormat.csv.value, 'entity_types': ['students']},
+    )
+    assert create_response.status_code == 201, create_response.text
+    job_id = create_response.json()['id']
+
+    deadline = time.perf_counter() + 10.0
+    while True:
+        response = await authorized_client.get(f'/api/exports/{job_id}/status')
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        if payload['status'] in {'complete', 'failed'}:
+            break
+        if time.perf_counter() >= deadline:
+            pytest.fail(f'Export job {job_id} did not finish in time: {payload}')
+
+    assert payload['status'] == 'complete'
+    download_started = time.perf_counter()
+    download = await authorized_client.get(f'/api/exports/{job_id}/download')
+    download_elapsed = time.perf_counter() - download_started
+    assert download.status_code == 200, download.text
+    rows = list(csv.DictReader(io.StringIO(download.content.decode('utf-8'))))
+    assert len(rows) == 180
+    assert download_elapsed < 5.0

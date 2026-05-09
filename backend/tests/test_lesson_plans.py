@@ -217,3 +217,114 @@ async def test_assignment_generation_links_assignments_to_lesson_plans(authorize
     detail = await authorized_client.get(LESSON_PLANS['detail'].format(lesson_plan_id=lesson_plan['id']))
     assert detail.status_code == 200, detail.text
     assert detail.json()['assignment_ids'] == [assignment['id']]
+
+
+@pytest.mark.asyncio
+async def test_manual_lesson_plan_crud_and_duplicate_validation(authorized_client):
+    seeded = await _seed_package_with_schedule(authorized_client)
+
+    create = await authorized_client.post(
+        LESSON_PLANS['collection'],
+        json={
+            'curriculum_lesson_id': seeded['lesson_ids'][0],
+            'student_id': seeded['student_id'],
+            'school_year_id': seeded['school_year_id'],
+            'target_date': '2026-08-18',
+            'estimated_duration_minutes': 50,
+            'notes': 'Manual lesson plan entry.',
+        },
+    )
+    assert create.status_code == 201, create.text
+    lesson_plan_id = response_id(create.json())
+    assert create.json()['estimated_duration_minutes'] == 50
+
+    listing = await authorized_client.get(
+        LESSON_PLANS['collection'],
+        params={'student_id': seeded['student_id'], 'school_year_id': seeded['school_year_id']},
+    )
+    assert listing.status_code == 200, listing.text
+    assert [item['id'] for item in listing.json()] == [lesson_plan_id]
+
+    duplicate = await authorized_client.post(
+        LESSON_PLANS['collection'],
+        json={
+            'curriculum_lesson_id': seeded['lesson_ids'][0],
+            'student_id': seeded['student_id'],
+            'school_year_id': seeded['school_year_id'],
+            'target_date': '2026-08-19',
+        },
+    )
+    assert duplicate.status_code == 409, duplicate.text
+
+    update = await authorized_client.put(
+        LESSON_PLANS['detail'].format(lesson_plan_id=lesson_plan_id),
+        json={
+            'curriculum_lesson_id': seeded['lesson_ids'][0],
+            'student_id': seeded['student_id'],
+            'school_year_id': seeded['school_year_id'],
+            'target_date': '2026-08-20',
+            'estimated_duration_minutes': 60,
+            'status': 'in_progress',
+            'notes': 'Updated for direct CRUD coverage.',
+        },
+    )
+    assert update.status_code == 200, update.text
+    assert update.json()['status'] == 'in_progress'
+    assert update.json()['target_date'] == '2026-08-20'
+
+    delete = await authorized_client.delete(LESSON_PLANS['detail'].format(lesson_plan_id=lesson_plan_id))
+    assert delete.status_code == 204, delete.text
+
+
+@pytest.mark.asyncio
+async def test_pacing_target_crud_and_duplicate_validation(authorized_client):
+    seeded = await _seed_package_with_schedule(authorized_client)
+
+    create = await authorized_client.post(
+        LESSON_PLANS['pacing_targets'],
+        json={
+            'curriculum_unit_id': seeded['unit_ids'][0],
+            'student_id': seeded['student_id'],
+            'target_start_date': '2026-08-17',
+            'target_end_date': '2026-08-22',
+        },
+    )
+    assert create.status_code == 201, create.text
+    pacing_target_id = response_id(create.json())
+
+    listing = await authorized_client.get(
+        LESSON_PLANS['pacing_targets'],
+        params={'student_id': seeded['student_id'], 'subject_id': seeded['subject_id']},
+    )
+    assert listing.status_code == 200, listing.text
+    assert [item['id'] for item in listing.json()] == [pacing_target_id]
+
+    duplicate = await authorized_client.post(
+        LESSON_PLANS['pacing_targets'],
+        json={
+            'curriculum_unit_id': seeded['unit_ids'][0],
+            'student_id': seeded['student_id'],
+            'target_start_date': '2026-08-18',
+            'target_end_date': '2026-08-23',
+        },
+    )
+    assert duplicate.status_code == 409, duplicate.text
+
+    update = await authorized_client.put(
+        LESSON_PLANS['pacing_target_detail'].format(pacing_target_id=pacing_target_id),
+        json={
+            'curriculum_unit_id': seeded['unit_ids'][0],
+            'student_id': seeded['student_id'],
+            'target_start_date': '2026-08-18',
+            'target_end_date': '2026-08-25',
+        },
+    )
+    assert update.status_code == 200, update.text
+    assert update.json()['target_end_date'] == '2026-08-25'
+
+    detail = await authorized_client.get(LESSON_PLANS['pacing_target_detail'].format(pacing_target_id=pacing_target_id))
+    assert detail.status_code == 200, detail.text
+    assert detail.json()['id'] == pacing_target_id
+
+    delete = await authorized_client.delete(LESSON_PLANS['pacing_target_detail'].format(pacing_target_id=pacing_target_id))
+    assert delete.status_code == 204, delete.text

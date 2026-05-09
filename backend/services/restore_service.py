@@ -176,8 +176,8 @@ async def list_available_backups(db: AsyncSession, *, family_id: int) -> list[Ba
         return []
 
     known_job_ids = {
-        str(job.id)
-        for job in (
+        str(job_id)
+        for job_id in (
             await db.execute(select(BackupJob.id).where(BackupJob.family_id == family_id))
         ).scalars()
     }

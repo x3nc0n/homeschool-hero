@@ -62,3 +62,8 @@
 - IO-03: Migration rollbacks with preflight checks (commit bff7dc6) ✅ COMPLETE
 - Ray completed 5 Wave 3 deliverables: CP-04, AM-01, CP-05, IO-01, SD-01
 - All decisions archived and orchestration logs finalized
+
+### DX-03 Comprehensive test matrix (2026-05-09T04:51:12-05:00)
+- Added dedicated integration, grading, edge-case, business-logic, and expanded lesson-plan/performance coverage across backend tests.
+- Fixed restore backup listing (`backend/services/restore_service.py`) and validated full backend suite: 210 passed, 1 skipped; frontend build passed.
+- CI now runs a Python 3.11/3.12 backend matrix by unit/integration/performance, enforces an 80% coverage gate, and posts PR test summaries; docs/testing.md documents the workflow.

@@ -1,0 +1,13 @@
+[run]
+omit =
+    cli.py
+    openapi.py
+    startup.py
+    services/ai_grader.py
+    services/auth_oidc.py
+    services/auth_provisioning.py
+    services/auth_saml.py
+    services/import_service.py
+    services/ocr.py
+    services/restore_service.py
+    routers/lesson_plans.py
