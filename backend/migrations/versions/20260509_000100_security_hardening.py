@@ -19,6 +19,13 @@ down_revision: Union[str, None] = '20260508_224850'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops failed_login_attempts and locked_until from the users table.
+- Any active lockouts will be cleared; ensure no security incident is in progress before rolling back.
+- No row data is lost beyond those two columns.
+"""
+
+
 def upgrade() -> None:
     with op.batch_alter_table('users') as batch:
         batch.add_column(sa.Column('failed_login_attempts', sa.Integer(), nullable=False, server_default='0'))

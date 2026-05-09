@@ -19,6 +19,12 @@ down_revision: Union[str, Sequence[str], None] = '20260510_001500'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops pacing_targets and lesson_plans tables, plus the lesson_plan_status enum.
+- All lesson plan and pacing data will be permanently lost; export before rolling back.
+- pacing_targets is removed before lesson_plans to satisfy dependency order.
+"""
+
 lesson_plan_status = sa.Enum(
     'planned',
     'in_progress',

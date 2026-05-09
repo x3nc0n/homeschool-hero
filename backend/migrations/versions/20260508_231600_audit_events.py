@@ -19,6 +19,12 @@ down_revision: Union[str, None] = '20260508_224850'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops the audit_events table and the audit_action enum type.
+- All audit history will be permanently lost; export audit records before rolling back if retention is required.
+- No foreign-key data is altered beyond the table removal.
+"""
+
 
 def upgrade() -> None:
     audit_action = sa.Enum(
