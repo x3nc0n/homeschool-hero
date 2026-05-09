@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  SECURITY_IMAGE_NAME: homeschool-hero:security
+
 permissions:
   actions: read
   contents: read
@@ -77,7 +80,98 @@ jobs:
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
 
+      - name: Prepare CodeQL artifact directory
+        run: mkdir -p codeql-results
+
       - name: Analyze with CodeQL
         uses: github/codeql-action/analyze@v3
         with:
           category: /language:${{ matrix.language }}
+          output: codeql-results/${{ matrix.language }}.sarif
+
+      - name: Upload CodeQL SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-codeql-${{ matrix.language }}
+          path: codeql-results/${{ matrix.language }}.sarif
+          if-no-files-found: error
+
+  trivy:
+    name: Trivy image scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: docker build --pull -t "${SECURITY_IMAGE_NAME}" .
+
+      - name: Scan image with Trivy policy gate
+        id: trivy-policy
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.SECURITY_IMAGE_NAME }}
+          scan-type: image
+          scanners: vuln
+          vuln-type: os,library
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignorefile: .trivyignore
+
+      - name: Generate Trivy JSON report
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.SECURITY_IMAGE_NAME }}
+          scan-type: image
+          scanners: vuln
+          vuln-type: os,library
+          format: json
+          output: trivy-results.json
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Upload Trivy JSON artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-trivy-json
+          path: trivy-results.json
+          if-no-files-found: error
+
+      - name: Generate Trivy SARIF
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.SECURITY_IMAGE_NAME }}
+          scan-type: image
+          scanners: vuln
+          vuln-type: os,library
+          format: sarif
+          output: trivy-results.sarif
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+          ignorefile: .trivyignore
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-image
+
+      - name: Enforce Trivy vulnerability policy
+        if: steps.trivy-policy.outcome == 'failure'
+        run: |
+          echo "Trivy found HIGH or CRITICAL vulnerabilities."
+          exit 1

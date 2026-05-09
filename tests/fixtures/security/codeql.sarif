@@ -1,0 +1,104 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "CodeQL",
+          "rules": [
+            {
+              "id": "py/sql-injection",
+              "name": "Potential SQL injection",
+              "shortDescription": {
+                "text": "Potential SQL injection"
+              },
+              "properties": {
+                "security-severity": "9.3"
+              },
+              "help": {
+                "text": "Use parameterized queries."
+              },
+              "helpUri": "https://example.com/codeql/sql"
+            },
+            {
+              "id": "js/path-traversal",
+              "name": "Path traversal",
+              "properties": {
+                "security-severity": "7.5"
+              },
+              "help": {
+                "text": "Validate untrusted paths."
+              }
+            },
+            {
+              "id": "js/low-signal",
+              "name": "Low signal",
+              "properties": {
+                "security-severity": "4.2"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "py/sql-injection",
+          "message": {
+            "text": "Unsanitized query reaches execute()."
+          },
+          "partialFingerprints": {
+            "primaryLocationLineHash": "abc123"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "backend/routers/auth.py"
+                },
+                "region": {
+                  "startLine": 84
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "js/path-traversal",
+          "message": {
+            "text": "User-controlled path reaches file read."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "frontend/src/pages/Upload.tsx"
+                },
+                "region": {
+                  "startLine": 31
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "js/low-signal",
+          "message": {
+            "text": "Ignore this low severity result."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "frontend/src/main.tsx"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

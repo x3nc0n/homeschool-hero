@@ -19,6 +19,9 @@
 - 2026-05-08 — The `main` branch protection now requires `Backend quality gate`, `Migration checks`, `Frontend checks`, `Container checks`, and `Secret scan` before merge.
 - 2026-05-08 — CodeQL now primes both Python and JavaScript/TypeScript dependency graphs before weekly/PR analysis and runs the broader `security-extended` plus `security-and-quality` suites for FastAPI + React coverage.
 - 2026-05-08 — Trivy now scans built images for both OS and library CVEs with `.trivyignore` as the reviewed exception file, while Gitleaks uses a repo-level `.gitleaks.toml` plus PR-time scanning and documented local pre-commit setup.
+- 2026-05-08T23:15:58.975-05:00 — Security issue automation now artifacts CodeQL SARIF + Trivy JSON from the `Security` workflow, opens or refreshes `security`/`severity:*`/`squad` issues for HIGH+ findings, labels reviewed suppressions, and auto-closes resolved findings on later runs.
+- 2026-05-08T23:15:59.056-05:00 — IO-03 added startup migration preflight/status logging, `MIGRATION_MODE` warn/apply behavior, a Python migration CLI plus `scripts/migrate.{ps1,sh}`, rollback-notes templates/docs, and CI migration lint + upgrade/downgrade verification.
+- 2026-05-08T23:15:59.056-05:00 — Focused migration/startup tests passed (`backend/tests/test_startup.py`, `backend/tests/test_migrations.py`); broader backend imports remain blocked by a pre-existing FastAPI 204 response assertion in `backend/routers/calendar.py`.
 
 ### Phase 1 Completion (2026-05-08T22:04:55Z)
 - Test infrastructure tasks 21-22 completed successfully: pytest contracts, async httpx clients, mocked dependencies ✓

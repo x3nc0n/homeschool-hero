@@ -1,0 +1,5 @@
+# Add reviewed CVEs only.
+# Each ignored finding must have a comment directly above it explaining the false-positive or accepted-risk reason.
+# Example:
+# Base image fix is pending upstream; re-check on the next weekly image refresh.
+# CVE-2026-12345

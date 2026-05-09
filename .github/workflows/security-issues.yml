@@ -1,0 +1,97 @@
+name: Security Issues
+
+on:
+  workflow_run:
+    workflows:
+      - Security
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  sync-security-issues:
+    if: github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out scan source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download scan artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p security-artifacts
+          gh run download "${{ github.event.workflow_run.id }}" --repo "${{ github.repository }}" --dir security-artifacts
+          find security-artifacts -maxdepth 3 -type f | sort
+
+      - name: Detect available reports
+        id: detect
+        shell: bash
+        run: |
+          codeql_dirs=()
+          for path in security-artifacts/security-codeql-*; do
+            if [ -d "$path" ]; then
+              codeql_dirs+=("$path")
+            fi
+          done
+          if [ "${#codeql_dirs[@]}" -gt 0 ]; then
+            echo "codeql_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "codeql_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -d security-artifacts/security-trivy-json ]; then
+            echo "trivy_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "trivy_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Parse CodeQL SARIF
+        if: steps.detect.outputs.codeql_present == 'true'
+        shell: bash
+        run: |
+          codeql_dirs=()
+          for path in security-artifacts/security-codeql-*; do
+            if [ -d "$path" ]; then
+              codeql_dirs+=("$path")
+            fi
+          done
+          python scripts/parse-sarif.py --input "${codeql_dirs[@]}" --output security-artifacts/codeql-findings.json
+
+      - name: Parse Trivy JSON
+        if: steps.detect.outputs.trivy_present == 'true'
+        run: python scripts/parse-trivy.py --input security-artifacts/security-trivy-json --ignorefile .trivyignore --output security-artifacts/trivy-findings.json
+
+      - name: Sync GitHub issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
+        shell: bash
+        run: |
+          args=(
+            --scan-run-url "${{ github.event.workflow_run.html_url }}"
+            --scan-date "${{ github.event.workflow_run.updated_at }}"
+          )
+
+          if [ "${{ steps.detect.outputs.codeql_present }}" = "true" ]; then
+            args+=(--findings security-artifacts/codeql-findings.json --scanner-present codeql)
+          fi
+
+          if [ "${{ steps.detect.outputs.trivy_present }}" = "true" ]; then
+            args+=(--findings security-artifacts/trivy-findings.json --scanner-present trivy)
+          fi
+
+          python scripts/sync-security-issues.py "${args[@]}"

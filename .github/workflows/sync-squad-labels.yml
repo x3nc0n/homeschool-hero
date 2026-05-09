@@ -108,6 +108,12 @@ jobs:
               { name: 'priority:p2', color: 'FBCA04', description: 'Next sprint' }
             ];
 
+            const SECURITY_FINDING_LABELS = [
+              { name: 'severity:high', color: 'D93F0B', description: 'High severity security finding' },
+              { name: 'severity:critical', color: 'B60205', description: 'Critical severity security finding' },
+              { name: 'suppressed', color: '6E7781', description: 'Finding is intentionally suppressed with a documented reason' }
+            ];
+
             function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
             // Ensure the base "squad" triage label exists
@@ -139,6 +145,7 @@ jobs:
             labels.push(...AUTOMATION_LABELS);
             labels.push(...PRIORITY_LABELS);
             labels.push(...SIGNAL_LABELS);
+            labels.push(...SECURITY_FINDING_LABELS);
 
             // Sync labels (create or update)
             for (const label of labels) {

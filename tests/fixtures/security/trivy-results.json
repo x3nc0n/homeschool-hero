@@ -1,0 +1,47 @@
+{
+  "ArtifactName": "homeschool-hero:security",
+  "Results": [
+    {
+      "Target": "python:3.12-alpine",
+      "Class": "os-pkgs",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-12345",
+          "PkgName": "openssl",
+          "InstalledVersion": "3.1.0-r0",
+          "FixedVersion": "3.1.0-r2",
+          "Severity": "CRITICAL",
+          "Title": "OpenSSL denial of service",
+          "Description": "A vulnerable OpenSSL package is present in the base image.",
+          "PrimaryURL": "https://example.com/CVE-2026-12345"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-99999",
+          "PkgName": "libxml2",
+          "InstalledVersion": "2.10.0-r0",
+          "FixedVersion": "2.10.0-r4",
+          "Severity": "MEDIUM",
+          "Title": "Filtered medium issue",
+          "Description": "This should be ignored by severity filtering.",
+          "PrimaryURL": "https://example.com/CVE-2026-99999"
+        }
+      ]
+    },
+    {
+      "Target": "backend/requirements.txt",
+      "Class": "lang-pkgs",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-77777",
+          "PkgName": "jinja2",
+          "InstalledVersion": "3.1.0",
+          "FixedVersion": "3.1.6",
+          "Severity": "HIGH",
+          "Title": "Jinja sandbox escape",
+          "Description": "Jinja2 needs to be upgraded.",
+          "PrimaryURL": "https://example.com/CVE-2026-77777"
+        }
+      ]
+    }
+  ]
+}
