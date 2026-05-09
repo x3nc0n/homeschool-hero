@@ -13,7 +13,7 @@ APScheduler==3.10.4
 itsdangerous==2.2.0
 python3-saml==1.16.0
 python-dotenv==1.1.0
-pytest==8.3.5
+pytest==9.0.3
 httpx==0.28.1
 aiosqlite==0.21.0
 pillow==10.4.0
