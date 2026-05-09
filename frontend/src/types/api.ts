@@ -49,8 +49,6 @@ export type TermType = 'semester' | 'quarter' | 'trimester' | 'custom'
 export type CalendarEventType = 'holiday' | 'closure' | 'custom'
 export type ResourceType = 'file' | 'link' | 'note'
 export type LessonPlanStatus = 'planned' | 'in_progress' | 'completed' | 'skipped' | 'rescheduled'
-export type ImportEntityType = 'students' | 'subjects' | 'assignments' | 'grades' | 'attendance' | 'curriculum_packages'
-export type ImportJobStatus = 'pending' | 'validating' | 'importing' | 'complete' | 'failed'
 
 export interface ApiErrorPayload {
   detail?: string
@@ -316,28 +314,6 @@ export interface SubmissionVersion {
 }
 
 export type Submission = SubmissionVersion
-
-export interface ImportJobError {
-  row?: number | null
-  field?: string | null
-  message: string
-  suggestion?: string | null
-}
-
-export interface ImportJob {
-  id: number
-  family_id: number
-  user_id: number
-  file_path: string
-  entity_type: ImportEntityType
-  status: ImportJobStatus
-  total_rows: number
-  processed_rows: number
-  error_count: number
-  errors: ImportJobError[]
-  created_at: string
-  completed_at?: string | null
-}
 
 export interface SubmissionDetail extends SubmissionVersion {
   version_history: SubmissionVersion[]

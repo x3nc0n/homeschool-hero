@@ -38,8 +38,6 @@ import type {
   GradeHistoryFilters,
   GradeHistoryItem,
   HealthResponse,
-  ImportEntityType,
-  ImportJob,
   GradingPeriod,
   InstructionalDayCount,
   Invitation,
@@ -641,31 +639,6 @@ export const api = {
 
   unlinkResourceFromLesson(lessonId: number, resourceId: number) {
     return request<void>(`/curriculum/lessons/${lessonId}/resources/${resourceId}`, { method: 'DELETE' })
-  },
-
-  listImportJobs() {
-    return request<ImportJob[]>('/imports')
-  },
-
-  uploadImportFile(entityType: ImportEntityType, file: File) {
-    const formData = new FormData()
-    formData.append('file', file)
-    return request<ImportJob>(`/imports/upload?entity_type=${encodeURIComponent(entityType)}`, {
-      method: 'POST',
-      body: formData,
-    })
-  },
-
-  validateImportJob(jobId: number) {
-    return request<ImportJob>(`/imports/${jobId}/validate`, { method: 'POST' })
-  },
-
-  executeImportJob(jobId: number) {
-    return request<ImportJob>(`/imports/${jobId}/execute`, { method: 'POST' })
-  },
-
-  getImportJobStatus(jobId: number) {
-    return request<ImportJob>(`/imports/${jobId}/status`)
   },
 
   listAssignments(filters: AssignmentFilters = {}) {
