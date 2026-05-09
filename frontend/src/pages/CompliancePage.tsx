@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { ComplianceDashboard, ComplianceState, ComplianceStatus, SchoolYear } from '@/types/api'
+import type { ComplianceDashboard, ComplianceState, ComplianceStatus, RequiredComplianceReport, SchoolYear } from '@/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -41,6 +42,7 @@ function formatRequirement(status: ComplianceStatus) {
 export function CompliancePage() {
   const [dashboard, setDashboard] = useState<ComplianceDashboard | null>(null)
   const [schoolYears, setSchoolYears] = useState<SchoolYear[]>([])
+  const [requiredReports, setRequiredReports] = useState<RequiredComplianceReport[]>([])
   const [selectedYearId, setSelectedYearId] = useState<number | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -53,8 +55,14 @@ export function CompliancePage() {
         api.listSchoolYears(),
         api.getComplianceDashboard(selectedYearId),
       ])
+      const resolvedYearId = selectedYearId || dashboardData.school_year_id || schoolYearData.find((schoolYear) => schoolYear.is_active)?.id
+      const requiredData = await api.listRequiredComplianceReports({
+        state: dashboardData.state_code,
+        school_year_id: resolvedYearId,
+      })
       setSchoolYears(schoolYearData)
       setDashboard(dashboardData)
+      setRequiredReports(requiredData.items)
       if (!selectedYearId) {
         setSelectedYearId(dashboardData.school_year_id ?? schoolYearData.find((schoolYear) => schoolYear.is_active)?.id)
       }
@@ -77,6 +85,10 @@ export function CompliancePage() {
           .map((status) => ({ student: studentRow.student.name, status })),
       ),
     [dashboard],
+  )
+  const outstandingReports = useMemo(
+    () => requiredReports.reduce((total, item) => total + item.outstanding_count, 0),
+    [requiredReports],
   )
 
   if (loading) return <LoadingState message="Loading compliance dashboard…" />
@@ -114,6 +126,31 @@ export function CompliancePage() {
             ))}
           </div>
         </CardHeader>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle>Compliance reporting workspace</CardTitle>
+            <CardDescription>
+              {requiredReports.length - outstandingReports} report requirements complete · {outstandingReports} still outstanding
+            </CardDescription>
+          </div>
+          <Button asChild variant="outline">
+            <Link to="/compliance-reports">Open reports</Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-3">
+          {requiredReports.map((item) => (
+            <div key={item.report_type} className="rounded-md border p-3">
+              <p className="font-medium">{item.label}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {item.completed_count}/{item.required_count} complete
+              </p>
+            </div>
+          ))}
+        </CardContent>
       </Card>
 
       {alertItems.length ? (

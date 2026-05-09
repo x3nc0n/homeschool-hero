@@ -42,3 +42,8 @@
 - Added backend report card support with new report card/report card entry models, Alembic migration, generation service, family-scoped APIs, PDF export, finalize workflow, and report-card tests covering aggregation, immutability, PDF output, and family isolation.
 - Added frontend report cards workspace with generation by student/grading period, draft detail/editing, progress-report snapshot, finalize controls, PDF download, typed API client updates, navigation, and routing.
 - Hardened async assignment/report-card flows to avoid lazy-load `MissingGreenlet` regressions and validated with `cd backend && python -m pytest -q` (`152 passed, 1 skipped`) plus `cd frontend && npm run build`.
+
+### RC-04 State compliance reporting (2026-05-09T02:07:44-05:00)
+- Added backend compliance report support with a new `ComplianceReport` model, Alembic migration, generation service, required-report checklist logic, PDF export, finalize flow, and family-scoped APIs for annual assessments, quarterly reports, attendance logs, portfolio reviews, and notices of intent.
+- Added frontend compliance reports workspace with student/year/report-type generation, required checklist visibility, draft preview/finalize/download actions, new API client/types, navigation/routing, and a compliance dashboard handoff card into the reporting workflow.
+- Validated with `cd backend && python -m pytest -q` (`158 passed, 1 skipped`) plus `cd frontend && npm run build`.
