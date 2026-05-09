@@ -74,3 +74,10 @@
 - Winston submitted SD-04 (auto-patch policy): limits auto-remediation to direct dependencies; routes CodeQL/base-image/transitive/ambiguous findings to needs-human-review.
 - Security triage completed: #22 (Insecure TLS in health.py) → Ray; #23-25 (redundant test assignments) → Winston test code quality.
 - All 14 inbox decisions merged to active registry; clear execution path for post-MVP production features.
+
+### Dependency Cycle & Test Policy (2026-05-09T12:44:00Z)
+- Egon completed CI action review: 6 PRs merged with clean YAML version bumps
+- Ray reviewed backend deps: 8 auto-merged, 2 held (pytest 9.x major for migration, #13 duplicate governance)
+- Venkman reviewed frontend deps: 1 auto-merged, 4 closed (React 19, router v7, tailwind v4 major bumps for planned sprints)
+- Security triage outcome: 4 issues closed (fixes on main from prior); #22 assigned to Ray, #23-25 assigned to Winston for test code quality remediation
+- **Policy reminder:** Patch-only auto-merge; major version bumps require planned migration work and explicit team sign-off
