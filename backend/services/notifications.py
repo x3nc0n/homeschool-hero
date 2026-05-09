@@ -40,7 +40,7 @@ BACKUP_STALE_AFTER = timedelta(hours=48)
 EMAIL_TEMPLATE_CONFIG: dict[NotificationType, dict[str, str]] = {
     NotificationType.due_date: {'headline': 'Assignment due soon', 'cta': 'Open assignments'},
     NotificationType.grading_complete: {'headline': 'Grading update', 'cta': 'Open grades'},
-    NotificationType.backup_status: {'headline': 'Backup attention needed', 'cta': 'Open dashboard'},
+    NotificationType.backup_status: {'headline': 'Backup attention needed', 'cta': 'Open backup settings'},
     NotificationType.security_alert: {'headline': 'Security alert', 'cta': 'Review sign-in activity'},
     NotificationType.invitation: {'headline': 'Invitation update', 'cta': 'Open invitations'},
     NotificationType.compliance_reminder: {'headline': 'Compliance reminder', 'cta': 'Open dashboard'},
@@ -498,7 +498,7 @@ async def create_backup_status_notifications(db: AsyncSession) -> None:
             notification_type=NotificationType.backup_status,
             title='Backup attention required',
             message=message,
-            link='/dashboard',
+            link='/settings/backups',
             roles=FAMILY_MANAGER_ROLES,
             suppress_duplicates_for=timedelta(hours=24),
         )

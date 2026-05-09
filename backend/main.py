@@ -16,12 +16,14 @@ from starlette.middleware.gzip import GZipMiddleware
 from backend.config import settings
 from backend.database import engine, get_db
 from backend.models import Base
+from backend.openapi import API_DESCRIPTION, API_SUMMARY, API_VERSION, configure_openapi
 from backend.rate_limit import RateLimitRule, RateLimiter
 from backend.routers import (
     assignments_router,
     attendance_router,
     audit_router,
     auth_router,
+    backups_router,
     compliance_router,
     compliance_reports_router,
     curriculum_router,
@@ -47,6 +49,7 @@ from backend.routers.calendar import router as calendar_router
 from backend.routers.grading import router as grading_router
 from backend.routers.imports import router as imports_router
 from backend.services.capabilities import get_auth_providers, get_capability_registry
+from backend.services.backup_service import get_backup_scheduler
 from backend.services.grading_worker import create_worker
 from backend.services.logging_config import bind_context, configure_logging, log_action, reset_context, update_context
 from backend.services.monitoring import collect_metrics_payload, get_monitoring, install_monitoring
@@ -66,6 +69,9 @@ from backend.security import (
 )
 
 API_PREFIX = settings.api_prefix.rstrip('/')
+OPENAPI_PATH = f'{API_PREFIX}/openapi.json'
+DOCS_PATH = f'{API_PREFIX}/docs'
+REDOC_PATH = f'{API_PREFIX}/redoc'
 FRONTEND_DIST_DIR = Path(__file__).resolve().parents[1] / 'frontend' / 'dist'
 FRONTEND_INDEX = FRONTEND_DIST_DIR / 'index.html'
 HEALTH_PATHS = {f'{API_PREFIX}/health', '/health'}
@@ -82,6 +88,9 @@ PUBLIC_API_PATHS = {
     f'{API_PREFIX}/auth/saml/acs',
     f'{API_PREFIX}/health',
     f'{API_PREFIX}/capabilities',
+    OPENAPI_PATH,
+    DOCS_PATH,
+    REDOC_PATH,
 }
 AUTH_RATE_LIMIT = RateLimitRule('auth', 5, 60)
 UPLOAD_RATE_LIMIT = RateLimitRule('upload', 10, 60)
@@ -92,6 +101,7 @@ GENERAL_RATE_LIMIT = RateLimitRule('general', 100, 60)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     worker = None
+    backup_scheduler = None
     summary = validate_runtime_config()
     log_validated_config_summary(summary)
     capabilities = await get_capability_registry().check_all()
@@ -103,9 +113,13 @@ async def lifespan(_: FastAPI):
         await asyncio.to_thread(ensure_database_migrations)
         worker = create_worker()
         worker.start()
+        backup_scheduler = get_backup_scheduler()
+        backup_scheduler.start()
     yield
     if worker is not None:
         worker.stop()
+    if backup_scheduler is not None:
+        backup_scheduler.stop()
 
 
 def _is_api_path(path: str) -> bool:
@@ -232,9 +246,24 @@ async def _build_health_payload() -> tuple[int, dict[str, object]]:
 
 def create_app() -> FastAPI:
     configure_logging(settings)
-    app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    app = FastAPI(
+        title=settings.app_name,
+        summary=API_SUMMARY,
+        description=API_DESCRIPTION,
+        version=API_VERSION,
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=OPENAPI_PATH,
+    )
     app.state.rate_limiter = RateLimiter()
     install_monitoring(app)
+    configure_openapi(
+        app,
+        api_prefix=API_PREFIX,
+        session_cookie_name=settings.session_cookie_name,
+        csrf_cookie_name=settings.csrf_cookie_name,
+    )
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     app.add_middleware(
         SessionMiddleware,
@@ -295,7 +324,7 @@ def create_app() -> FastAPI:
         request.state.correlation_id = correlation_id
         context_token = bind_context(correlation_id=correlation_id, action='http_request')
         started_at = perf_counter()
-        is_public = _is_public_api_path(path) or path.startswith('/docs') or path.startswith('/openapi')
+        is_public = _is_public_api_path(path)
         session = None
         try:
             if _is_api_path(path) and not is_public:
@@ -409,6 +438,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_router, prefix=API_PREFIX)
     app.include_router(curriculum_router, prefix=API_PREFIX)
     app.include_router(dashboard_router, prefix=API_PREFIX)
+    app.include_router(backups_router, prefix=API_PREFIX)
     app.include_router(exports_router, prefix=API_PREFIX)
     app.include_router(gradebook_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)

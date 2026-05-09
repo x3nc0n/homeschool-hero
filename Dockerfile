@@ -20,6 +20,7 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
+        postgresql-client \
         poppler-utils \
         tesseract-ocr \
         tini \

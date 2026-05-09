@@ -162,6 +162,7 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
     errors: list[str] = []
     database_summary: dict[str, str] = {}
     auth_summary: dict[str, str] = {}
+    backup_summary: dict[str, object] = {}
     upload_dir = config.upload_dir
     migration_mode = str(getattr(config, 'migration_mode', os.getenv('MIGRATION_MODE', 'apply')))
 
@@ -190,6 +191,15 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
     except StartupValidationError as exc:
         errors.append(str(exc))
 
+    if config.backup_target:
+        try:
+            from backend.services.backup_service import get_backup_configuration, validate_backup_configuration
+
+            validate_backup_configuration(config)
+            backup_summary = get_backup_configuration(config)
+        except Exception as exc:  # pragma: no cover - backup validation delegates rich errors
+            errors.append(f'Backup configuration is invalid: {exc}')
+
     if errors:
         raise StartupValidationError('Startup configuration validation failed:\n- ' + '\n- '.join(errors))
 
@@ -202,6 +212,7 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
         'auth_auto_provision_mode': auth_summary.get('auth_auto_provision_mode', 'default_family'),
         'smtp_configured': bool(config.smtp_host and config.smtp_from_email),
         'backup_configured': bool(config.backup_target),
+        'backup_destination': str(getattr(backup_summary.get('destination'), 'value', backup_summary.get('destination') or 'local')),
         'migration_mode': migration_mode,
         'testing': config.testing,
     }
@@ -210,7 +221,7 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
 def log_validated_config_summary(summary: dict[str, object]) -> None:
     logger.info(
         'Validated runtime config: database_driver=%s database_name=%s upload_dir=%s ai_provider=%s '
-        'auth_provider=%s auth_auto_provision_mode=%s smtp_configured=%s backup_configured=%s '
+        'auth_provider=%s auth_auto_provision_mode=%s smtp_configured=%s backup_configured=%s backup_destination=%s '
         'migration_mode=%s testing=%s',
         summary.get('database_driver'),
         summary.get('database_name') or '(default)',
@@ -220,6 +231,7 @@ def log_validated_config_summary(summary: dict[str, object]) -> None:
         summary.get('auth_auto_provision_mode'),
         summary.get('smtp_configured'),
         summary.get('backup_configured'),
+        summary.get('backup_destination'),
         summary.get('migration_mode'),
         summary.get('testing'),
     )

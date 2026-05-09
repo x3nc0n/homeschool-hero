@@ -4,4 +4,4 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-docker compose --profile backup run --rm backup once "$@"
+docker compose --profile backup run --rm backup python -m backend.cli backups once "$@"

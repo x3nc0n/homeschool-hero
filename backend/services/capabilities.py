@@ -13,6 +13,7 @@ import httpx
 import pytesseract
 
 from backend.config import Settings, settings
+from backend.services.backup_service import get_backup_configuration, validate_backup_configuration
 
 logger = logging.getLogger(__name__)
 
@@ -209,28 +210,16 @@ def check_backup(config: Settings = settings) -> dict[str, Any]:
             details={},
         )
 
-    target = Path(config.backup_target)
     try:
-        if target.exists():
-            if not target.is_dir():
-                raise RuntimeError('target exists but is not a directory')
-            if not os.access(target, os.W_OK):
-                raise RuntimeError('target directory is not writable')
-        else:
-            parent = target.parent if str(target.parent) not in {'', '.'} else Path('.')
-            if not parent.exists():
-                raise RuntimeError('parent directory does not exist')
-            if not parent.is_dir():
-                raise RuntimeError('parent path is not a directory')
-            if not os.access(parent, os.W_OK):
-                raise RuntimeError('parent directory is not writable')
+        validate_backup_configuration(config)
+        details = get_backup_configuration(config)
     except Exception as exc:
         return _status(
             'backup',
             enabled=False,
             configured=True,
             reason=f'Backup target is unavailable: {exc}',
-            details={'target': str(target)},
+            details={'target': str(config.backup_target)},
         )
 
     return _status(
@@ -238,7 +227,12 @@ def check_backup(config: Settings = settings) -> dict[str, Any]:
         enabled=True,
         configured=True,
         reason='Backup target is configured.',
-        details={'target': str(target)},
+        details={
+            'target': str(config.backup_target),
+            'destination': getattr(details['destination'], 'value', details['destination']),
+            'schedule': details['schedule'],
+            'restic_enabled': details['restic_enabled'],
+        },
     )
 
 

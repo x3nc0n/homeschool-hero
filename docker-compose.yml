@@ -24,6 +24,7 @@ services:
       AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
       AUTH_AUTO_PROVISION_MODE: ${AUTH_AUTO_PROVISION_MODE:-default_family}
       AUTH_DEFAULT_FAMILY_NAME: ${AUTH_DEFAULT_FAMILY_NAME:-SSO Users}
+      BACKUP_SCHEDULER_ENABLED: ${APP_BACKUP_SCHEDULER_ENABLED:-false}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
       OIDC_DISCOVERY_URL: ${OIDC_DISCOVERY_URL:-}
@@ -43,7 +44,7 @@ services:
       start_period: 30s
     volumes:
       - uploads_data:/data/uploads
-      - backups_data:/data/backups
+      - ${BACKUP_MOUNT_SOURCE:-./data/backups}:/data/backups
     mem_limit: ${APP_MEMORY_LIMIT:-1536m}
     pids_limit: 256
     read_only: true
@@ -111,23 +112,25 @@ services:
   backup:
     <<: *service_defaults
     profiles: ["backup", "full"]
-    image: postgres:16-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile
     env_file: *shared_env
+    environment:
+      BACKUP_SCHEDULER_ENABLED: "true"
     depends_on:
       db:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "/scripts/backup-worker.sh"]
-    command: ["loop"]
+    command: ["python", "-m", "backend.cli", "backups", "worker"]
     healthcheck:
-      test: ["CMD-SHELL", "/bin/sh /scripts/backup-worker.sh healthcheck"]
+      test: ["CMD-SHELL", "python -m backend.cli backups healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
     volumes:
-      - backups_data:/data/backups
+      - ${BACKUP_MOUNT_SOURCE:-./data/backups}:/data/backups
       - uploads_data:/data/uploads:ro
-      - ./scripts/backup-worker.sh:/scripts/backup-worker.sh:ro
     mem_limit: ${BACKUP_MEMORY_LIMIT:-256m}
     read_only: true
     tmpfs:
@@ -136,5 +139,4 @@ services:
 volumes:
   pgdata:
   uploads_data:
-  backups_data:
   ollama_data:

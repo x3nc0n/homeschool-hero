@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
+import signal
+import threading
 from collections.abc import Sequence
 
+from backend.services.backup_service import get_backup_scheduler, run_scheduled_backups, validate_backup_configuration
 from backend.startup import (
     StartupValidationError,
     create_migration_revision,
@@ -41,6 +45,12 @@ def _build_parser() -> argparse.ArgumentParser:
     migration_commands.add_parser('verify', help='Run lint, upgrade head, downgrade one revision, upgrade head')
     migration_commands.add_parser('startup-check', help='Run startup migration preflight/apply logic')
 
+    backups = subparsers.add_parser('backups', help='Backup helpers')
+    backup_commands = backups.add_subparsers(dest='backup_command', required=True)
+    backup_commands.add_parser('once', help='Run scheduled backups immediately')
+    backup_commands.add_parser('healthcheck', help='Validate backup destination configuration')
+    backup_commands.add_parser('worker', help='Start the cron-based backup worker')
+
     return parser
 
 
@@ -54,34 +64,63 @@ def _print_status() -> None:
     print(f'elapsed_seconds={status.elapsed_seconds:.3f}')
 
 
+def _run_backup_worker() -> None:
+    scheduler = get_backup_scheduler()
+    scheduler.start()
+    stop_event = threading.Event()
+
+    def _handle_signal(_signum, _frame) -> None:
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
+    try:
+        while not stop_event.wait(1):
+            pass
+    finally:
+        scheduler.stop()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
     try:
-        if args.command != 'migrations':
+        if args.command == 'migrations':
+            if args.migration_command == 'status':
+                _print_status()
+            elif args.migration_command == 'upgrade':
+                run_migrations(revision=args.revision)
+            elif args.migration_command == 'downgrade':
+                downgrade_database(revision=args.revision)
+            elif args.migration_command == 'create':
+                create_migration_revision(args.message, autogenerate=args.autogenerate)
+            elif args.migration_command == 'lint':
+                errors = lint_migration_scripts()
+                if errors:
+                    raise StartupValidationError('Migration lint failed:\n- ' + '\n- '.join(errors))
+                print('Migration lint passed.')
+            elif args.migration_command == 'verify':
+                verify_migration_cycle()
+                print('Migration upgrade/downgrade cycle passed.')
+            elif args.migration_command == 'startup-check':
+                ensure_database_migrations()
+                print('Startup migration check passed.')
+            else:  # pragma: no cover - argparse guards this
+                parser.error(f'Unsupported migrations command: {args.migration_command}')
+        elif args.command == 'backups':
+            if args.backup_command == 'once':
+                job_ids = asyncio.run(run_scheduled_backups())
+                print(f'Backups completed for jobs: {", ".join(str(job_id) for job_id in job_ids) if job_ids else "none"}')
+            elif args.backup_command == 'healthcheck':
+                summary = validate_backup_configuration()
+                print(summary['message'])
+            elif args.backup_command == 'worker':
+                _run_backup_worker()
+            else:  # pragma: no cover - argparse guards this
+                parser.error(f'Unsupported backups command: {args.backup_command}')
+        else:
             parser.error(f'Unsupported command: {args.command}')
-        if args.migration_command == 'status':
-            _print_status()
-        elif args.migration_command == 'upgrade':
-            run_migrations(revision=args.revision)
-        elif args.migration_command == 'downgrade':
-            downgrade_database(revision=args.revision)
-        elif args.migration_command == 'create':
-            create_migration_revision(args.message, autogenerate=args.autogenerate)
-        elif args.migration_command == 'lint':
-            errors = lint_migration_scripts()
-            if errors:
-                raise StartupValidationError('Migration lint failed:\n- ' + '\n- '.join(errors))
-            print('Migration lint passed.')
-        elif args.migration_command == 'verify':
-            verify_migration_cycle()
-            print('Migration upgrade/downgrade cycle passed.')
-        elif args.migration_command == 'startup-check':
-            ensure_database_migrations()
-            print('Startup migration check passed.')
-        else:  # pragma: no cover - argparse guards this
-            parser.error(f'Unsupported migrations command: {args.migration_command}')
     except StartupValidationError as exc:
         print(str(exc))
         return 1

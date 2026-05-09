@@ -17,6 +17,7 @@ from backend.schemas.attendance import (
     AttendanceSummaryResponse,
 )
 from backend.schemas.auth import LoginRequest, LoginResponse, SessionResponse
+from backend.schemas.backups import BackupConfigRead, BackupJobRead, BackupStatusRead, BackupTriggerRequest
 from backend.schemas.calendar import (
     CalendarEventCreate,
     CalendarEventRead,
@@ -102,6 +103,10 @@ __all__ = [
     "AttendanceRecordRead",
     "AttendanceSummaryBucket",
     "AttendanceSummaryResponse",
+    "BackupConfigRead",
+    "BackupJobRead",
+    "BackupStatusRead",
+    "BackupTriggerRequest",
     "CalendarEventCreate",
     "CalendarEventRead",
     "CalendarEventUpdate",

@@ -270,7 +270,7 @@ async def test_background_checks_generate_due_date_and_backup_notifications(auth
 
         payload = {(notification_type.value, link) for notification_type, link in notifications}
         assert ('due_date', '/assignments') in payload
-        assert ('backup_status', '/dashboard') in payload
+        assert ('backup_status', '/settings/backups') in payload
     finally:
         settings.backup_target = original_backup_target
 

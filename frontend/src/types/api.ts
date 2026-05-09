@@ -65,6 +65,9 @@ export type ImportJobStatus = 'pending' | 'validating' | 'importing' | 'complete
 export type ExportType = 'full' | 'incremental' | 'entity'
 export type ExportFormat = 'json' | 'csv' | 'zip'
 export type ExportJobStatus = 'pending' | 'processing' | 'complete' | 'failed'
+export type BackupType = 'full' | 'incremental' | 'manual'
+export type BackupJobStatus = 'pending' | 'running' | 'complete' | 'failed'
+export type BackupDestination = 'local' | 'smb' | 'nfs'
 export type ExportEntityType =
   | 'family'
   | 'students'
@@ -725,6 +728,64 @@ export interface ExportJob {
   created_at: string
   completed_at?: string | null
   expires_at: string
+}
+
+export interface BackupJob {
+  id: number
+  family_id: number
+  user_id: number
+  backup_type: BackupType
+  status: BackupJobStatus
+  destination: BackupDestination
+  file_path: string
+  file_size: number
+  started_at: string
+  completed_at?: string | null
+  error_message?: string | null
+  manifest?: Record<string, unknown> | null
+}
+
+export interface BackupConfig {
+  configured: boolean
+  scheduler_enabled: boolean
+  destination: BackupDestination
+  target_path?: string | null
+  target_uri?: string | null
+  schedule: string
+  next_scheduled?: string | null
+  retention_days: number
+  filename_prefix: string
+  encryption_configured: boolean
+  restic_installed: boolean
+  restic_enabled: boolean
+  restic_repository?: string | null
+  validation: {
+    configured: boolean
+    reachable: boolean
+    writable: boolean
+    message: string
+  }
+  smb?: {
+    host?: string | null
+    share?: string | null
+    user?: string | null
+    password_configured: boolean
+  } | null
+  nfs?: {
+    host?: string | null
+    path?: string | null
+  } | null
+}
+
+export interface BackupStatus {
+  configured: boolean
+  scheduler_enabled: boolean
+  destination: BackupDestination
+  next_scheduled?: string | null
+  restic_enabled: boolean
+  validation: BackupConfig['validation']
+  last_backup?: BackupJob | null
+  last_success?: BackupJob | null
 }
 
 export interface AuditEvent {

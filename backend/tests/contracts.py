@@ -102,6 +102,14 @@ NOTIFICATIONS = {
     'preferences': f'{API_PREFIX}/notifications/preferences',
 }
 
+BACKUPS = {
+    'collection': f'{API_PREFIX}/backups',
+    'trigger': f'{API_PREFIX}/backups/trigger',
+    'config': f'{API_PREFIX}/backups/config',
+    'status': f'{API_PREFIX}/backups/status',
+    'detail': f'{API_PREFIX}/backups/{{job_id}}',
+}
+
 CALENDAR = {
     'school_years': f'{API_PREFIX}/calendar/school-years',
     'school_year_detail': f'{API_PREFIX}/calendar/school-years/{{school_year_id}}',

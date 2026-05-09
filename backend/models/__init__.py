@@ -9,6 +9,7 @@ from backend.models.assignment import (
 from backend.models.answer_key import AnswerKey
 from backend.models.attendance import AttendanceExcuse, AttendanceRecord, AttendanceStatus
 from backend.models.audit_event import AuditAction, AuditEvent
+from backend.models.backup_job import BackupDestination, BackupJob, BackupJobStatus, BackupType
 from backend.models.lesson_plan import LessonPlan, LessonPlanStatus, PacingTarget
 from backend.models.calendar import CalendarEvent, CalendarEventType, GradingPeriod, SchoolYear, Term, TermType
 from backend.models.compliance import ComplianceRule, ComplianceRuleType, ComplianceState, ComplianceStatus
@@ -52,6 +53,10 @@ __all__ = [
     'AttendanceStatus',
     'AuditAction',
     'AuditEvent',
+    'BackupDestination',
+    'BackupJob',
+    'BackupJobStatus',
+    'BackupType',
     'Base',
     'CalendarEvent',
     'CalendarEventType',

@@ -4,6 +4,10 @@ import type {
   AttendanceHoursSummary,
   AttendanceRecord,
   AttendanceSummary,
+  BackupConfig,
+  BackupJob,
+  BackupStatus,
+  BackupType,
   DailyAgenda,
   AuditEventFilters,
   AuditEventListResponse,
@@ -329,6 +333,29 @@ export const api = {
 
   listExportJobs() {
     return request<ExportJob[]>('/exports')
+  },
+
+  listBackups() {
+    return request<BackupJob[]>('/backups')
+  },
+
+  getBackup(id: number) {
+    return request<BackupJob>(`/backups/${id}`)
+  },
+
+  getBackupConfig() {
+    return request<BackupConfig>('/backups/config')
+  },
+
+  getBackupStatus() {
+    return request<BackupStatus>('/backups/status')
+  },
+
+  triggerBackup(backupType: BackupType = 'manual') {
+    return request<BackupJob>('/backups/trigger', {
+      method: 'POST',
+      body: JSON.stringify({ backup_type: backupType }),
+    })
   },
 
   createExportJob(payload: { export_type: ExportType; format: ExportFormat; entity_types?: ExportEntityType[]; date_from?: string }) {
