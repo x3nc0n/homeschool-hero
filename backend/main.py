@@ -26,6 +26,7 @@ from backend.routers import (
     compliance_reports_router,
     curriculum_router,
     dashboard_router,
+    exports_router,
     gradebook_router,
     grades_router,
     invitations_router,
@@ -181,9 +182,10 @@ def _get_rate_limit(request: Request, session: dict[str, object] | None) -> tupl
     user_id = session.get('user_id') if session else None
     principal = f'user:{user_id}' if isinstance(user_id, int) else f'ip:{ip}'
 
-    if request.method.upper() == 'POST' and path == f'{API_PREFIX}/submissions':
+    method = request.method.upper()
+    if method == 'POST' and path == f'{API_PREFIX}/submissions':
         return UPLOAD_RATE_LIMIT, principal
-    if '/export' in path:
+    if path.startswith(f'{API_PREFIX}/exports') and method in {'POST', 'DELETE'}:
         return EXPORT_RATE_LIMIT, principal
     return GENERAL_RATE_LIMIT, principal
 
@@ -407,6 +409,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_router, prefix=API_PREFIX)
     app.include_router(curriculum_router, prefix=API_PREFIX)
     app.include_router(dashboard_router, prefix=API_PREFIX)
+    app.include_router(exports_router, prefix=API_PREFIX)
     app.include_router(gradebook_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)
     app.include_router(subjects_router, prefix=API_PREFIX)

@@ -21,6 +21,7 @@ from backend.models.curriculum import (
     Resource,
     ResourceType,
 )
+from backend.models.export_job import ExportEntityType, ExportFormat, ExportJob, ExportJobStatus, ExportType
 from backend.models.base import Base
 from backend.models.family import Family, FamilyMembership, FamilyRole, FamilySettings, Invitation
 from backend.models.grade import Grade, GradedBy
@@ -64,6 +65,11 @@ __all__ = [
     'CurriculumLesson',
     'CurriculumPackage',
     'CurriculumUnit',
+    'ExportEntityType',
+    'ExportFormat',
+    'ExportJob',
+    'ExportJobStatus',
+    'ExportType',
     'Family',
     'FamilyMembership',
     'FamilyRole',

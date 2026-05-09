@@ -45,6 +45,7 @@ from backend.schemas.compliance import (
     FamilyComplianceStateRead,
     FamilyComplianceStateUpdate,
 )
+from backend.schemas.exports import ExportJobCreateRequest, ExportJobRead
 from backend.schemas.grades import (
     GradeAverageByStudent,
     GradeAverageBySubject,
@@ -112,6 +113,8 @@ __all__ = [
     "ComplianceRuleSummary",
     "ComplianceStatusRead",
     "ComplianceStudentStatusResponse",
+    "ExportJobCreateRequest",
+    "ExportJobRead",
     "GradeAverageByStudent",
     "GradeAverageBySubject",
     "GradeCategoryRead",

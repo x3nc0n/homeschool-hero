@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { CapabilitiesProvider } from '@/context/CapabilitiesContext'
 import { NotificationsProvider } from '@/context/NotificationsContext'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { ExportsPage } from '@/pages/ExportsPage'
 import { FamilySettingsPage } from '@/pages/FamilySettingsPage'
 import { AcceptInvitationPage } from '@/pages/AcceptInvitationPage'
 import { AssignmentsPage } from '@/pages/AssignmentsPage'
@@ -81,6 +82,7 @@ function ProtectedRoutes() {
         <Route path="/planner" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PlannerPage />} />} />
         <Route path="/lesson-plans" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<LessonPlansPage />} />} />
         <Route path="/curriculum" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CurriculumPage />} />} />
+        <Route path="/exports" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<ExportsPage />} />} />
         <Route path="/imports" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ImportsPage />} />} />
         <Route path="/resources" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ResourceLibraryPage />} />} />
         <Route path="/portfolio" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PortfolioPage />} />} />

@@ -41,6 +41,10 @@ import type {
   AuthSession,
   BootstrapStatus,
   DashboardSummary,
+  ExportEntityType,
+  ExportFormat,
+  ExportJob,
+  ExportType,
   CapabilitiesResponse,
   CreateInvitationPayload,
   Grade,
@@ -321,6 +325,29 @@ export const api = {
     })
     const query = params.toString()
     return request<AuditEventListResponse>(`/audit${query ? `?${query}` : ''}`)
+  },
+
+  listExportJobs() {
+    return request<ExportJob[]>('/exports')
+  },
+
+  createExportJob(payload: { export_type: ExportType; format: ExportFormat; entity_types?: ExportEntityType[]; date_from?: string }) {
+    return request<ExportJob>('/exports', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getExportJobStatus(id: number) {
+    return request<ExportJob>(`/exports/${id}/status`)
+  },
+
+  deleteExportJob(id: number) {
+    return request<void>(`/exports/${id}`, { method: 'DELETE' })
+  },
+
+  getExportDownloadUrl(id: number) {
+    return `${API_BASE_URL}/exports/${id}/download`
   },
 
   search(filters: SearchFilters = {}) {

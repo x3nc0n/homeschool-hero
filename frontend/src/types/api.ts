@@ -62,6 +62,22 @@ export type ResourceType = 'file' | 'link' | 'note'
 export type LessonPlanStatus = 'planned' | 'in_progress' | 'completed' | 'skipped' | 'rescheduled'
 export type ImportEntityType = 'students' | 'subjects' | 'assignments' | 'grades' | 'attendance' | 'curriculum_packages'
 export type ImportJobStatus = 'pending' | 'validating' | 'importing' | 'complete' | 'failed'
+export type ExportType = 'full' | 'incremental' | 'entity'
+export type ExportFormat = 'json' | 'csv' | 'zip'
+export type ExportJobStatus = 'pending' | 'processing' | 'complete' | 'failed'
+export type ExportEntityType =
+  | 'family'
+  | 'students'
+  | 'subjects'
+  | 'assignments'
+  | 'submissions'
+  | 'grades'
+  | 'attendance'
+  | 'report_cards'
+  | 'transcripts'
+  | 'portfolio_entries'
+  | 'compliance_reports'
+  | 'audit_events'
 export type ReportCardStatus = 'draft' | 'final' | 'archived'
 export type ComplianceReportType = 'annual_assessment' | 'quarterly_report' | 'notice_of_intent' | 'attendance_log' | 'portfolio_review'
 export type ComplianceReportStatus = 'draft' | 'final' | 'submitted'
@@ -693,6 +709,22 @@ export interface ImportJob {
   errors: ImportJobError[]
   created_at: string
   completed_at?: string | null
+}
+
+export interface ExportJob {
+  id: number
+  family_id: number
+  user_id: number
+  export_type: ExportType
+  format: ExportFormat
+  status: ExportJobStatus
+  file_path: string
+  file_size: number
+  entity_types: ExportEntityType[]
+  date_from?: string | null
+  created_at: string
+  completed_at?: string | null
+  expires_at: string
 }
 
 export interface AuditEvent {
