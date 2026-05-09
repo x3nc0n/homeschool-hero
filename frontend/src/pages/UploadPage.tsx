@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FileUpload } from '@/components/features/FileUpload'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useCapabilities } from '@/context/CapabilitiesContext'
 import { api } from '@/lib/api'
 import type { Assignment, Student, Submission } from '@/types/api'
 import { LoadingState } from '@/components/common/LoadingState'
@@ -13,6 +14,7 @@ export function UploadPage() {
   const [latestSubmission, setLatestSubmission] = useState<Submission | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const { capabilities } = useCapabilities()
 
   const load = async () => {
     setLoading(true)
@@ -46,7 +48,21 @@ export function UploadPage() {
 
   return (
     <div className="space-y-4">
-      <FileUpload students={students} assignments={assignments} onUploaded={setLatestSubmission} />
+      {!capabilities.ai_grading.enabled || !capabilities.ocr.enabled ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {!capabilities.ocr.enabled
+            ? 'Uploads will be stored, but OCR text extraction is currently unavailable.'
+            : 'AI grading is currently unavailable, so uploads will go directly to manual review.'}
+        </div>
+      ) : null}
+
+      <FileUpload
+        students={students}
+        assignments={assignments}
+        onUploaded={setLatestSubmission}
+        aiAvailable={capabilities.ai_grading.enabled}
+        ocrAvailable={capabilities.ocr.enabled}
+      />
 
       <Card>
         <CardHeader>

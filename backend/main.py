@@ -1,8 +1,8 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,24 +22,37 @@ from backend.routers import (
 )
 from backend.routers.grading import router as grading_router
 from backend.security import verify_session_token
+from backend.services.capabilities import get_capability_registry
 from backend.services.grading_worker import create_worker
-from backend.startup import ensure_auth_runtime_configured, ensure_runtime_directories, run_migrations
+from backend.startup import (
+    ensure_auth_runtime_configured,
+    log_validated_config_summary,
+    run_migrations,
+    validate_runtime_config,
+)
 
 API_PREFIX = settings.api_prefix.rstrip('/')
 FRONTEND_DIST_DIR = Path(__file__).resolve().parents[1] / 'frontend' / 'dist'
 FRONTEND_INDEX = FRONTEND_DIST_DIR / 'index.html'
+logger = logging.getLogger(__name__)
 PUBLIC_API_PATHS = {
     f'{API_PREFIX}/auth/bootstrap',
     f'{API_PREFIX}/auth/login',
     f'{API_PREFIX}/auth/register',
     f'{API_PREFIX}/health',
+    f'{API_PREFIX}/capabilities',
 }
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     worker = None
-    ensure_runtime_directories()
+    summary = validate_runtime_config()
+    log_validated_config_summary(summary)
+    capabilities = await get_capability_registry().check_all()
+    optional_unavailable = [name for name, state in capabilities.items() if not state['enabled']]
+    if optional_unavailable:
+        logger.warning('Starting with reduced functionality: %s', ', '.join(optional_unavailable))
     if settings.testing:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -57,41 +70,47 @@ def _is_api_path(path: str) -> bool:
     return path == API_PREFIX or path.startswith(f'{API_PREFIX}/')
 
 
+def _is_public_api_path(path: str) -> bool:
+    return path in PUBLIC_API_PATHS
+
+
 async def _check_database_health() -> str:
     async with engine.connect() as connection:
         await connection.execute(text('SELECT 1'))
     return 'ok'
 
 
-async def _check_ai_health() -> str:
-    if settings.testing:
-        return 'skipped'
+async def _build_health_payload() -> tuple[int, dict[str, object]]:
+    capabilities = await get_capability_registry().check_all()
+    required = {'config': 'ok', 'database': 'ok'}
+    required_failures: dict[str, str] = {}
 
-    provider = settings.ai_provider.lower().strip()
-    if provider == 'openai':
-        if settings.openai_api_key:
-            return 'configured'
-        raise RuntimeError('OPENAI_API_KEY is not configured')
+    try:
+        await _check_database_health()
+    except Exception as exc:
+        required['database'] = 'failed'
+        required_failures['database'] = str(exc)
 
-    ollama_url = f"{settings.ollama_host.rstrip('/')}/api/tags"
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        response = await client.get(ollama_url)
-        response.raise_for_status()
+    optional_unavailable = [name for name, state in capabilities.items() if not state['enabled']]
+    if required_failures:
+        status_code = 503
+        overall_status = 'required_failure'
+    elif optional_unavailable:
+        status_code = 200
+        overall_status = 'degraded'
+    else:
+        status_code = 200
+        overall_status = 'ok'
 
-    body = response.json()
-    configured_model = settings.ollama_model.strip()
-    available_models = {
-        str(model.get('name', '')).strip()
-        for model in body.get('models', [])
-        if isinstance(model, dict)
+    payload: dict[str, object] = {
+        'status': overall_status,
+        'required': required,
+        'optional_unavailable': optional_unavailable,
+        'capabilities': capabilities,
     }
-    if not any(
-        name == configured_model or name == f'{configured_model}:latest' or name.startswith(f'{configured_model}:')
-        for name in available_models
-    ):
-        raise RuntimeError(f"Ollama model '{configured_model}' is not loaded")
-
-    return 'ok'
+    if required_failures:
+        payload['required_failures'] = required_failures
+    return status_code, payload
 
 
 def create_app() -> FastAPI:
@@ -106,7 +125,7 @@ def create_app() -> FastAPI:
     @app.middleware('http')
     async def session_auth_middleware(request: Request, call_next):
         path = request.url.path
-        is_public = path in PUBLIC_API_PATHS or path.startswith('/docs') or path.startswith('/openapi')
+        is_public = _is_public_api_path(path) or path.startswith('/docs') or path.startswith('/openapi')
         if _is_api_path(path) and not is_public:
             token = request.cookies.get(settings.session_cookie_name)
             session = verify_session_token(token)
@@ -116,19 +135,23 @@ def create_app() -> FastAPI:
         return await call_next(request)
 
     @app.get(f'{API_PREFIX}/health')
-    async def api_health() -> dict[str, str]:
-        try:
-            database_status, ai_status = await asyncio.gather(
-                _check_database_health(),
-                _check_ai_health(),
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        return {'status': 'ok', 'database': database_status, 'ai': ai_status}
+    async def api_health() -> JSONResponse:
+        status_code, payload = await _build_health_payload()
+        return JSONResponse(status_code=status_code, content=payload)
 
     @app.get('/health', include_in_schema=False)
-    async def health_alias() -> dict[str, str]:
+    async def health_alias() -> JSONResponse:
         return await api_health()
+
+    @app.get(f'{API_PREFIX}/capabilities')
+    async def api_capabilities() -> dict[str, object]:
+        capabilities = await get_capability_registry().check_all()
+        disabled = [name for name, state in capabilities.items() if not state['enabled']]
+        return {
+            'status': 'degraded' if disabled else 'ok',
+            'capabilities': capabilities,
+            'optional_unavailable': disabled,
+        }
 
     app.include_router(auth_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)

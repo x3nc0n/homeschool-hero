@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
+import { useCapabilities } from '@/context/CapabilitiesContext'
 import type { ReviewAction, ReviewQueueItem } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,6 +20,7 @@ export function ReviewQueuePage() {
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const { capabilities } = useCapabilities()
 
   const load = async () => {
     setLoading(true)
@@ -147,10 +149,19 @@ export function ReviewQueuePage() {
               <Button variant="secondary" onClick={() => void submitDecision('modify')}>
                 Save modifications
               </Button>
-              <Button variant="destructive" onClick={() => void submitDecision('reject')}>
+              <Button
+                variant="destructive"
+                onClick={() => void submitDecision('reject')}
+                disabled={!capabilities.ai_grading.enabled}
+              >
                 Reject and re-grade
               </Button>
             </div>
+            {!capabilities.ai_grading.enabled ? (
+              <p className="text-sm text-muted-foreground">
+                Re-grade is disabled because AI grading is currently unavailable.
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

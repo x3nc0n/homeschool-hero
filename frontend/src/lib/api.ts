@@ -1,9 +1,12 @@
 import type {
+  AcceptInvitationPayload,
   ApiErrorPayload,
   Assignment,
   AuthSession,
   BootstrapStatus,
+  CreateInvitationPayload,
   Grade,
+  Invitation,
   Quiz,
   QuizAttempt,
   RegisterPayload,
@@ -88,6 +91,25 @@ export const api = {
 
   me() {
     return request<AuthSession>('/auth/me')
+  },
+
+  acceptInvitation(invitationId: number, payload: AcceptInvitationPayload) {
+    return request<AuthSession>(`/invitations/${invitationId}/accept`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  listInvitations() {
+    return request<Invitation[]>('/invitations')
+  },
+
+  createInvitation(payload: CreateInvitationPayload) {
+    return request<Invitation>('/invitations', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  revokeInvitation(id: number) {
+    return request<void>(`/invitations/${id}/revoke`, { method: 'DELETE' })
   },
 
   listStudents() {

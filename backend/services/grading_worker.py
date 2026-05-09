@@ -13,6 +13,7 @@ from backend.config import settings
 from backend.database import AsyncSessionLocal
 from backend.models import Assignment, Grade, GradedBy, GradingJob, GradingJobStatus, Submission
 from backend.services.ai_grader import grade_submission_text
+from backend.services.capabilities import get_capability_registry
 from backend.services.ocr import extract_text
 
 logger = logging.getLogger(__name__)
@@ -33,27 +34,73 @@ def _to_letter_grade(score: float) -> str:
 def process_grading_job(job: dict[str, Any]) -> dict[str, Any]:
     output = {**job}
     try:
+        capabilities = get_capability_registry().check_all_sync()
+        ocr_capability = capabilities['ocr']
+        if not ocr_capability['enabled']:
+            message = f"OCR unavailable; text extraction skipped. {ocr_capability['reason']}"
+            logger.warning('Submission %s routed to manual review: %s', job.get('submission_id'), message)
+            output.update(
+                {
+                    'ocr_result': '',
+                    'status': 'needs_review',
+                    'feedback': 'OCR unavailable; manual review required.',
+                    'error_message': message,
+                    'ai_confidence': 0.0,
+                }
+            )
+            return output
+
         extracted = extract_text(str(job.get('file_path', '')))
+        output['ocr_result'] = extracted
+
+        ai_capability = capabilities['ai_grading']
+        if not ai_capability['enabled']:
+            message = f"AI grading unavailable; routed to manual review. {ai_capability['reason']}"
+            logger.warning('Submission %s routed to manual review: %s', job.get('submission_id'), message)
+            output.update(
+                {
+                    'status': 'needs_review',
+                    'feedback': 'AI grading unavailable; manual review required.',
+                    'error_message': message,
+                    'ai_confidence': 0.0,
+                    'unavailable': True,
+                }
+            )
+            return output
+
         ai = grade_submission_text(
             assignment_description=str(job.get('assignment_description', '')),
             answer_key=job.get('answer_key'),
             submission_text=extracted,
         )
     except Exception as exc:
+        logger.warning('Submission %s routed to manual review after grading error: %s', job.get('submission_id'), exc)
         output.update({'status': 'needs_review', 'error_message': str(exc), 'ai_confidence': 0.0})
         return output
 
     confidence = float(ai.get('confidence', 0.0))
-    output['ocr_result'] = extracted
     output['ai_confidence'] = confidence
     output['score'] = float(ai.get('score', 0.0))
     output['max_score'] = float(ai.get('max_score', 100.0))
     output['feedback'] = str(ai.get('feedback', ''))
     output['unavailable'] = bool(ai.get('unavailable', False))
     if output['unavailable']:
+        logger.warning(
+            'Submission %s routed to manual review because AI grading is unavailable: %s',
+            job.get('submission_id'),
+            ai.get('error_message') or output['feedback'],
+        )
+        output['error_message'] = str(ai.get('error_message') or output.get('error_message') or output['feedback'])
         output['status'] = 'needs_review'
         return output
     output['status'] = 'complete' if confidence >= settings.confidence_threshold else 'needs_review'
+    if output['status'] == 'needs_review':
+        logger.info(
+            'Submission %s routed to manual review because confidence %.2f is below threshold %.2f',
+            job.get('submission_id'),
+            confidence,
+            settings.confidence_threshold,
+        )
     return output
 
 

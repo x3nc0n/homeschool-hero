@@ -53,3 +53,27 @@
 - Team ready for phase 3 parallel workstreams: multi-family tenancy, RBAC, compliance, performance
 - 2026-05-08 — Replaced legacy shared family-password auth with owner bootstrap, per-user email/password sessions, and family-scoped tenancy across backend models, routers, tests, and frontend auth screens.
 - 2026-05-08 — Added a migration path that creates a default family plus owner account from legacy auth settings so existing installs keep their data and can sign in after upgrade.
+
+### Phase 3 Task CP-01 Completion (2026-05-08T22:48:51Z)
+- Multi-family identity and tenancy fully implemented: owner bootstrap, per-user email/password sessions
+- Family-scoped tenancy enforced at router level across all models
+- 41 tests passing, 2 skipped; all tenancy isolation verified
+- Alembic migration creates default family + owner from legacy auth
+- Frontend auth flows integrated with new per-user login
+- Committed as 02b59df ✅ COMPLETE
+
+### Phase 3 Task DX-04 Completion (2026-05-08T22:48:51Z)
+- Winston completed CI/CD quality gates: PR checks, coverage enforcement (76%), container scanning, release automation
+- CodeQL + Dependabot configured; .trivyignore reserved for reviewed exceptions
+- All CI jobs integrated into branch protection rules
+- Backend tests verified (39 passed, 2 skipped); frontend build clean; Docker build verified
+- Alembic upgrade/downgrade verified in CI pipeline
+- Release automation publishes versioned containers to ghcr.io
+- Committed as db55ab4 ✅ COMPLETE
+
+### Team Governance Update (2026-05-08T22:48:51Z)
+- User directive captured: OIDC + Microsoft Entra ID + SAML 2.0 support required
+- John will personally integrate with Entra ID; team to plan implementation as future work
+- All 4 inbox decisions merged and deduplicated into active decisions registry
+- 2026-05-08 — Added startup validation for required backend config, a runtime capability registry for AI/email/backup/OCR, and health reporting that stays green when only optional services are down.
+- 2026-05-08 — Updated the grading and upload flows to degrade cleanly when AI or OCR are unavailable, and added frontend capability context plus dashboard/upload/review cues for reduced functionality.

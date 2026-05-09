@@ -87,6 +87,17 @@ async def test_grading_worker_auto_completes_high_confidence_job(monkeypatch):
 
     monkeypatch.setattr(worker_module, "extract_text", lambda *_args, **_kwargs: "correct work", raising=False)
     monkeypatch.setattr(
+        worker_module.get_capability_registry(),
+        "check_all_sync",
+        lambda: {
+            "ai_grading": {"name": "ai_grading", "enabled": True, "reason": "ok"},
+            "email": {"name": "email", "enabled": False, "reason": "disabled"},
+            "backup": {"name": "backup", "enabled": False, "reason": "disabled"},
+            "ocr": {"name": "ocr", "enabled": True, "reason": "ok"},
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(
         worker_module,
         "grade_submission_text",
         lambda *_args, **_kwargs: {"score": 97, "max_score": 100, "confidence": 0.95, "feedback": "Excellent"},
@@ -107,6 +118,17 @@ async def test_grading_worker_routes_low_confidence_job_to_review(monkeypatch):
 
     monkeypatch.setattr(worker_module, "extract_text", lambda *_args, **_kwargs: "unclear work", raising=False)
     monkeypatch.setattr(
+        worker_module.get_capability_registry(),
+        "check_all_sync",
+        lambda: {
+            "ai_grading": {"name": "ai_grading", "enabled": True, "reason": "ok"},
+            "email": {"name": "email", "enabled": False, "reason": "disabled"},
+            "backup": {"name": "backup", "enabled": False, "reason": "disabled"},
+            "ocr": {"name": "ocr", "enabled": True, "reason": "ok"},
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(
         worker_module,
         "grade_submission_text",
         lambda *_args, **_kwargs: {"score": 74, "max_score": 100, "confidence": 0.42, "feedback": "Needs review"},
@@ -126,6 +148,17 @@ async def test_grading_worker_ai_failure_falls_back_to_review(monkeypatch):
     processor = resolve_attr(worker_module, SERVICE_CANDIDATES["worker"], label="Grading worker")
 
     monkeypatch.setattr(worker_module, "extract_text", lambda *_args, **_kwargs: "some work", raising=False)
+    monkeypatch.setattr(
+        worker_module.get_capability_registry(),
+        "check_all_sync",
+        lambda: {
+            "ai_grading": {"name": "ai_grading", "enabled": True, "reason": "ok"},
+            "email": {"name": "email", "enabled": False, "reason": "disabled"},
+            "backup": {"name": "backup", "enabled": False, "reason": "disabled"},
+            "ocr": {"name": "ocr", "enabled": True, "reason": "ok"},
+        },
+        raising=False,
+    )
 
     def _raise(*_args, **_kwargs):
         raise RuntimeError("model unavailable")
@@ -137,6 +170,38 @@ async def test_grading_worker_ai_failure_falls_back_to_review(monkeypatch):
 
     assert result["status"] == "needs_review"
     assert "error" in result or result.get("error_message")
+
+
+@pytest.mark.asyncio
+async def test_grading_worker_routes_directly_to_review_when_ai_capability_is_disabled(monkeypatch):
+    worker_module = _load_service_module("services.grading_worker", "backend.services.grading_worker")
+    processor = resolve_attr(worker_module, SERVICE_CANDIDATES["worker"], label="Grading worker")
+
+    monkeypatch.setattr(worker_module, "extract_text", lambda *_args, **_kwargs: "some work", raising=False)
+    monkeypatch.setattr(
+        worker_module.get_capability_registry(),
+        "check_all_sync",
+        lambda: {
+            "ai_grading": {"name": "ai_grading", "enabled": False, "reason": "AI provider is down"},
+            "email": {"name": "email", "enabled": False, "reason": "disabled"},
+            "backup": {"name": "backup", "enabled": False, "reason": "disabled"},
+            "ocr": {"name": "ocr", "enabled": True, "reason": "ok"},
+        },
+        raising=False,
+    )
+
+    monkeypatch.setattr(
+        worker_module,
+        "grade_submission_text",
+        lambda *_args, **_kwargs: pytest.fail("AI grader should not run when capability is disabled"),
+        raising=False,
+    )
+    job = {"id": 13, "status": "queued", "submission_id": 6}
+
+    result = await maybe_await(processor(job))
+
+    assert result["status"] == "needs_review"
+    assert "AI grading unavailable" in result["error_message"]
 
 
 @pytest.mark.asyncio

@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     confidence_threshold: float = Field(0.8, alias='CONFIDENCE_THRESHOLD')
     grading_poll_interval: float = Field(5.0, alias='GRADING_POLL_INTERVAL')
     upload_dir: str = Field('/data/uploads', alias='UPLOAD_DIR')
+
+    invitation_expiry_days: int = Field(7, alias='INVITATION_EXPIRY_DAYS')
+    invitation_base_url: str | None = Field(default=None, alias='INVITATION_BASE_URL')
+    smtp_host: str | None = Field(default=None, alias='SMTP_HOST')
+    smtp_port: int = Field(587, alias='SMTP_PORT')
+    smtp_username: str | None = Field(default=None, alias='SMTP_USERNAME')
+    smtp_password: str | None = Field(default=None, alias='SMTP_PASSWORD')
+    smtp_from_email: str | None = Field(default=None, alias='SMTP_FROM_EMAIL')
+    smtp_use_tls: bool = Field(True, alias='SMTP_USE_TLS')
+    backup_target: str | None = Field(default=None, alias='BACKUP_TARGET')
+
     testing: bool = Field(False, alias='TESTING')
 
 

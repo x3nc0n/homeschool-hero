@@ -1,9 +1,12 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import type { FamilyRole } from '@/types/api'
 import { AppShell } from '@/components/layout/AppShell'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { AcceptInvitationPage } from '@/pages/AcceptInvitationPage'
 import { AssignmentsPage } from '@/pages/AssignmentsPage'
 import { GradesPage } from '@/pages/GradesPage'
+import { InvitationsPage } from '@/pages/InvitationsPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { QuizzesPage } from '@/pages/QuizzesPage'
@@ -13,11 +16,30 @@ import { StudentsPage } from '@/pages/StudentsPage'
 import { SubjectsPage } from '@/pages/SubjectsPage'
 import { UploadPage } from '@/pages/UploadPage'
 
+function LoadingScreen() {
+  return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
+}
+
+function defaultRouteForRole(role: FamilyRole | null) {
+  if (role === 'student_viewer') {
+    return '/assignments'
+  }
+  return '/dashboard'
+}
+
+function RoleRoute({ allowedRoles, element }: { allowedRoles: FamilyRole[]; element: JSX.Element }) {
+  const { role } = useAuth()
+  if (!role || !allowedRoles.includes(role)) {
+    return <Navigate to={defaultRouteForRole(role)} replace />
+  }
+  return element
+}
+
 function ProtectedRoutes() {
   const { loading, isAuthenticated, bootstrapRequired } = useAuth()
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
+    return <LoadingScreen />
   }
 
   if (!isAuthenticated) {
@@ -29,13 +51,14 @@ function ProtectedRoutes() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/students" element={<StudentsPage />} />
-        <Route path="/subjects" element={<SubjectsPage />} />
-        <Route path="/assignments" element={<AssignmentsPage />} />
-        <Route path="/upload" element={<UploadPage />} />
-        <Route path="/grades" element={<GradesPage />} />
-        <Route path="/quizzes" element={<QuizzesPage />} />
-        <Route path="/review" element={<ReviewQueuePage />} />
+        <Route path="/students" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<StudentsPage />} />} />
+        <Route path="/subjects" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<SubjectsPage />} />} />
+        <Route path="/assignments" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<AssignmentsPage />} />} />
+        <Route path="/upload" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<UploadPage />} />} />
+        <Route path="/grades" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<GradesPage />} />} />
+        <Route path="/quizzes" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<QuizzesPage />} />} />
+        <Route path="/review" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewQueuePage />} />} />
+        <Route path="/invitations" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<InvitationsPage />} />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AppShell>
@@ -43,14 +66,14 @@ function ProtectedRoutes() {
 }
 
 function LoginRoute() {
-  const { isAuthenticated, loading, bootstrapRequired } = useAuth()
+  const { isAuthenticated, loading, bootstrapRequired, role } = useAuth()
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
+    return <LoadingScreen />
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={defaultRouteForRole(role)} replace />
   }
 
   if (bootstrapRequired) {
@@ -61,14 +84,14 @@ function LoginRoute() {
 }
 
 function SetupRoute() {
-  const { isAuthenticated, loading, bootstrapRequired } = useAuth()
+  const { isAuthenticated, loading, bootstrapRequired, role } = useAuth()
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
+    return <LoadingScreen />
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={defaultRouteForRole(role)} replace />
   }
 
   if (!bootstrapRequired) {
@@ -78,12 +101,27 @@ function SetupRoute() {
   return <SetupPage />
 }
 
+function AcceptInvitationRoute() {
+  const { isAuthenticated, loading, role } = useAuth()
+
+  if (loading) {
+    return <LoadingScreen />
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to={defaultRouteForRole(role)} replace />
+  }
+
+  return <AcceptInvitationPage />
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
         <Route path="/setup" element={<SetupRoute />} />
+        <Route path="/accept-invite/:invitationId" element={<AcceptInvitationRoute />} />
         <Route path="*" element={<ProtectedRoutes />} />
       </Routes>
     </AuthProvider>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -9,6 +10,7 @@ import httpx
 from backend.config import settings
 
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+logger = logging.getLogger(__name__)
 
 
 class AIServiceUnavailable(RuntimeError):
@@ -157,13 +159,15 @@ def grade_submission_text(assignment_description: str, answer_key: str | None, s
         normalized = _normalize_result(payload)
         normalized["unavailable"] = False
         return normalized
-    except AIServiceUnavailable:
+    except AIServiceUnavailable as exc:
+        logger.warning('AI grading unavailable: %s', exc)
         return {
             "score": 0.0,
             "max_score": 100,
             "confidence": 0.0,
             "feedback": "AI grading unavailable; manual review required.",
             "unavailable": True,
+            "error_message": str(exc),
         }
 
 

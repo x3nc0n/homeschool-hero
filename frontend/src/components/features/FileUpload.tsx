@@ -19,10 +19,14 @@ export function FileUpload({
   students,
   assignments,
   onUploaded,
+  aiAvailable,
+  ocrAvailable,
 }: {
   students: Student[]
   assignments: Assignment[]
   onUploaded: (submission: Submission) => void
+  aiAvailable: boolean
+  ocrAvailable: boolean
 }) {
   const [selectedStudent, setSelectedStudent] = useState<string>('')
   const [selectedAssignment, setSelectedAssignment] = useState<string>('')
@@ -79,7 +83,11 @@ export function FileUpload({
     <Card>
       <CardHeader>
         <CardTitle>Submit student work</CardTitle>
-        <CardDescription>Drag and drop a scan/photo or use camera capture on mobile.</CardDescription>
+        <CardDescription>
+          {ocrAvailable && aiAvailable
+            ? 'Drag and drop a scan/photo or use camera capture on mobile.'
+            : 'Drag and drop a scan/photo or use camera capture on mobile. Reduced processing is active right now.'}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
@@ -190,7 +198,7 @@ export function FileUpload({
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         <Button type="button" onClick={() => void handleSubmit()} disabled={submitting || !file}>
-          Upload submission
+          {aiAvailable && ocrAvailable ? 'Upload submission' : 'Upload for manual review'}
         </Button>
       </CardContent>
     </Card>

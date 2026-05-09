@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '@/lib/api'
 import type { Assignment, Grade, ReviewQueueItem } from '@/types/api'
+import { useAuth } from '@/context/AuthContext'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState } from '@/components/common/LoadingState'
@@ -12,6 +13,7 @@ function average(values: number[]) {
 }
 
 export function DashboardPage() {
+  const { canReviewQueue } = useAuth()
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [grades, setGrades] = useState<Grade[]>([])
   const [queue, setQueue] = useState<ReviewQueueItem[]>([])
@@ -25,7 +27,7 @@ export function DashboardPage() {
       const [assignmentData, gradeData, queueData] = await Promise.all([
         api.listAssignments(),
         api.listGrades(),
-        api.listReviewQueue(),
+        canReviewQueue ? api.listReviewQueue() : Promise.resolve([]),
       ])
       setAssignments(assignmentData)
       setGrades(gradeData)
@@ -39,7 +41,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [canReviewQueue])
 
   const recentAssignments = useMemo(
     () =>
@@ -54,27 +56,23 @@ export function DashboardPage() {
   if (loading) return <LoadingState message="Loading dashboard…" />
   if (error) return <ErrorState message={error} onRetry={() => void load()} />
 
+  const summaryCards = [
+    { label: 'Recent assignments', value: assignments.length },
+    { label: 'Grade average', value: `${gradeAverage.toFixed(1)}%` },
+    ...(canReviewQueue ? [{ label: 'Pending reviews', value: queue.length }] : []),
+  ]
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardDescription>Recent assignments</CardDescription>
-            <CardTitle>{assignments.length}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Grade average</CardDescription>
-            <CardTitle>{gradeAverage.toFixed(1)}%</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Pending reviews</CardDescription>
-            <CardTitle>{queue.length}</CardTitle>
-          </CardHeader>
-        </Card>
+      <div className={`grid gap-4 ${summaryCards.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+        {summaryCards.map((card) => (
+          <Card key={card.label}>
+            <CardHeader>
+              <CardDescription>{card.label}</CardDescription>
+              <CardTitle>{card.value}</CardTitle>
+            </CardHeader>
+          </Card>
+        ))}
       </div>
 
       <Card>
@@ -98,7 +96,7 @@ export function DashboardPage() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No assignments yet. Add one in Assignments.</p>
+            <p className="text-sm text-muted-foreground">No assignments yet.</p>
           )}
         </CardContent>
       </Card>

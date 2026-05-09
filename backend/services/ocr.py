@@ -60,6 +60,9 @@ def extract_text_from_image(file_path: str) -> str:
     try:
         with Image.open(path) as image:
             return _extract_text_from_pil_image(image)
+    except pytesseract.TesseractNotFoundError:
+        logger.warning("OCR skipped because Tesseract is unavailable: %s", path)
+        return ""
     except Exception:
         logger.exception("OCR failed for image: %s", path)
         return ""
@@ -81,6 +84,9 @@ def extract_text_from_pdf(file_path: str) -> str:
                 if page_text:
                     pages.append(page_text)
         return "\n\n".join(pages).strip()
+    except pytesseract.TesseractNotFoundError:
+        logger.warning("OCR skipped because Tesseract is unavailable: %s", path)
+        return ""
     except Exception:
         logger.exception("OCR failed for PDF: %s", path)
         return ""

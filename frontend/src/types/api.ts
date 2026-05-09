@@ -22,6 +22,7 @@ export interface Family {
 export interface FamilyMembership {
   role: FamilyRole
   is_owner: boolean
+  student_id?: number | null
 }
 
 export interface AuthSession {
@@ -43,6 +44,13 @@ export interface RegisterPayload {
   password: string
   timezone?: string
   grading_scale?: string
+}
+
+export interface AcceptInvitationPayload {
+  token: string
+  email: string
+  display_name: string
+  password: string
 }
 
 export interface Student {
@@ -145,4 +153,27 @@ export interface ReviewDecisionPayload {
   score?: number
   feedback?: string
   notes?: string
+}
+
+export interface Invitation {
+  id: number
+  email: string
+  role: FamilyRole
+  student_id?: number | null
+  student_name?: string | null
+  expires_at: string
+  accepted_at?: string | null
+  invite_link?: string | null
+  invite_code?: string | null
+  delivery_method: 'email' | 'link'
+  email_sent: boolean
+  is_expired: boolean
+  created_at: string
+}
+
+export interface CreateInvitationPayload {
+  email: string
+  role: FamilyRole
+  student_id?: number
+  expires_in_days?: number
 }

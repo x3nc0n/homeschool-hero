@@ -1,22 +1,32 @@
-import { BookMarked, ClipboardCheck, FileUp, GraduationCap, LayoutDashboard, LogOut, Users } from 'lucide-react'
+import { BookMarked, ClipboardCheck, FileUp, GraduationCap, LayoutDashboard, LogOut, MailPlus, Users } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
+import type { FamilyRole } from '@/types/api'
 import { useAuth } from '@/context/AuthContext'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
-const navItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/students', label: 'Students', icon: Users },
-  { to: '/subjects', label: 'Subjects', icon: BookMarked },
-  { to: '/assignments', label: 'Assignments', icon: ClipboardCheck },
-  { to: '/upload', label: 'Uploads', icon: FileUp },
-  { to: '/grades', label: 'Grade Book', icon: GraduationCap },
-  { to: '/quizzes', label: 'Quizzes', icon: ClipboardCheck },
-  { to: '/review', label: 'Review Queue', icon: GraduationCap },
+const navItems: Array<{ to: string; label: string; icon: typeof LayoutDashboard; roles: FamilyRole[] }> = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+  { to: '/students', label: 'Students', icon: Users, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/subjects', label: 'Subjects', icon: BookMarked, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/assignments', label: 'Assignments', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+  { to: '/upload', label: 'Uploads', icon: FileUp, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/grades', label: 'Grade Book', icon: GraduationCap, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+  { to: '/quizzes', label: 'Quizzes', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/review', label: 'Review Queue', icon: GraduationCap, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/invitations', label: 'Invitations', icon: MailPlus, roles: ['parent', 'co-parent'] },
 ]
 
+const roleLabels: Record<FamilyRole, string> = {
+  parent: 'Parent',
+  'co-parent': 'Co-parent',
+  tutor: 'Tutor',
+  student_viewer: 'Student viewer',
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { logout, userName, familyName } = useAuth()
+  const { logout, userName, familyName, role } = useAuth()
+  const items = navItems.filter((item) => (role ? item.roles.includes(role) : false))
 
   return (
     <div className="mx-auto min-h-screen max-w-7xl px-3 py-4 md:px-6">
@@ -27,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <p className="text-sm text-muted-foreground">
               Welcome back, {userName}
               {familyName ? ` · ${familyName}` : ''}
+              {role ? ` · ${roleLabels[role]}` : ''}
             </p>
           </div>
           <Button variant="outline" onClick={() => void logout()}>
@@ -35,7 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
         <nav className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-8">
-          {navItems.map((item) => (
+          {items.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
