@@ -85,3 +85,6 @@
 - Closed #19 (React Router v7 major): marked for routing migration; API breaking changes require route definition rework
 - Closed #21 (Tailwind CSS v4 major): marked for styling migration; config and utility class changes need review
 - **Outcome:** Frontend dependency stability maintained; 3 major version upgrades queued for dedicated migration planning; patch auto-merge policy working as designed
+
+### Teacher documentation (2026-05-09T13:37:25.539-05:00)
+- Created the comprehensive Parent/Teacher User Guide at `docs/teacher-guide.md`.

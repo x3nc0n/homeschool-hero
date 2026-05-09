@@ -2,6 +2,7 @@
 
 ## Learnings
 
+- 2026-05-09T13:37:25.539-05:00 — Created administrator setup and configuration guide at `docs/admin-guide.md`.
 - 2026-05-09T13:31:43.322-05:00 — Gitleaks still flags high-entropy sample secrets in `.env.example` unless the placeholder value matches the rule allowlist; prefer explicit placeholders like `change-me-in-production` for `SECRET_KEY`.
 - 2026-05-09T13:31:43.322-05:00 — GitHub Actions with `docker/setup-buildx-action@v3` need `docker build --load` when later steps scan the image from the local Docker daemon (for example Trivy on `${CI_IMAGE_NAME}`).
 - 2026-05-09T08:17:16.263-05:00 — For hardened Docker services that inherit `cap_drop: ALL`, restore PostgreSQL startup with targeted `cap_add` on `db`, and validate clean Postgres boot against the full migration chain because Postgres-specific enum/index issues can hide behind the initial container failure.
@@ -55,3 +56,8 @@
 - Commit 7833329 pushed to main
 - Decision captured: Ray Docker Capability Fix — keep shared hardening defaults with minimal db-service exceptions; require clean PostgreSQL validation when Docker/migration changes touch startup
 
+### CI Fixes & Documentation (2026-05-09T18:37Z)
+- **CI Fixes:** Fixed two CI pipeline failures blocking main merge: (1) Gitleaks flagged high-entropy `SECRET_KEY` in `.env.example` — changed to allowlisted placeholder `change-me-in-production`; (2) Trivy container scan unable to find image after Buildx — added `--load` flag to make image available to local Docker daemon. CI now green.
+- **Admin Guide:** Created `docs/admin-guide.md` covering deployment, Docker Compose setup, security hardening, CI/CD operations, database management, troubleshooting. Linked from README. 2400+ words with runbooks.
+- **Decisions:** Merged 1 inbox decision (Ray CI Fixes) documenting placeholder standardization + Buildx/load pattern.
+- **Impact:** Main branch CI passing; new admin onboarding path established; team has centralized operations reference.

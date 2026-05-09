@@ -152,6 +152,12 @@
 - **Decision:** Limit auto-remediation to direct dependency version bumps. Route CodeQL, base-image, transitive, ambiguous findings to needs-human-review. Require CI gate pass before PR opening, never auto-merge critical/non-dependency without sign-off.
 - **Impact:** Clear audit trail, low-risk fixes proposed quickly, reviewers keep control over high-risk remediation.
 
+### Ray CI Fixes (2026-05-09)
+- **Author:** Ray
+- **Context:** Main branch CI still failed after code tests passed because Gitleaks flagged a high-entropy sample `SECRET_KEY` in `.env.example`, and Trivy could not find the locally built `homeschool-hero:ci` image after Buildx setup.
+- **Decision:** Standardize example secrets on explicit allowlisted placeholder values (for example `change-me-in-production`) and require `docker build --load` in CI jobs that build with Buildx and then hand the image to local-daemon tools such as Trivy.
+- **Impact:** Secret scan and container scan stay aligned with policy intent, and future CI edits should preserve placeholder-safe sample values plus local image loading whenever downstream steps expect `docker images` visibility.
+
 ## Governance
 
 - All meaningful changes require team consensus

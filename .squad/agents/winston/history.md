@@ -81,3 +81,4 @@
 - Venkman reviewed frontend deps: 1 auto-merged, 4 closed (React 19, router v7, tailwind v4 major bumps for planned sprints)
 - Security triage outcome: 4 issues closed (fixes on main from prior); #22 assigned to Ray, #23-25 assigned to Winston for test code quality remediation
 - **Policy reminder:** Patch-only auto-merge; major version bumps require planned migration work and explicit team sign-off
+- 2026-05-09T13:37:25.539-05:00 — Student documentation was created at `docs/student-guide.md`.
