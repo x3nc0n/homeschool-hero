@@ -54,3 +54,9 @@
 - User directive: OIDC + Microsoft Entra ID + SAML 2.0 authentication required
 - John will integrate Entra ID; team to capture as future RBAC/SSO workstream
 - All inbox decisions consolidated and merged into active registry
+
+### Wave 3 Summary (2026-05-08T22:32:57Z)
+- SD-03: Auto-issue creation with dedup and routing (commit 9dbb725) ✅ COMPLETE
+- IO-03: Migration rollbacks with preflight checks (commit bff7dc6) ✅ COMPLETE
+- Ray completed 5 Wave 3 deliverables: CP-04, AM-01, CP-05, IO-01, SD-01
+- All decisions archived and orchestration logs finalized

@@ -87,3 +87,11 @@
 - 2026-05-09T05:05:00-05:00 — Verified hardening with `cd backend && python -m pytest` (84 passed, 2 skipped) and `cd frontend && npm run build`; added regression coverage for cookie flags, CSRF enforcement, rate limits, password policy, lockout, and upload validation edge cases.
 - 2026-05-09T06:20:00-05:00 — Completed CP-05 auth provider support: added configurable OIDC + SAML overlays with local auth still default, external user provisioning via invitations/default family, Entra-ready OIDC discovery, SAML metadata/ACS endpoints, and provider-aware login UI/capability reporting.
 - 2026-05-09T06:20:00-05:00 — Verified CP-05 with `cd backend && python -m pytest -q` (84 passed, 2 skipped) plus `cd frontend && npm ci && npm run lint && npm run build`; frontend lint still reports two pre-existing hook-dependency warnings outside the auth changes.
+
+### Wave 3 Summary (2026-05-08T22:32:57Z)
+- CP-04: Audit logging with immutable append-only events (commit 5c359f9) ✅ COMPLETE
+- AM-01: Academic calendar with date-based storage (commit 9460c72) ✅ COMPLETE
+- CP-05: OIDC/SAML auth with email-first identity matching (commit 00d67d4) ✅ COMPLETE
+- IO-01: Production Docker with optional service profiles (commit c1790b2) ✅ COMPLETE
+- SD-01: Application hardening with CSRF/rate-limiting (commit 1fad126) — 84 tests passing ✅ COMPLETE
+- All 5 Wave 3 deliverables merged; decisions recorded in decisions.md; orchestration logs finalized
