@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, Save, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
 import type {
   ComplianceCustomRulePayload,
@@ -18,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { LoadingState } from '@/components/common/LoadingState'
 import { ErrorState } from '@/components/common/ErrorState'
+import { LanguageSelector } from '@/components/common/LanguageSelector'
 
 const defaultRanges: GradeScaleRange[] = [
   { letter: 'A', min: 90, max: 100, gpa_points: 4 },
@@ -27,22 +29,14 @@ const defaultRanges: GradeScaleRange[] = [
   { letter: 'F', min: 0, max: 59.99, gpa_points: 0 },
 ]
 
-const stateOptions = [
-  { value: 'CUSTOM', label: 'Custom / generic' },
-  { value: 'TX', label: 'Texas' },
-  { value: 'CA', label: 'California' },
-  { value: 'VA', label: 'Virginia' },
-  { value: 'NY', label: 'New York' },
-  { value: 'FL', label: 'Florida' },
-]
-
-const ruleTypes: Array<{ value: ComplianceRuleType; label: string; unit: string }> = [
-  { value: 'attendance_days', label: 'Attendance days', unit: 'days' },
-  { value: 'attendance_hours', label: 'Attendance hours', unit: 'hours' },
-  { value: 'subjects_required', label: 'Required subjects', unit: 'count' },
-  { value: 'assessment_required', label: 'Assessment evidence', unit: 'count' },
-  { value: 'notification_required', label: 'Notifications / reports', unit: 'count' },
-  { value: 'portfolio_required', label: 'Portfolio evidence', unit: 'count' },
+const stateCodes = ['CUSTOM', 'TX', 'CA', 'VA', 'NY', 'FL'] as const
+const ruleTypeValues: ComplianceRuleType[] = [
+  'attendance_days',
+  'attendance_hours',
+  'subjects_required',
+  'assessment_required',
+  'notification_required',
+  'portfolio_required',
 ]
 
 const blankRule: ComplianceCustomRulePayload = {
@@ -68,6 +62,7 @@ function toIsoDateTime(value: string) {
 }
 
 export function FamilySettingsPage() {
+  const { t } = useTranslation(['common', 'settings'])
   const [scales, setScales] = useState<GradeScaleInput[]>([])
   const [stateCode, setStateCode] = useState('CUSTOM')
   const [customRules, setCustomRules] = useState<ComplianceRule[]>([])
@@ -86,12 +81,25 @@ export function FamilySettingsPage() {
   const [message, setMessage] = useState('')
 
   const totalDefaults = useMemo(() => scales.filter((scale) => scale.is_default).length, [scales])
+  const stateOptions = useMemo(
+    () => stateCodes.map((value) => ({ value, label: t(`settings:family.states.${value}`) })),
+    [t],
+  )
+  const ruleTypes = useMemo(
+    () =>
+      ruleTypeValues.map((value) => ({
+        value,
+        label: t(`settings:family.ruleTypes.${value}.label`),
+        unit: t(`settings:family.ruleTypes.${value}.unit`),
+      })),
+    [t],
+  )
   const selectedRuleType = useMemo(
     () => ruleTypes.find((option) => option.value === ruleForm.rule_type) ?? ruleTypes[0],
-    [ruleForm.rule_type],
+    [ruleForm.rule_type, ruleTypes],
   )
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -109,15 +117,15 @@ export function FamilySettingsPage() {
       setScheduleStart(toLocalDateTime(maintenanceStatus.start_at))
       setScheduleEnd(toLocalDateTime(maintenanceStatus.end_at))
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load family settings')
+      setError(loadError instanceof Error ? loadError.message : t('settings:family.errors.load'))
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [load])
 
   const saveGradeScales = async () => {
     setSaving(true)
@@ -126,9 +134,9 @@ export function FamilySettingsPage() {
     try {
       const saved = await api.upsertGradeScales(scales)
       setScales(saved.map((scale) => ({ id: scale.id, name: scale.name, is_default: scale.is_default, ranges: scale.ranges })))
-      setMessage('Grade scales updated.')
+      setMessage(t('settings:family.messages.gradeScalesSaved'))
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save grade scales')
+      setError(saveError instanceof Error ? saveError.message : t('settings:family.errors.saveGradeScales'))
     } finally {
       setSaving(false)
     }
@@ -143,9 +151,9 @@ export function FamilySettingsPage() {
       const rulesResponse = await api.getComplianceRules(updated.state_code)
       setStateCode(updated.state_code)
       setCustomRules(rulesResponse.rules.filter((rule) => rule.is_custom))
-      setMessage('Family state updated.')
+      setMessage(t('settings:family.messages.stateSaved'))
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save family state')
+      setError(saveError instanceof Error ? saveError.message : t('settings:family.errors.saveState'))
     } finally {
       setSavingState(false)
     }
@@ -164,9 +172,9 @@ export function FamilySettingsPage() {
       const rulesResponse = await api.getComplianceRules(stateCode)
       setCustomRules(rulesResponse.rules.filter((rule) => rule.is_custom))
       setRuleForm(blankRule)
-      setMessage('Custom rule saved.')
+      setMessage(t('settings:family.messages.customRuleSaved'))
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save custom rule')
+      setError(saveError instanceof Error ? saveError.message : t('settings:family.errors.saveCustomRule'))
     } finally {
       setSavingRule(false)
     }
@@ -180,9 +188,9 @@ export function FamilySettingsPage() {
       const updated = await api.toggleMaintenance({ enabled, message: maintenanceMessage })
       setMaintenance(updated)
       setMaintenanceMessage(updated.message)
-      setMessage(enabled ? 'Maintenance mode enabled.' : 'Maintenance mode disabled.')
+      setMessage(t(enabled ? 'settings:family.messages.maintenanceEnabled' : 'settings:family.messages.maintenanceDisabled'))
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to update maintenance mode')
+      setError(saveError instanceof Error ? saveError.message : t('settings:family.errors.saveMaintenance'))
     } finally {
       setMaintenanceSaving(false)
     }
@@ -202,58 +210,68 @@ export function FamilySettingsPage() {
       setMaintenanceMessage(updated.message)
       setScheduleStart(toLocalDateTime(updated.start_at))
       setScheduleEnd(toLocalDateTime(updated.end_at))
-      setMessage(updated.start_at && updated.end_at ? 'Maintenance window scheduled.' : 'Maintenance schedule cleared.')
+      setMessage(t(updated.start_at && updated.end_at ? 'settings:family.messages.maintenanceScheduled' : 'settings:family.messages.maintenanceCleared'))
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save maintenance schedule')
+      setError(saveError instanceof Error ? saveError.message : t('settings:family.errors.saveSchedule'))
     } finally {
       setScheduleSaving(false)
     }
   }
 
-  if (loading) return <LoadingState message="Loading family settings…" />
+  if (loading) return <LoadingState message={t('settings:family.loading')} />
   if (error && !scales.length && !customRules.length) return <ErrorState message={error} onRetry={() => void load()} />
 
   return (
     <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings:language.title')}</CardTitle>
+          <CardDescription>{t('settings:language.description')}</CardDescription>
+        </CardHeader>
+        <CardContent className="max-w-xs">
+          <LanguageSelector />
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 xl:grid-cols-[1fr_1.1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Maintenance mode</CardTitle>
-            <CardDescription>Pause access for non-admin users while parents and co-parents keep operator access.</CardDescription>
+            <CardTitle>{t('settings:family.maintenance.title')}</CardTitle>
+            <CardDescription>{t('settings:family.maintenance.description')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={maintenance?.active ? 'destructive' : 'secondary'}>
-                {maintenance?.active ? `Active via ${maintenance.source}` : 'Inactive'}
+                {maintenance?.active ? t('settings:family.maintenance.active', { source: maintenance.source }) : t('settings:family.maintenance.inactive')}
               </Badge>
-              {maintenance?.env_enabled ? <Badge variant="outline">Forced by env</Badge> : null}
-              {maintenance?.scheduled ? <Badge variant="outline">Window saved</Badge> : null}
+              {maintenance?.env_enabled ? <Badge variant="outline">{t('settings:family.maintenance.forcedByEnv')}</Badge> : null}
+              {maintenance?.scheduled ? <Badge variant="outline">{t('settings:family.maintenance.windowSaved')}</Badge> : null}
             </div>
             <div className="space-y-2">
-              <Label>Maintenance message</Label>
+              <Label>{t('settings:family.maintenance.message')}</Label>
               <Textarea value={maintenanceMessage} onChange={(event) => setMaintenanceMessage(event.target.value)} />
             </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void saveMaintenanceMode(true)} disabled={maintenanceSaving}>
-                Enable maintenance
+                {t('settings:family.maintenance.enable')}
               </Button>
               <Button variant="outline" onClick={() => void saveMaintenanceMode(false)} disabled={maintenanceSaving}>
-                Disable maintenance
+                {t('settings:family.maintenance.disable')}
               </Button>
             </div>
             <div className="grid gap-4 border-t pt-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>Window start</Label>
+                <Label>{t('settings:family.maintenance.windowStart')}</Label>
                 <Input type="datetime-local" value={scheduleStart} onChange={(event) => setScheduleStart(event.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Window end</Label>
+                <Label>{t('settings:family.maintenance.windowEnd')}</Label>
                 <Input type="datetime-local" value={scheduleEnd} onChange={(event) => setScheduleEnd(event.target.value)} />
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => void saveMaintenanceSchedule()} disabled={scheduleSaving}>
-                Save maintenance window
+                {t('settings:family.maintenance.saveWindow')}
               </Button>
               <Button
                 variant="ghost"
@@ -264,32 +282,32 @@ export function FamilySettingsPage() {
                     .scheduleMaintenance({ start_at: null, end_at: null, message: maintenanceMessage })
                     .then((updated) => {
                       setMaintenance(updated)
-                      setMessage('Maintenance schedule cleared.')
+                      setMessage(t('settings:family.messages.maintenanceCleared'))
                     })
-                    .catch((saveError) => setError(saveError instanceof Error ? saveError.message : 'Unable to clear maintenance schedule'))
+                    .catch((saveError) => setError(saveError instanceof Error ? saveError.message : t('settings:family.errors.clearSchedule')))
                 }}
                 disabled={scheduleSaving}
               >
-                Clear window
+                {t('settings:family.maintenance.clearWindow')}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Bypass roles: {maintenance?.bypass_roles?.join(', ') || 'parent, co-parent'}
+              {t('settings:family.maintenance.bypassRoles', { roles: maintenance?.bypass_roles?.join(', ') || 'parent, co-parent' })}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Compliance settings</CardTitle>
-            <CardDescription>Select your state and add custom rules for unusual homeschool requirements.</CardDescription>
+            <CardTitle>{t('settings:family.compliance.title')}</CardTitle>
+            <CardDescription>{t('settings:family.compliance.description')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>State</Label>
+              <Label>{t('settings:family.compliance.state')}</Label>
               <Select value={stateCode} onValueChange={setStateCode}>
                 <SelectTrigger className="w-full md:w-72">
-                  <SelectValue placeholder="Choose state" />
+                  <SelectValue placeholder={t('settings:family.compliance.chooseState')} />
                 </SelectTrigger>
                 <SelectContent>
                   {stateOptions.map((option) => (
@@ -301,11 +319,11 @@ export function FamilySettingsPage() {
               </Select>
             </div>
             <Button onClick={() => void saveState()} disabled={savingState}>
-              Save family state
+              {t('settings:family.compliance.saveState')}
             </Button>
 
             <div className="space-y-2 border-t pt-4">
-              <Label>Custom rule type</Label>
+              <Label>{t('settings:family.compliance.customRuleType')}</Label>
               <Select
                 value={ruleForm.rule_type}
                 onValueChange={(value) =>
@@ -317,7 +335,7 @@ export function FamilySettingsPage() {
                 }
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Choose custom rule type" />
+                  <SelectValue placeholder={t('settings:family.compliance.chooseRuleType')} />
                 </SelectTrigger>
                 <SelectContent>
                   {ruleTypes.map((option) => (
@@ -330,14 +348,14 @@ export function FamilySettingsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Rule name</Label>
+              <Label>{t('settings:family.compliance.ruleName')}</Label>
               <Input
                 value={ruleForm.rule_name}
                 onChange={(event) => setRuleForm((current) => ({ ...current, rule_name: event.target.value }))}
               />
             </div>
             <div className="space-y-2">
-              <Label>Description</Label>
+              <Label>{t('settings:family.compliance.descriptionLabel')}</Label>
               <Textarea
                 value={ruleForm.description}
                 onChange={(event) => setRuleForm((current) => ({ ...current, description: event.target.value }))}
@@ -346,7 +364,7 @@ export function FamilySettingsPage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>Required value</Label>
+                <Label>{t('settings:family.compliance.requiredValue')}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -356,7 +374,7 @@ export function FamilySettingsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Unit</Label>
+                <Label>{t('settings:family.compliance.unit')}</Label>
                 <Input
                   value={ruleForm.threshold_unit}
                   onChange={(event) => setRuleForm((current) => ({ ...current, threshold_unit: event.target.value }))}
@@ -366,7 +384,7 @@ export function FamilySettingsPage() {
 
             {ruleForm.rule_type === 'subjects_required' ? (
               <div className="space-y-2">
-                <Label>Subjects (comma separated)</Label>
+                <Label>{t('settings:family.compliance.subjects')}</Label>
                 <Input
                   value={(ruleForm.subjects_list ?? []).join(', ')}
                   onChange={(event) =>
@@ -383,18 +401,18 @@ export function FamilySettingsPage() {
             ) : null}
 
             <Button onClick={() => void saveCustomRule()} disabled={savingRule}>
-              Save custom rule
+              {t('settings:family.compliance.saveRule')}
             </Button>
             <p className="text-xs text-muted-foreground">
-              New rule type: {selectedRuleType.label}. The dashboard will compare progress against {selectedRuleType.unit}.
+              {t('settings:family.compliance.helper', { label: selectedRuleType.label, unit: selectedRuleType.unit })}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Custom compliance rules</CardTitle>
-            <CardDescription>These rules apply in addition to the selected state defaults.</CardDescription>
+            <CardTitle>{t('settings:family.compliance.customRulesTitle')}</CardTitle>
+            <CardDescription>{t('settings:family.compliance.customRulesDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {customRules.length ? (
@@ -408,13 +426,13 @@ export function FamilySettingsPage() {
                     <Badge variant="outline">{rule.rule_type.replaceAll('_', ' ')}</Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Required: {rule.threshold_value} {rule.threshold_unit}
+                    {t('settings:family.compliance.required', { value: rule.threshold_value, unit: rule.threshold_unit })}
                     {rule.subjects_list?.length ? ` · ${rule.subjects_list.join(', ')}` : ''}
                   </p>
                 </div>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">No custom rules yet.</p>
+              <p className="text-sm text-muted-foreground">{t('settings:family.compliance.emptyRules')}</p>
             )}
           </CardContent>
         </Card>
@@ -422,8 +440,8 @@ export function FamilySettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Grade scale settings</CardTitle>
-          <CardDescription>Manage grade scales and choose the family-wide default GPA mapping.</CardDescription>
+          <CardTitle>{t('settings:family.gradeScales.title')}</CardTitle>
+          <CardDescription>{t('settings:family.gradeScales.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4">
@@ -431,7 +449,7 @@ export function FamilySettingsPage() {
               <div key={scale.id ?? `scale-${scaleIndex}`} className="space-y-4 rounded-lg border p-4">
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="min-w-[220px] flex-1 space-y-2">
-                    <Label>Scale name</Label>
+                    <Label>{t('settings:family.gradeScales.scaleName')}</Label>
                     <Input
                       value={scale.name}
                       onChange={(event) =>
@@ -451,18 +469,18 @@ export function FamilySettingsPage() {
                         )
                       }
                     />
-                    Default scale
+                    {t('settings:family.gradeScales.defaultScale')}
                   </label>
                   <Button variant="ghost" size="sm" onClick={() => setScales((current) => current.filter((_, itemIndex) => itemIndex !== scaleIndex))}>
                     <Trash2 className="mr-2 h-3.5 w-3.5" />
-                    Remove
+                    {t('settings:family.gradeScales.remove')}
                   </Button>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-5">
                   {scale.ranges.map((range, rangeIndex) => (
                     <div key={`${scale.id ?? scaleIndex}-${rangeIndex}`} className="space-y-2 rounded-md border p-3">
-                      <Label>Letter</Label>
+                      <Label>{t('settings:family.gradeScales.letter')}</Label>
                       <Input
                         value={range.letter}
                         onChange={(event) =>
@@ -480,7 +498,7 @@ export function FamilySettingsPage() {
                           )
                         }
                       />
-                      <Label>Min</Label>
+                      <Label>{t('settings:family.gradeScales.min')}</Label>
                       <Input
                         type="number"
                         value={range.min}
@@ -499,7 +517,7 @@ export function FamilySettingsPage() {
                           )
                         }
                       />
-                      <Label>Max</Label>
+                      <Label>{t('settings:family.gradeScales.max')}</Label>
                       <Input
                         type="number"
                         value={range.max}
@@ -518,7 +536,7 @@ export function FamilySettingsPage() {
                           )
                         }
                       />
-                      <Label>GPA</Label>
+                      <Label>{t('settings:family.gradeScales.gpa')}</Label>
                       <Input
                         type="number"
                         step="0.1"
@@ -551,20 +569,20 @@ export function FamilySettingsPage() {
               onClick={() =>
                 setScales((current) => [
                   ...current,
-                  { name: `Scale ${current.length + 1}`, is_default: current.length === 0, ranges: defaultRanges },
+                  { name: t('settings:family.gradeScales.scaleNameDefault', { count: current.length + 1 }), is_default: current.length === 0, ranges: defaultRanges },
                 ])
               }
             >
               <Plus className="mr-2 h-4 w-4" />
-              Add scale
+              {t('settings:family.gradeScales.addScale')}
             </Button>
             <Button onClick={() => void saveGradeScales()} disabled={saving || totalDefaults !== 1}>
               <Save className="mr-2 h-4 w-4" />
-              Save settings
+              {t('settings:family.gradeScales.saveSettings')}
             </Button>
           </div>
 
-          <p className="text-xs text-muted-foreground">Exactly one scale must be marked as default. Current default count: {totalDefaults}.</p>
+          <p className="text-xs text-muted-foreground">{t('settings:family.messages.defaultCount', { count: totalDefaults })}</p>
           {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </CardContent>

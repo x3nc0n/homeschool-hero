@@ -1,0 +1,91 @@
+{
+  "loading": "Loading dashboard…",
+  "unavailable": "Dashboard is unavailable.",
+  "updatedAt": "Updated {{value}}",
+  "hero": {
+    "studentTitle": "Your dashboard",
+    "familyTitle": "Family dashboard",
+    "studentDescription": "Today's schedule, assignments, and recent grades in one place.",
+    "familyDescription": "A single view of schedule, assignments, grades, attendance, pacing, compliance, and system health."
+  },
+  "quickActions": {
+    "title": "Quick actions",
+    "description": "Jump straight into the most common family admin tasks.",
+    "attendance": "Add attendance",
+    "assignment": "Create assignment",
+    "grade": "Record grade"
+  },
+  "studentSummary": {
+    "title": "Student summary",
+    "description": "Open a student profile for a focused view.",
+    "cardDescription": "Student summary",
+    "gpa": "GPA",
+    "attendance": "Attendance",
+    "dueSoon": "Due soon",
+    "pacing": "Pacing",
+    "noTargets": "No targets",
+    "noAlerts": "No alerts",
+    "viewProfile": "View profile",
+    "emptyTitle": "No students yet",
+    "emptyDescription": "Add a student to start building your dashboard."
+  },
+  "widgets": {
+    "schedule": {
+      "title": "Today's schedule",
+      "description": "Scheduled blocks for today.",
+      "recurring": "recurring",
+      "override": "override",
+      "emptyTitle": "Nothing scheduled today",
+      "emptyDescription": "Add schedule blocks to see today's plan here."
+    },
+    "assignments": {
+      "title": "Upcoming assignments",
+      "description": "Due in the next 7 days.",
+      "due": "Due {{date}}",
+      "today": "today",
+      "daysLeft_one": "{{count}} day left",
+      "daysLeft_other": "{{count}} days left",
+      "emptyTitle": "No due dates coming up",
+      "emptyDescription": "Assignments due this week will appear here."
+    },
+    "grades": {
+      "title": "Recent grades",
+      "description": "Latest graded submissions.",
+      "emptyTitle": "No graded work yet",
+      "emptyDescription": "Grades will show up as soon as submissions are scored."
+    },
+    "attendance": {
+      "title": "Attendance snapshot",
+      "description": "Today's attendance status for each student.",
+      "hours": "{{count}} hours",
+      "noHours": "No hours logged",
+      "emptyTitle": "No attendance yet",
+      "emptyDescription": "Today's attendance entries will appear here."
+    },
+    "pacing": {
+      "title": "Pacing alerts",
+      "description": "Students currently behind pace.",
+      "remainingLessons_one": "{{count}} lesson remaining",
+      "remainingLessons_other": "{{count}} lessons remaining",
+      "targetEnded": "Target ended {{date}}",
+      "emptyTitle": "No pacing alerts",
+      "emptyDescription": "Students who fall behind pace will show up here."
+    },
+    "compliance": {
+      "title": "Compliance warnings",
+      "description": "Warning and non-compliant items that need attention.",
+      "emptyTitle": "No compliance warnings",
+      "emptyDescription": "Compliance risks will appear here when they need review."
+    },
+    "system": {
+      "title": "System status",
+      "description": "Operator summary from the health checks.",
+      "overallStatus": "Overall status",
+      "healthy": "Healthy",
+      "degradedUnhealthy": "Degraded / unhealthy",
+      "affectedServices": "Affected services",
+      "emptyTitle": "No system summary",
+      "emptyDescription": "System health data is only shown to parent and tutor roles."
+    }
+  }
+}

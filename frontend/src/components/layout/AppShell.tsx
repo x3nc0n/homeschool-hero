@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
   BookMarked,
@@ -125,6 +125,15 @@ const roleLabels: Record<FamilyRole, string> = {
   student_viewer: 'Student viewer',
 }
 
+const focusableSelector = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { logout, userName, familyName, role } = useAuth()
   const { recent, unreadCount, markAllAsRead, markAsRead } = useNotifications()
@@ -135,6 +144,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const currentSearchQuery = useMemo(() => new URLSearchParams(location.search).get('q') || '', [location.search])
   const [searchValue, setSearchValue] = useState(currentSearchQuery)
+  const notificationsButtonRef = useRef<HTMLButtonElement | null>(null)
+  const notificationsPanelRef = useRef<HTMLDivElement | null>(null)
+  const mobileMenuButtonRef = useRef<HTMLButtonElement | null>(null)
+  const mobileMenuPanelRef = useRef<HTMLElement | null>(null)
 
   const groups = useMemo(
     () =>
@@ -169,7 +182,121 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMobileMenuOpen(false)
     setNotificationsOpen(false)
-  }, [location.pathname])
+  }, [location.pathname, location.search])
+
+  useEffect(() => {
+    if (!notificationsOpen) return
+
+    const panel = notificationsPanelRef.current
+    const trigger = notificationsButtonRef.current
+    if (!panel) return
+
+    const getFocusable = () =>
+      Array.from(panel.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => !element.hasAttribute('disabled') && element.tabIndex !== -1,
+      )
+
+    window.requestAnimationFrame(() => {
+      ;(getFocusable()[0] || panel).focus()
+    })
+
+    const handlePointer = (event: MouseEvent | TouchEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (panel.contains(target) || trigger?.contains(target)) return
+      setNotificationsOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setNotificationsOpen(false)
+        trigger?.focus()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+
+      const focusable = getFocusable()
+      if (!focusable.length) {
+        event.preventDefault()
+        panel.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointer)
+    document.addEventListener('touchstart', handlePointer)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointer)
+      document.removeEventListener('touchstart', handlePointer)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [notificationsOpen])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+
+    const panel = mobileMenuPanelRef.current
+    const trigger = mobileMenuButtonRef.current
+    if (!panel) return
+
+    const getFocusable = () =>
+      Array.from(panel.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => !element.hasAttribute('disabled') && element.tabIndex !== -1,
+      )
+
+    window.requestAnimationFrame(() => {
+      ;(getFocusable()[0] || panel).focus()
+    })
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMobileMenuOpen(false)
+        trigger?.focus()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+
+      const focusable = getFocusable()
+      if (!focusable.length) {
+        event.preventDefault()
+        panel.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [mobileMenuOpen])
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault()
@@ -212,7 +339,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 cn('flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm transition hover:bg-muted', isActive && 'bg-primary/10 font-medium text-primary')
               }
             >
-              <item.icon className="h-4 w-4 shrink-0" />
+              <item.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
               <span>{item.label}</span>
             </NavLink>
           ))}
@@ -234,9 +361,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-muted/20">
+      <a
+        href="#main-content"
+        className="sr-only absolute left-4 top-4 z-50 rounded-md bg-background px-4 py-2 text-sm font-medium text-foreground shadow focus:not-sr-only focus:outline-none focus-visible:ring-4 focus-visible:ring-ring/40"
+      >
+        Skip to main content
+      </a>
+      <div aria-live="polite" className="sr-only">
+        {unreadCount ? `${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}.` : 'No unread notifications.'}
+      </div>
       <div className="mx-auto max-w-7xl px-3 py-4 pb-24 md:px-6 md:pb-6">
         <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="hidden md:block">
+          <aside aria-label="Workspace navigation" className="hidden md:block">
             <div className="sticky top-4 space-y-4 rounded-xl border bg-card p-4 shadow-sm">
               <div>
                 <p className="text-lg font-bold">Homeschool Hero</p>
@@ -246,7 +382,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <p className="font-medium">{userName}</p>
                 <p className="text-xs text-muted-foreground">{role ? roleLabels[role] : 'Signed in'}</p>
               </div>
-              <nav className="space-y-4">{renderNavGroups()}</nav>
+              <nav aria-label="Primary navigation" className="space-y-4">
+                {renderNavGroups()}
+              </nav>
             </div>
           </aside>
 
@@ -259,8 +397,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <p className="text-lg font-bold">Homeschool Hero</p>
                       <p className="text-sm text-muted-foreground">{familyName || 'Family workspace'}</p>
                     </div>
-                    <Button type="button" variant="outline" size="icon" aria-label="Open navigation" onClick={() => setMobileMenuOpen(true)}>
-                      <Menu className="h-5 w-5" />
+                    <Button
+                      ref={mobileMenuButtonRef}
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label="Open navigation"
+                      aria-controls="mobile-navigation-panel"
+                      aria-expanded={mobileMenuOpen}
+                      onClick={() => setMobileMenuOpen(true)}
+                    >
+                      <Menu aria-hidden="true" className="h-5 w-5" />
                     </Button>
                   </div>
                   <Breadcrumbs />
@@ -276,37 +423,71 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="flex w-full flex-col gap-2 lg:max-w-xl">
                   <form onSubmit={submitSearch} className="flex gap-2">
                     <div className="relative flex-1">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input id="global-search-input" value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="Search everything" className="pl-9 pr-16" />
-                      <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 text-xs text-muted-foreground md:block">Ctrl+K</span>
+                      <label htmlFor="global-search-input" className="sr-only">
+                        Search the workspace
+                      </label>
+                      <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="global-search-input"
+                        value={searchValue}
+                        onChange={(event) => setSearchValue(event.target.value)}
+                        placeholder="Search everything"
+                        aria-describedby="global-search-help"
+                        className="pl-9 pr-16"
+                      />
+                      <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 text-xs text-muted-foreground md:block">
+                        Ctrl/Cmd+K
+                      </span>
                     </div>
                     <Button type="submit" variant="outline">
                       Search
                     </Button>
                   </form>
+                  <p id="global-search-help" className="sr-only">
+                    Press Control or Command plus K to focus the global search field.
+                  </p>
 
                   <div className="relative flex flex-wrap items-center gap-2">
-                    <Button type="button" variant="outline" className="relative" onClick={() => setNotificationsOpen((current) => !current)}>
-                      <Bell className="mr-2 h-4 w-4" />
+                    <Button
+                      ref={notificationsButtonRef}
+                      type="button"
+                      variant="outline"
+                      className="relative"
+                      aria-controls="notifications-panel"
+                      aria-expanded={notificationsOpen}
+                      aria-haspopup="dialog"
+                      onClick={() => setNotificationsOpen((current) => !current)}
+                    >
+                      <Bell aria-hidden="true" className="mr-2 h-4 w-4" />
                       Notifications
                       {unreadCount ? (
-                        <span className="absolute -right-2 -top-2 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                        <span aria-hidden="true" className="absolute -right-2 -top-2 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
                           {unreadCount > 99 ? '99+' : unreadCount}
                         </span>
                       ) : null}
                     </Button>
                     {notificationsOpen ? (
-                      <div className="absolute right-0 top-12 z-20 w-[min(28rem,90vw)] rounded-xl border bg-popover p-3 shadow-lg">
+                      <div
+                        ref={notificationsPanelRef}
+                        id="notifications-panel"
+                        role="dialog"
+                        aria-modal="false"
+                        aria-labelledby="notifications-panel-title"
+                        tabIndex={-1}
+                        className="absolute right-0 top-12 z-20 w-[min(28rem,90vw)] rounded-xl border bg-popover p-3 shadow-lg"
+                      >
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <div>
-                            <p className="font-semibold">Recent notifications</p>
+                            <p id="notifications-panel-title" className="font-semibold">
+                              Recent notifications
+                            </p>
                             <p className="text-xs text-muted-foreground">{unreadCount} unread</p>
                           </div>
-                          <Button size="sm" variant="ghost" onClick={() => void markAllAsRead()}>
+                          <Button size="sm" variant="ghost" onClick={() => void markAllAsRead()} disabled={!unreadCount}>
                             Mark all read
                           </Button>
                         </div>
-                        <div className="space-y-2">
+                        <div aria-live="polite" className="space-y-2">
                           {recent.length ? (
                             recent.map((notification) => (
                               <button
@@ -338,7 +519,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       </div>
                     ) : null}
                     <Button type="button" variant="outline" onClick={() => void logout()}>
-                      <LogOut className="mr-2 h-4 w-4" />
+                      <LogOut aria-hidden="true" className="mr-2 h-4 w-4" />
                       Log out
                     </Button>
                   </div>
@@ -347,9 +528,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </header>
 
             {!isOnline ? (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div role="status" aria-live="polite" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 <div className="flex items-start gap-3">
-                  <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
+                  <WifiOff aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
                     <p className="font-medium">Offline mode</p>
                     <p>Cached pages are still available. New changes will resume when your connection returns.</p>
@@ -359,10 +540,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
 
             {canInstall ? (
-              <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+              <div role="status" aria-live="polite" className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-start gap-3">
-                    <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <Smartphone aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                     <div>
                       <p className="font-medium">Install Homeschool Hero</p>
                       <p className="text-muted-foreground">Add the app to your home screen for a faster, full-screen mobile experience.</p>
@@ -376,7 +557,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
 
             {needsRefresh ? (
-              <div className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+              <div role="status" aria-live="polite" className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-950">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="font-medium">Update ready</p>
@@ -390,7 +571,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
 
             {isOfflineReady ? (
-              <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+              <div role="status" aria-live="polite" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="font-medium">Offline support ready</p>
@@ -403,29 +584,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             ) : null}
 
-            <main className="space-y-4">{children}</main>
+            <main id="main-content" tabIndex={-1} className="space-y-4">
+              {children}
+            </main>
           </div>
         </div>
       </div>
 
       {mobileMenuOpen ? (
         <div className="fixed inset-0 z-40 md:hidden">
-          <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close navigation" onClick={() => setMobileMenuOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-[min(22rem,88vw)] flex-col gap-4 overflow-y-auto border-r bg-card p-4 shadow-xl">
+          <button type="button" tabIndex={-1} className="absolute inset-0 bg-black/40" aria-label="Close navigation" onClick={() => setMobileMenuOpen(false)} />
+          <aside
+            ref={mobileMenuPanelRef}
+            id="mobile-navigation-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-navigation-title"
+            tabIndex={-1}
+            className="absolute inset-y-0 left-0 flex w-[min(22rem,88vw)] flex-col gap-4 overflow-y-auto border-r bg-card p-4 shadow-xl"
+          >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-lg font-bold">Homeschool Hero</p>
+                <p id="mobile-navigation-title" className="text-lg font-bold">
+                  Homeschool Hero
+                </p>
                 <p className="text-sm text-muted-foreground">{familyName || 'Family workspace'}</p>
               </div>
               <Button type="button" variant="ghost" size="icon" aria-label="Close navigation" onClick={() => setMobileMenuOpen(false)}>
-                <X className="h-5 w-5" />
+                <X aria-hidden="true" className="h-5 w-5" />
               </Button>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3 text-sm">
               <p className="font-medium">{userName}</p>
               <p className="text-xs text-muted-foreground">{role ? roleLabels[role] : 'Signed in'}</p>
             </div>
-            <nav className="space-y-4">{renderNavGroups(true)}</nav>
+            <nav aria-label="Mobile navigation" className="space-y-4">
+              {renderNavGroups(true)}
+            </nav>
           </aside>
         </div>
       ) : null}
@@ -442,7 +637,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   cn('flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-[11px] font-medium text-muted-foreground', isActive && 'bg-primary/10 text-primary')
                 }
               >
-                <item.icon className="h-4 w-4" />
+                <item.icon aria-hidden="true" className="h-4 w-4" />
                 <span>{item.label}</span>
               </NavLink>
             ))}

@@ -124,6 +124,7 @@ import type {
   PaginatedResponse,
 } from '@/types/api'
 import type { DetailedHealthResponse, ReadinessResponse, SystemStatusResponse } from '@/types/health'
+import { getCurrentLanguage } from '@/lib/locale'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 export const MAINTENANCE_EVENT = 'homeschool:maintenance'
@@ -173,6 +174,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers.set('x-csrf-token', csrfToken)
     }
   }
+  if (!headers.has('Accept-Language')) {
+    headers.set('Accept-Language', getCurrentLanguage())
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: 'include',
     headers,
@@ -181,9 +185,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`
-    let payload: Record<string, any> | null = null
+    let payload: { detail?: string; message?: string; error?: { code?: string; details?: { maintenance?: unknown } } } | null = null
     try {
-      payload = await parseResponse<Record<string, any>>(response)
+      payload = await parseResponse<{ detail?: string; message?: string; error?: { code?: string; details?: { maintenance?: unknown } } }>(response)
       message = payload?.detail || payload?.message || message
     } catch {
       // ignore parse issues
@@ -191,7 +195,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (response.status === 503 && payload?.error?.code === 'maintenance_mode') {
       window.dispatchEvent(
         new CustomEvent(MAINTENANCE_EVENT, {
-          detail: payload.error.details?.maintenance ?? {
+          detail: (payload.error.details?.maintenance as Record<string, unknown> | undefined) ?? {
             active: true,
             message,
             source: 'server',

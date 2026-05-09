@@ -135,14 +135,21 @@ export function QuizBuilder({
                   </SelectContent>
                 </Select>
                 {questions.length > 1 ? (
-                  <Button type="button" variant="ghost" size="icon" onClick={() => deleteQuestion(index)}>
-                    <Trash2 className="h-4 w-4" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Delete question ${index + 1}`}
+                    onClick={() => deleteQuestion(index)}
+                  >
+                    <Trash2 aria-hidden="true" className="h-4 w-4" />
                   </Button>
                 ) : null}
               </div>
             </div>
 
             <Textarea
+              aria-label={`Question ${index + 1} prompt`}
               placeholder="Question prompt"
               value={question.prompt}
               onChange={(event) => updateQuestion(index, { prompt: event.target.value })}
@@ -152,6 +159,7 @@ export function QuizBuilder({
               ? question.options?.map((option, optionIndex) => (
                   <Input
                     key={optionIndex}
+                    aria-label={`Question ${index + 1} option ${optionIndex + 1}`}
                     placeholder={`Option ${optionIndex + 1}`}
                     value={option}
                     onChange={(event) => {
@@ -178,6 +186,7 @@ export function QuizBuilder({
               </Select>
             ) : (
               <Input
+                aria-label={question.type === 'multiple_choice' ? `Question ${index + 1} correct option text` : `Question ${index + 1} expected answer`}
                 placeholder={question.type === 'multiple_choice' ? 'Correct option text' : 'Expected answer'}
                 value={question.correct_answer}
                 onChange={(event) => updateQuestion(index, { correct_answer: event.target.value })}
@@ -195,7 +204,11 @@ export function QuizBuilder({
             Save quiz
           </Button>
         </div>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error ? (
+          <p role="alert" aria-live="assertive" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   )

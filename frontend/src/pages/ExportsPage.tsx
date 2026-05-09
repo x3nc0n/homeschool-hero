@@ -230,7 +230,7 @@ export function ExportsPage() {
                   const checked = selectedEntities.includes(option.value)
                   const disabled = exportType !== 'entity'
                   return (
-                    <label key={option.value} className="flex items-start gap-3 rounded-lg border p-3">
+                    <label key={option.value} aria-label={option.label} className="flex items-start gap-3 rounded-lg border p-3">
                       <input
                         type="checkbox"
                         className="mt-1 h-4 w-4"

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type {
@@ -152,7 +152,7 @@ export function CalendarPage() {
     }))
   }
 
-  const load = async (preferredId?: number | null) => {
+  const load = useCallback(async (preferredId?: number | null) => {
     setLoading(true)
     setError('')
     try {
@@ -163,11 +163,11 @@ export function CalendarPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [load])
 
   useEffect(() => {
     if (!selectedSchoolYearId) return

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import type { FamilyRole, MaintenanceStatus } from '@/types/api'
+import { AccessibilityEnhancer } from '@/components/common/AccessibilityEnhancer'
 import { AppShell } from '@/components/layout/AppShell'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { CapabilitiesProvider } from '@/context/CapabilitiesContext'
@@ -47,7 +48,13 @@ import { MaintenancePage } from '@/pages/MaintenancePage'
 import { StatusPage } from '@/pages/StatusPage'
 
 function LoadingScreen() {
-  return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
+  return (
+    <main className="flex min-h-screen items-center justify-center text-muted-foreground">
+      <div role="status" aria-live="polite">
+        Loading session…
+      </div>
+    </main>
+  )
 }
 
 function defaultRouteForRole() {
@@ -244,6 +251,7 @@ export default function App() {
       <CapabilitiesProvider>
         <PwaProvider>
           <NotificationsProvider>
+            <AccessibilityEnhancer />
             <AppRoutes />
           </NotificationsProvider>
         </PwaProvider>

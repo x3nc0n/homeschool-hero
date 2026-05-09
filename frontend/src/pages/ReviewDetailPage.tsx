@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '@/lib/api'
 import type { ReviewQueueItem, ReviewReviewer } from '@/types/api'
@@ -42,7 +42,7 @@ export function ReviewDetailPage() {
     setAssignee(reviewItem.assigned_to_user_id ? String(reviewItem.assigned_to_user_id) : '')
   }
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!reviewId) {
       setError('Invalid review id')
       setLoading(false)
@@ -60,11 +60,11 @@ export function ReviewDetailPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [reviewId])
 
   useEffect(() => {
     void load()
-  }, [reviewId])
+  }, [load])
 
   const refreshItem = (next: ReviewQueueItem) => {
     setItem(next)

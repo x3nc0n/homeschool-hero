@@ -1,4 +1,5 @@
 import { ChevronRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 
@@ -8,40 +9,40 @@ type Crumb = {
 }
 
 const labelMap: Record<string, string> = {
-  students: 'Students',
-  assignments: 'Assignments',
-  grades: 'Grade Book',
-  calendar: 'Calendar',
-  curriculum: 'Curriculum',
-  'lesson-plans': 'Lesson Plans',
-  review: 'Review Queue',
-  notifications: 'Notifications',
-  'report-cards': 'Report Cards',
-  transcripts: 'Transcripts',
-  compliance: 'Compliance',
-  'compliance-reports': 'Compliance Reports',
-  portfolio: 'Portfolio',
-  imports: 'Imports',
-  exports: 'Exports',
-  resources: 'Resources',
-  invitations: 'Invitations',
-  audit: 'Audit Log',
-  search: 'Search',
-  upload: 'Uploads',
-  planner: 'Planner',
-  settings: 'Settings',
-  family: 'Family',
-  backups: 'Backups',
-  status: 'System Status',
-  restore: 'Restore',
+  students: 'students',
+  assignments: 'assignments',
+  grades: 'grades',
+  calendar: 'calendar',
+  curriculum: 'curriculum',
+  'lesson-plans': 'lesson-plans',
+  review: 'review',
+  notifications: 'notifications',
+  'report-cards': 'report-cards',
+  transcripts: 'transcripts',
+  compliance: 'compliance',
+  'compliance-reports': 'compliance-reports',
+  portfolio: 'portfolio',
+  imports: 'imports',
+  exports: 'exports',
+  resources: 'resources',
+  invitations: 'invitations',
+  audit: 'audit',
+  search: 'search',
+  upload: 'upload',
+  planner: 'planner',
+  settings: 'settings',
+  family: 'family',
+  backups: 'backups',
+  status: 'status',
+  restore: 'restore',
 }
 
-function buildCrumbs(pathname: string): Crumb[] {
+function buildCrumbs(pathname: string, t: (key: string) => string): Crumb[] {
   const segments = pathname.split('/').filter(Boolean)
-  const crumbs: Crumb[] = [{ label: 'Dashboard', to: '/' }]
+  const crumbs: Crumb[] = [{ label: t('breadcrumbs.dashboard'), to: '/' }]
 
   if (!segments.length || (segments.length === 1 && segments[0] === 'dashboard')) {
-    return [{ label: 'Dashboard' }]
+    return [{ label: t('breadcrumbs.dashboard') }]
   }
 
   let currentPath = ''
@@ -49,21 +50,18 @@ function buildCrumbs(pathname: string): Crumb[] {
     currentPath += `/${segment}`
     const isNumeric = /^\d+$/.test(segment)
     const prevSegment = segments[index - 1]
-    let label = labelMap[segment] || segment.replace(/-/g, ' ')
+    let label = labelMap[segment] ? t(`breadcrumbs.${labelMap[segment]}`) : segment.replace(/-/g, ' ')
 
     if (isNumeric && prevSegment === 'students') {
-      label = 'Student Profile'
+      label = t('breadcrumbs.studentProfile')
     } else if (isNumeric && prevSegment === 'review') {
-      label = 'Review Detail'
+      label = t('breadcrumbs.reviewDetail')
     } else if (isNumeric) {
-      label = 'Detail'
+      label = t('breadcrumbs.detail')
     }
 
     crumbs.push({
-      label: label
-        .split(' ')
-        .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
-        .join(' '),
+      label,
       to: index === segments.length - 1 ? undefined : currentPath,
     })
   })
@@ -73,7 +71,8 @@ function buildCrumbs(pathname: string): Crumb[] {
 
 export function Breadcrumbs() {
   const location = useLocation()
-  const crumbs = buildCrumbs(location.pathname)
+  const { t } = useTranslation('common')
+  const crumbs = buildCrumbs(location.pathname, t)
 
   return (
     <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">

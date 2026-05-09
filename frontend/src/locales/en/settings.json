@@ -1,0 +1,125 @@
+{
+  "language": {
+    "title": "Language preference",
+    "description": "Switch the app language now. Your choice is saved on this device for future sessions."
+  },
+  "family": {
+    "loading": "Loading family settings…",
+    "errors": {
+      "load": "Unable to load family settings",
+      "saveGradeScales": "Unable to save grade scales",
+      "saveState": "Unable to save family state",
+      "saveCustomRule": "Unable to save custom rule",
+      "saveMaintenance": "Unable to update maintenance mode",
+      "saveSchedule": "Unable to save maintenance schedule",
+      "clearSchedule": "Unable to clear maintenance schedule"
+    },
+    "messages": {
+      "gradeScalesSaved": "Grade scales updated.",
+      "stateSaved": "Family state updated.",
+      "customRuleSaved": "Custom rule saved.",
+      "maintenanceEnabled": "Maintenance mode enabled.",
+      "maintenanceDisabled": "Maintenance mode disabled.",
+      "maintenanceScheduled": "Maintenance window scheduled.",
+      "maintenanceCleared": "Maintenance schedule cleared.",
+      "defaultCount": "Exactly one scale must be marked as default. Current default count: {{count}}."
+    },
+    "maintenance": {
+      "title": "Maintenance mode",
+      "description": "Pause access for non-admin users while parents and co-parents keep operator access.",
+      "active": "Active via {{source}}",
+      "inactive": "Inactive",
+      "forcedByEnv": "Forced by env",
+      "windowSaved": "Window saved",
+      "message": "Maintenance message",
+      "enable": "Enable maintenance",
+      "disable": "Disable maintenance",
+      "windowStart": "Window start",
+      "windowEnd": "Window end",
+      "saveWindow": "Save maintenance window",
+      "clearWindow": "Clear window",
+      "bypassRoles": "Bypass roles: {{roles}}"
+    },
+    "compliance": {
+      "title": "Compliance settings",
+      "description": "Select your state and add custom rules for unusual homeschool requirements.",
+      "state": "State",
+      "chooseState": "Choose state",
+      "saveState": "Save family state",
+      "customRuleType": "Custom rule type",
+      "chooseRuleType": "Choose custom rule type",
+      "ruleName": "Rule name",
+      "descriptionLabel": "Description",
+      "requiredValue": "Required value",
+      "unit": "Unit",
+      "subjects": "Subjects (comma separated)",
+      "saveRule": "Save custom rule",
+      "helper": "New rule type: {{label}}. The dashboard will compare progress against {{unit}}.",
+      "customRulesTitle": "Custom compliance rules",
+      "customRulesDescription": "These rules apply in addition to the selected state defaults.",
+      "required": "Required: {{value}} {{unit}}",
+      "emptyRules": "No custom rules yet."
+    },
+    "gradeScales": {
+      "title": "Grade scale settings",
+      "description": "Manage grade scales and choose the family-wide default GPA mapping.",
+      "scaleName": "Scale name",
+      "defaultScale": "Default scale",
+      "remove": "Remove",
+      "letter": "Letter",
+      "min": "Min",
+      "max": "Max",
+      "gpa": "GPA",
+      "addScale": "Add scale",
+      "saveSettings": "Save settings",
+      "scaleNameDefault": "Scale {{count}}"
+    },
+    "states": {
+      "CUSTOM": "Custom / generic",
+      "TX": "Texas",
+      "CA": "California",
+      "VA": "Virginia",
+      "NY": "New York",
+      "FL": "Florida"
+    },
+    "ruleTypes": {
+      "attendance_days": { "label": "Attendance days", "unit": "days" },
+      "attendance_hours": { "label": "Attendance hours", "unit": "hours" },
+      "subjects_required": { "label": "Required subjects", "unit": "count" },
+      "assessment_required": { "label": "Assessment evidence", "unit": "count" },
+      "notification_required": { "label": "Notifications / reports", "unit": "count" },
+      "portfolio_required": { "label": "Portfolio evidence", "unit": "count" }
+    }
+  },
+  "notifications": {
+    "loading": "Loading notification preferences…",
+    "title": "Notification preferences",
+    "description": "Choose which updates stay in-app and which can also be sent by email.",
+    "emailInactive": "Email delivery will stay inactive until SMTP is configured.",
+    "errors": {
+      "load": "Unable to load notification preferences",
+      "save": "Unable to save notification preferences"
+    },
+    "messages": {
+      "saved": "Notification preferences saved."
+    },
+    "types": {
+      "due_date": { "title": "Due dates", "description": "Upcoming assignment due dates and reminders." },
+      "grading_complete": { "title": "Grading updates", "description": "Completed grades and review-ready grading items." },
+      "backup_status": { "title": "Backup status", "description": "Missing or stale backups that need attention." },
+      "security_alert": { "title": "Security alerts", "description": "Important sign-in and account lockout notifications." },
+      "invitation": { "title": "Invitations", "description": "Family invitation creation and acceptance updates." },
+      "compliance_reminder": { "title": "Compliance reminders", "description": "Operational reminders that need follow-up." }
+    },
+    "channels": {
+      "inAppTitle": "In-app",
+      "inAppDescription": "Show this notification in the app.",
+      "emailTitle": "Email",
+      "emailDescription": "Send an email when this notification type fires."
+    },
+    "actions": {
+      "save": "Save preferences",
+      "reset": "Reset"
+    }
+  }
+}
