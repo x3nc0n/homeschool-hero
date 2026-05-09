@@ -35,6 +35,7 @@ The default stack starts:
 - Swagger UI: `http://localhost:8000/api/docs`
 - ReDoc: `http://localhost:8000/api/redoc`
 - Integration guide: `docs/api-integration.md`
+- Admin guide: `docs/admin-guide.md`
 - Auth provider setup: `docs/auth-providers.md`
 - Developer setup: `docs/development.md`
 
@@ -65,6 +66,29 @@ Profile mapping:
 - `full`: enables all optional services
 
 ## Docker deployment
+
+### Pull from GHCR
+
+Pre-built images are published to GitHub Container Registry on every release:
+
+```bash
+docker pull ghcr.io/x3nc0n/homeschool-hero:latest
+
+# Or pin to a specific version
+docker pull ghcr.io/x3nc0n/homeschool-hero:v0.8.2
+```
+
+To run standalone with an external database:
+
+```bash
+docker run -d --name homeschool-hero \
+  -p 8000:8000 \
+  -e DATABASE_URL="postgresql+asyncpg://user:pass@db-host:5432/homeschool" \
+  -e SECRET_KEY="your-secret-key" \
+  ghcr.io/x3nc0n/homeschool-hero:latest
+```
+
+### Build locally
 
 Recommended production steps:
 

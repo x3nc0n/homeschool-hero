@@ -105,14 +105,12 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build Docker image
-        run: docker buildx build --builder "${{ steps.buildx.outputs.name }}" --pull --load -t "${SECURITY_IMAGE_NAME}" .
+        id: build
+        run: docker build --pull -t "${SECURITY_IMAGE_NAME}" .
 
       - name: Scan image with Trivy policy gate
+        if: steps.build.outcome == 'success'
         id: trivy-policy
         continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
@@ -128,7 +126,7 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Generate Trivy JSON report
-        if: always()
+        if: always() && steps.build.outcome == 'success'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.SECURITY_IMAGE_NAME }}
@@ -143,15 +141,15 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Upload Trivy JSON artifact
-        if: always()
+        if: always() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: security-trivy-json
           path: trivy-results.json
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Generate Trivy SARIF
-        if: always()
+        if: always() && steps.build.outcome == 'success'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.SECURITY_IMAGE_NAME }}
@@ -166,7 +164,7 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Upload Trivy SARIF
-        if: always() && hashFiles('trivy-results.sarif') != ''
+        if: always() && steps.build.outcome == 'success' && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
