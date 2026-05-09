@@ -15,7 +15,7 @@ python3-saml==1.16.0
 python-dotenv==1.1.0
 pytest==9.0.3
 httpx==0.28.1
-aiosqlite==0.21.0
+aiosqlite==0.22.1
 pillow==10.4.0
 reportlab==4.2.5
 pytesseract==0.3.13
