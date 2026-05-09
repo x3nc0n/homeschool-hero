@@ -1,327 +1,415 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api } from '@/lib/api'
-import type {
-  Assignment,
-  AttendanceHoursSummary,
-  AttendanceSummary,
-  DashboardSummary,
-  Grade,
-  HealthResponse,
-  PacingStatusItem,
-  ReviewQueueItem,
-  Student,
-} from '@/types/api'
+import { useState } from 'react'
+import {
+  Activity,
+  ChevronDown,
+  ChevronUp,
+  RefreshCcw,
+} from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { useCapabilities } from '@/context/CapabilitiesContext'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { LoadingState } from '@/components/common/LoadingState'
+import { useDashboard } from '@/hooks/useDashboard'
+import type { DashboardStudentSummary } from '@/types/api'
+import { EmptyState } from '@/components/common/EmptyState'
 import { ErrorState } from '@/components/common/ErrorState'
+import { LoadingState } from '@/components/common/LoadingState'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
-function average(values: number[]) {
-  if (!values.length) return 0
-  return values.reduce((sum, value) => sum + value, 0) / values.length
+function badgeVariant(status?: string | null): 'secondary' | 'outline' | 'destructive' {
+  if (!status) return 'outline'
+  if (['healthy', 'ahead', 'present', 'on_track', 'compliant', 'graded'].includes(status)) return 'secondary'
+  if (['warning', 'not_recorded', 'assigned', 'submitted', 'degraded'].includes(status)) return 'outline'
+  return 'destructive'
 }
 
-function isOpenReviewStatus(status?: string) {
-  return status === 'pending_review' || status === 'in_review' || status === 'needs_regrade'
+function formatTime(value: string) {
+  const [hours, minutes] = value.split(':').map(Number)
+  return new Date(2000, 0, 1, hours || 0, minutes || 0).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatPercent(value?: number | null) {
+  return value == null ? '—' : `${value.toFixed(1)}%`
+}
+
+function WidgetCard({
+  title,
+  description,
+  sectionKey,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  title: string
+  description: string
+  sectionKey: string
+  collapsed: Record<string, boolean>
+  onToggle: (key: string) => void
+  children: React.ReactNode
+}) {
+  const isCollapsed = Boolean(collapsed[sectionKey])
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+        <CardAction>
+          <Button size="sm" variant="ghost" onClick={() => onToggle(sectionKey)}>
+            {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+            {isCollapsed ? 'Show' : 'Hide'}
+          </Button>
+        </CardAction>
+      </CardHeader>
+      {!isCollapsed ? <CardContent>{children}</CardContent> : null}
+    </Card>
+  )
+}
+
+function StudentSummaryCard({ summary }: { summary: DashboardStudentSummary }) {
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>{summary.student_name}</CardTitle>
+        <CardDescription>Student summary</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-lg border p-3">
+            <p className="text-xs uppercase text-muted-foreground">GPA</p>
+            <p className="text-lg font-semibold">{summary.current_gpa?.toFixed(2) ?? '—'}</p>
+          </div>
+          <div className="rounded-lg border p-3">
+            <p className="text-xs uppercase text-muted-foreground">Attendance</p>
+            <p className="text-lg font-semibold">{formatPercent(summary.attendance_rate)}</p>
+          </div>
+          <div className="rounded-lg border p-3">
+            <p className="text-xs uppercase text-muted-foreground">Due soon</p>
+            <p className="text-lg font-semibold">{summary.assignments_due_count}</p>
+          </div>
+          <div className="rounded-lg border p-3">
+            <p className="text-xs uppercase text-muted-foreground">Pacing</p>
+            <Badge variant={badgeVariant(summary.pacing_status)}>{summary.pacing_status?.replace('_', ' ') || 'No targets'}</Badge>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <Badge variant={badgeVariant(summary.compliance_status)}>{summary.compliance_status?.replace('_', ' ') || 'No alerts'}</Badge>
+          <Button asChild size="sm" variant="outline">
+            <Link to={`/students/${summary.student_id}`}>View profile</Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 export function DashboardPage() {
-  const { canReviewQueue, studentId: scopedStudentId } = useAuth()
-  const { status: capabilityStatus, optionalUnavailable } = useCapabilities()
-  const [assignments, setAssignments] = useState<Assignment[]>([])
-  const [grades, setGrades] = useState<Grade[]>([])
-  const [queue, setQueue] = useState<ReviewQueueItem[]>([])
-  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
-  const [attendanceSummary, setAttendanceSummary] = useState<AttendanceSummary | null>(null)
-  const [attendanceHours, setAttendanceHours] = useState<AttendanceHoursSummary | null>(null)
-  const [attendanceStudent, setAttendanceStudent] = useState<Student | null>(null)
-  const [pacingItems, setPacingItems] = useState<PacingStatusItem[]>([])
-  const [health, setHealth] = useState<HealthResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const [assignmentData, gradeData, queueData, summaryData, healthData, studentData, schoolYearData] = await Promise.all([
-        api.listAssignments({ page: 1, page_size: 25 }),
-        api.listGrades(),
-        canReviewQueue ? api.listReviewQueue() : Promise.resolve([]),
-        api.getDashboardSummary(),
-        api.getHealth(),
-        api.listStudents(),
-        api.listSchoolYears(),
-      ])
-      setAssignments(assignmentData.items)
-      setGrades(gradeData)
-      setQueue(queueData)
-      setDashboardSummary(summaryData)
-      setHealth(healthData)
-      const snapshotStudent = studentData.find((student) => student.id === scopedStudentId) || studentData[0] || null
-      const snapshotYear = schoolYearData.find((schoolYear) => schoolYear.is_active) || schoolYearData[0] || null
-      setAttendanceStudent(snapshotStudent)
-      if (snapshotStudent) {
-        const pacingData = await api.getPacingStatus(snapshotStudent.id)
-        setPacingItems(pacingData.items.slice(0, 4))
-      } else {
-        setPacingItems([])
-      }
-      if (snapshotStudent && snapshotYear) {
-        const [attendanceSummaryData, attendanceHoursData] = await Promise.all([
-          api.getAttendanceSummary(snapshotStudent.id, 'year', snapshotYear.id),
-          api.getAttendanceHours(snapshotStudent.id, snapshotYear.id),
-        ])
-        setAttendanceSummary(attendanceSummaryData)
-        setAttendanceHours(attendanceHoursData)
-      } else {
-        setAttendanceSummary(null)
-        setAttendanceHours(null)
-      }
-    } catch (dashboardError) {
-      setError(dashboardError instanceof Error ? dashboardError.message : 'Unable to load dashboard')
-    } finally {
-      setLoading(false)
-    }
-  }, [canReviewQueue, scopedStudentId])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  const recentAssignments = useMemo(
-    () =>
-      [...assignments]
-        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-        .slice(0, 5),
-    [assignments],
-  )
-
-  const gradeAverage = useMemo(() => average(grades.map((grade) => (grade.score / grade.max_score) * 100)), [grades])
-  const healthStatus = health?.status || (capabilityStatus === 'ok' ? 'healthy' : 'degraded')
-  const systemHealth = dashboardSummary?.system_health
-  const recentActivity = dashboardSummary?.recent_activity || []
+  const { role } = useAuth()
+  const { dashboard, loading, error, reload } = useDashboard()
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   if (loading) return <LoadingState message="Loading dashboard…" />
-  if (error) return <ErrorState message={error} onRetry={() => void load()} />
+  if (error) return <ErrorState message={error} onRetry={() => void reload()} />
+  if (!dashboard) return <ErrorState message="Dashboard is unavailable." onRetry={() => void reload()} />
 
-  const summaryCards = [
-    { label: 'Recent assignments', value: assignments.length },
-    { label: 'Grade average', value: `${gradeAverage.toFixed(1)}%` },
-    ...(canReviewQueue ? [{ label: 'Pending reviews', value: queue.filter((item) => isOpenReviewStatus(item.status)).length }] : []),
-  ]
+  const isStudentView = role === 'student_viewer'
+  const toggleSection = (sectionKey: string) =>
+    setCollapsed((current) => ({
+      ...current,
+      [sectionKey]: !current[sectionKey],
+    }))
 
   return (
     <div className="space-y-4">
-      <div className={`grid gap-4 ${summaryCards.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-        {summaryCards.map((card) => (
-          <Card key={card.label}>
-            <CardHeader>
-              <CardDescription>{card.label}</CardDescription>
-              <CardTitle>{card.value}</CardTitle>
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
-
-      {attendanceStudent ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Attendance snapshot</CardTitle>
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>{isStudentView ? 'Your dashboard' : 'Family dashboard'}</CardTitle>
             <CardDescription>
-              {attendanceStudent.name} · {attendanceSummary?.total_records ?? 0} recorded days
+              {isStudentView ? 'Today’s schedule, assignments, and recent grades in one place.' : 'A single view of schedule, assignments, grades, attendance, pacing, compliance, and system health.'}
             </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-md border p-3">
-              <p className="text-xs uppercase text-muted-foreground">Attendance rate</p>
-              <p className="text-2xl font-semibold">{attendanceSummary ? `${attendanceSummary.attendance_rate.toFixed(1)}%` : '—'}</p>
+          </div>
+          <CardAction className="flex items-center gap-2">
+            <p className="hidden text-xs text-muted-foreground md:block">Updated {new Date(dashboard.generated_at).toLocaleString()}</p>
+            <Button size="sm" variant="outline" onClick={() => void reload()}>
+              <RefreshCcw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </CardAction>
+        </CardHeader>
+      </Card>
+
+      {!isStudentView ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Quick actions</CardTitle>
+              <CardDescription>Jump straight into the most common family admin tasks.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Button asChild variant="outline">
+                <Link to="/attendance">Add attendance</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/assignments">Create assignment</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/grades">Record grade</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold">Student summary</h2>
+              <p className="text-sm text-muted-foreground">Open a student profile for a focused view.</p>
             </div>
-            <div className="rounded-md border p-3">
-              <p className="text-xs uppercase text-muted-foreground">Instructional hours</p>
-              <p className="text-2xl font-semibold">{attendanceHours?.total_hours || '0.00'}</p>
-            </div>
-            <div className="rounded-md border p-3">
-              <p className="text-xs uppercase text-muted-foreground">Excused / absent</p>
-              <p className="text-2xl font-semibold">
-                {(attendanceSummary?.excused || 0)} / {(attendanceSummary?.absent || 0)}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+            {dashboard.student_summaries.length ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {dashboard.student_summaries.map((summary) => (
+                  <StudentSummaryCard key={summary.student_id} summary={summary} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState title="No students yet" description="Add a student to start building your dashboard." />
+            )}
+          </section>
+        </>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent activity</CardTitle>
-            <CardDescription>Latest auth, grading, and review events for this family.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recentActivity.length ? (
+      <div className={`grid gap-4 ${isStudentView ? 'xl:grid-cols-1' : 'xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]'}`}>
+        <div className="space-y-4">
+          <WidgetCard
+            title="Today’s schedule"
+            description="Scheduled blocks for today."
+            sectionKey="schedule"
+            collapsed={collapsed}
+            onToggle={toggleSection}
+          >
+            {dashboard.today_schedule.length ? (
               <div className="space-y-3">
-                {recentActivity.map((item) => (
-                  <div key={item.id} className="flex items-start justify-between gap-3 rounded-md border p-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{item.title}</p>
-                        <Badge variant={item.status === 'failed' ? 'destructive' : 'secondary'}>{item.status}</Badge>
+                {dashboard.today_schedule.map((item) => (
+                  <div key={`${item.student_id}-${item.schedule_id}-${item.start_time}-${item.subject_name}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{item.subject_name}</p>
+                        {!isStudentView ? <Badge variant="outline">{item.student_name}</Badge> : null}
+                        <Badge variant={badgeVariant(item.source === 'override' ? 'warning' : 'healthy')}>
+                          {item.source === 'override' ? item.override_type?.replace('_', ' ') || 'override' : 'recurring'}
+                        </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground">{item.subtitle}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(item.timestamp).toLocaleString()}
+                      <p className="text-sm text-muted-foreground">
+                        {formatTime(item.start_time)} – {formatTime(item.end_time)}
+                        {item.location ? ` · ${item.location}` : ''}
                       </p>
+                      {item.reason || item.notes ? <p className="mt-1 text-sm text-muted-foreground">{item.reason || item.notes}</p> : null}
                     </div>
+                    <p className="text-xs text-muted-foreground">{item.schedule_name}</p>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No recent activity yet.</p>
+              <EmptyState title="Nothing scheduled today" description="Add schedule blocks to see today’s plan here." />
             )}
-          </CardContent>
-        </Card>
+          </WidgetCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>System health</CardTitle>
-            <CardDescription>Quick operator view of app health, grading load, and backups.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Overall status</span>
-              <Badge variant={healthStatus === 'healthy' ? 'secondary' : healthStatus === 'degraded' ? 'outline' : 'destructive'}>
-                {healthStatus}
-              </Badge>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-md border p-3">
-                <p className="text-xs uppercase text-muted-foreground">Active users (24h)</p>
-                <p className="text-2xl font-semibold">{systemHealth?.active_users ?? 0}</p>
+          <WidgetCard
+            title="Upcoming assignments"
+            description="Due in the next 7 days."
+            sectionKey="assignments"
+            collapsed={collapsed}
+            onToggle={toggleSection}
+          >
+            {dashboard.upcoming_assignments.length ? (
+              <div className="space-y-3">
+                {dashboard.upcoming_assignments.map((item) => (
+                  <div key={`${item.assignment_id}-${item.student_id ?? 'all'}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{item.title}</p>
+                        {item.subject_name ? <Badge variant="outline">{item.subject_name}</Badge> : null}
+                        {!isStudentView && item.student_name ? <Badge variant="outline">{item.student_name}</Badge> : null}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Due {new Date(item.due_date).toLocaleDateString()} · {item.days_until_due === 0 ? 'today' : `${item.days_until_due} day${item.days_until_due === 1 ? '' : 's'} left`}
+                      </p>
+                    </div>
+                    <Badge variant={badgeVariant(item.status)}>{item.status.replace('_', ' ')}</Badge>
+                  </div>
+                ))}
               </div>
-              <div className="rounded-md border p-3">
-                <p className="text-xs uppercase text-muted-foreground">Slow requests</p>
-                <p className="text-2xl font-semibold">{systemHealth?.slow_requests_total ?? 0}</p>
+            ) : (
+              <EmptyState title="No due dates coming up" description="Assignments due this week will appear here." />
+            )}
+          </WidgetCard>
+
+          <WidgetCard
+            title="Recent grades"
+            description="Latest graded submissions."
+            sectionKey="grades"
+            collapsed={collapsed}
+            onToggle={toggleSection}
+          >
+            {dashboard.recent_grades.length ? (
+              <div className="space-y-3">
+                {dashboard.recent_grades.map((item) => (
+                  <div key={item.grade_id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{item.assignment_title}</p>
+                        {item.subject_name ? <Badge variant="outline">{item.subject_name}</Badge> : null}
+                        {!isStudentView ? <Badge variant="outline">{item.student_name}</Badge> : null}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {item.score}/{item.max_score} · {item.percent.toFixed(1)}%
+                        {item.letter_grade ? ` · ${item.letter_grade}` : ''}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{new Date(item.graded_at).toLocaleString()}</p>
+                  </div>
+                ))}
               </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Capability alerts</p>
-              {optionalUnavailable.length ? (
-                <div className="flex flex-wrap gap-2">
-                  {optionalUnavailable.map((name) => (
-                    <Badge key={name} variant="outline">
-                      {name.replace('_', ' ')} unavailable
-                    </Badge>
+            ) : (
+              <EmptyState title="No graded work yet" description="Grades will show up as soon as submissions are scored." />
+            )}
+          </WidgetCard>
+        </div>
+
+        {!isStudentView ? (
+          <div className="space-y-4">
+            <WidgetCard
+              title="Attendance snapshot"
+              description="Today’s attendance status for each student."
+              sectionKey="attendance"
+              collapsed={collapsed}
+              onToggle={toggleSection}
+            >
+              {dashboard.attendance_today.length ? (
+                <div className="space-y-3">
+                  {dashboard.attendance_today.map((item) => (
+                    <div key={item.student_id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                      <div>
+                        <p className="font-medium">{item.student_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {item.instructional_hours ? `${item.instructional_hours} hours` : 'No hours logged'}
+                        </p>
+                      </div>
+                      <Badge variant={badgeVariant(item.status)}>{item.status.replace('_', ' ')}</Badge>
+                    </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">All optional services are available.</p>
+                <EmptyState title="No attendance yet" description="Today’s attendance entries will appear here." />
               )}
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">TLS status</p>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant={health?.transport.tls_enabled ? 'secondary' : 'outline'}>
-                  {health?.transport.tls_enabled ? 'TLS enabled' : 'TLS disabled'}
-                </Badge>
-                <Badge variant={health?.transport.https_redirect_enabled ? 'secondary' : 'outline'}>
-                  {health?.transport.https_redirect_enabled ? 'HTTPS redirect on' : 'HTTPS redirect off'}
-                </Badge>
-                <Badge variant={health?.transport.hsts_enabled ? 'secondary' : 'outline'}>
-                  {health?.transport.hsts_enabled ? 'HSTS on' : 'HSTS off'}
-                </Badge>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Grading queue</p>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(systemHealth?.grading_jobs_by_status || {}).map(([status, count]) => (
-                  <Badge key={status} variant="secondary">
-                    {status}: {count}
-                  </Badge>
-                ))}
-                {!Object.keys(systemHealth?.grading_jobs_by_status || {}).length && (
-                  <p className="text-sm text-muted-foreground">No grading jobs recorded yet.</p>
-                )}
-              </div>
-            </div>
-            <div className="rounded-md border p-3">
-              <p className="text-xs uppercase text-muted-foreground">Last backup</p>
-              {systemHealth?.backup_last_success?.timestamp ? (
-                <>
-                  <p className="font-medium">{new Date(systemHealth.backup_last_success.timestamp).toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {systemHealth.backup_last_success.size_bytes
-                      ? `${Math.round(systemHealth.backup_last_success.size_bytes / 1024)} KB`
-                      : 'Size unavailable'}
-                  </p>
-                </>
+            </WidgetCard>
+
+            <WidgetCard
+              title="Pacing alerts"
+              description="Students currently behind pace."
+              sectionKey="pacing"
+              collapsed={collapsed}
+              onToggle={toggleSection}
+            >
+              {dashboard.pacing_alerts.length ? (
+                <div className="space-y-3">
+                  {dashboard.pacing_alerts.map((item) => (
+                    <div key={item.pacing_target_id} className="rounded-lg border p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{item.unit_name}</p>
+                        <Badge variant="outline">{item.student_name}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {item.package_name} · {item.remaining_lessons} lessons remaining
+                      </p>
+                      <p className="text-xs text-destructive">Target ended {new Date(item.target_end_date).toLocaleDateString()}</p>
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  {systemHealth?.metrics_enabled ? 'No successful backups recorded yet.' : 'Metrics endpoint disabled.'}
-                </p>
+                <EmptyState title="No pacing alerts" description="Students who fall behind pace will show up here." />
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </WidgetCard>
+
+            <WidgetCard
+              title="Compliance warnings"
+              description="Warning and non-compliant items that need attention."
+              sectionKey="compliance"
+              collapsed={collapsed}
+              onToggle={toggleSection}
+            >
+              {dashboard.compliance_warnings.length ? (
+                <div className="space-y-3">
+                  {dashboard.compliance_warnings.map((item, index) => (
+                    <div key={`${item.student_id}-${item.rule_name}-${index}`} className="rounded-lg border p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{item.rule_name}</p>
+                        <Badge variant="outline">{item.student_name}</Badge>
+                        <Badge variant={badgeVariant(item.status)}>{item.status.replace('_', ' ')}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {item.current_value}/{item.required_value} {item.threshold_unit}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="No compliance warnings" description="Compliance risks will appear here when they need review." />
+              )}
+            </WidgetCard>
+
+            <WidgetCard
+              title="System status"
+              description="Operator summary from the health checks."
+              sectionKey="system"
+              collapsed={collapsed}
+              onToggle={toggleSection}
+            >
+              {dashboard.system_status ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-muted-foreground" />
+                      <p className="font-medium">Overall status</p>
+                    </div>
+                    <Badge variant={badgeVariant(dashboard.system_status.status)}>{dashboard.system_status.status}</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Healthy</p>
+                      <p className="text-lg font-semibold">{dashboard.system_status.healthy_services}</p>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs uppercase text-muted-foreground">Degraded / unhealthy</p>
+                      <p className="text-lg font-semibold">
+                        {dashboard.system_status.degraded_services + dashboard.system_status.unhealthy_services}
+                      </p>
+                    </div>
+                  </div>
+                  {dashboard.system_status.affected_services.length ? (
+                    <div className="rounded-lg border p-3">
+                      <p className="mb-2 text-xs uppercase text-muted-foreground">Affected services</p>
+                      <div className="flex flex-wrap gap-2">
+                        {dashboard.system_status.affected_services.map((service) => (
+                          <Badge key={service} variant="outline">
+                            {service}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <EmptyState title="No system summary" description="System health data is only shown to parent and tutor roles." />
+              )}
+            </WidgetCard>
+          </div>
+        ) : null}
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Pacing snapshot</CardTitle>
-          <CardDescription>
-            {attendanceStudent?.name || 'Current student'} · ahead/on-track/behind by unit
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {pacingItems.length ? (
-            <div className="space-y-2">
-              {pacingItems.map((item) => (
-                <div key={item.pacing_target_id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
-                  <div>
-                    <p className="font-medium">{item.unit_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {item.completed_lessons}/{item.total_lessons} lessons complete
-                    </p>
-                  </div>
-                  <Badge variant={item.status === 'behind' ? 'destructive' : item.status === 'ahead' ? 'secondary' : 'outline'}>
-                    {item.status.replace('_', ' ')}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No pacing targets configured yet.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent assignments</CardTitle>
-          <CardDescription>Keep tabs on what needs grading and follow-up.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {recentAssignments.length ? (
-            <div className="space-y-2">
-              {recentAssignments.map((assignment) => (
-                <div key={assignment.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
-                  <div>
-                    <p className="font-medium">{assignment.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Due {assignment.due_date ? new Date(assignment.due_date).toLocaleDateString() : 'unscheduled'}
-                    </p>
-                  </div>
-                  <Badge variant="secondary">{assignment.status}</Badge>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No assignments yet.</p>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }

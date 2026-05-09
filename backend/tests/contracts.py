@@ -32,6 +32,10 @@ SEARCH = {
     'collection': f'{API_PREFIX}/search',
 }
 
+DASHBOARD = {
+    'summary': f'{API_PREFIX}/dashboard',
+}
+
 STUDENTS = {
     'collection': f'{API_PREFIX}/students',
     'detail': f'{API_PREFIX}/students/{{student_id}}',

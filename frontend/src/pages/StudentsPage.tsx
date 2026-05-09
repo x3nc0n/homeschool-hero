@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowRight, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import type { Student } from '@/types/api'
 import { useAuth } from '@/context/AuthContext'
@@ -86,9 +87,19 @@ export function StudentsPage() {
             <TableBody>
               {students.map((student) => (
                 <TableRow key={student.id}>
-                  <TableCell>{student.name}</TableCell>
+                  <TableCell>
+                    <Link className="font-medium text-primary hover:underline" to={`/students/${student.id}`}>
+                      {student.name}
+                    </Link>
+                  </TableCell>
                   {canEditStudents ? (
                     <TableCell className="space-x-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link to={`/students/${student.id}`}>
+                          <ArrowRight className="mr-2 h-3.5 w-3.5" />
+                          Open
+                        </Link>
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"

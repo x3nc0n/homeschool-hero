@@ -47,3 +47,7 @@
 - Added backend compliance report support with a new `ComplianceReport` model, Alembic migration, generation service, required-report checklist logic, PDF export, finalize flow, and family-scoped APIs for annual assessments, quarterly reports, attendance logs, portfolio reviews, and notices of intent.
 - Added frontend compliance reports workspace with student/year/report-type generation, required checklist visibility, draft preview/finalize/download actions, new API client/types, navigation/routing, and a compliance dashboard handoff card into the reporting workflow.
 - Validated with `cd backend && python -m pytest -q` (`158 passed, 1 skipped`) plus `cd frontend && npm run build`.
+### UX-01 Unified dashboard and views (2026-05-09T04:01:07-05:00)
+- Replaced the legacy dashboard with a unified `/api/dashboard` aggregator that rolls up today’s schedule, next-7-day assignments, recent grades, attendance snapshots, pacing alerts, compliance warnings, per-student summary cards, and system health in one response with student-viewer filtering.
+- Rebuilt the frontend landing experience around that single API call: dashboard is now the home route, student profile drill-down pages were added, dashboard widgets are collapsible, refreshable, and responsive, and navigation moved to a grouped sidebar with breadcrumbs and active states.
+- Validated with `cd backend && python -m pytest -q` (`184 passed, 1 skipped`) plus `cd frontend && npm run build`.

@@ -48,7 +48,7 @@ import type {
   LessonPlanUpsertPayload,
   AuthSession,
   BootstrapStatus,
-  DashboardSummary,
+  DashboardData,
   ExportEntityType,
   ExportFormat,
   ExportJob,
@@ -252,8 +252,9 @@ export const api = {
     return request<MetricsResponse>('/metrics')
   },
 
-  getDashboardSummary() {
-    return request<DashboardSummary>('/dashboard/summary')
+  getDashboard(studentId?: number) {
+    const query = studentId ? `?student_id=${studentId}` : ''
+    return request<DashboardData>(`/dashboard${query}`)
   },
 
   getComplianceDashboard(schoolYearId?: number) {

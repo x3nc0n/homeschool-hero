@@ -1285,28 +1285,114 @@ export interface Transcript extends TranscriptSummary {
   entries: TranscriptEntry[]
 }
 
-export interface DashboardActivityItem {
-  id: string
-  type: 'audit' | 'grading_job'
-  timestamp: string
-  title: string
-  subtitle: string
-  status: string
-  details: Record<string, unknown>
+export interface DashboardScheduleItem {
+  student_id: number
+  student_name: string
+  schedule_id: number
+  schedule_name: string
+  subject_id: number
+  subject_name: string
+  subject_color?: string | null
+  date: string
+  start_time: string
+  end_time: string
+  source: 'recurring' | 'override' | string
+  override_type?: ScheduleOverrideType | null
+  location?: string | null
+  notes?: string | null
+  reason?: string | null
 }
 
-export interface DashboardSummary {
-  recent_activity: DashboardActivityItem[]
-  system_health: {
-    status: 'ok' | 'degraded'
-    requests_total: number
-    slow_requests_total: number
-    grading_jobs_by_status: Record<string, number>
-    active_users: number
-    backup_last_success?: MetricsResponse['backup_last_success']
-    metrics_enabled: boolean
-    generated_at: string
-  }
+export interface DashboardAssignmentItem {
+  assignment_id: number
+  title: string
+  subject_id?: number | null
+  subject_name?: string | null
+  student_id?: number | null
+  student_name?: string | null
+  due_date: string
+  status: string
+  days_until_due: number
+}
+
+export interface DashboardGradeItem {
+  grade_id: number
+  assignment_id?: number | null
+  assignment_title: string
+  subject_name?: string | null
+  student_id: number
+  student_name: string
+  score: number
+  max_score: number
+  percent: number
+  letter_grade?: string | null
+  graded_at: string
+}
+
+export interface DashboardAttendanceItem {
+  student_id: number
+  student_name: string
+  date: string
+  status: string
+  instructional_hours?: string | null
+  notes?: string | null
+}
+
+export interface DashboardPacingAlertItem {
+  student_id: number
+  student_name: string
+  pacing_target_id: number
+  unit_name: string
+  package_name: string
+  target_end_date: string
+  remaining_lessons: number
+  status: string
+}
+
+export interface DashboardComplianceWarningItem {
+  student_id: number
+  student_name: string
+  rule_name: string
+  status: ComplianceState
+  current_value: string
+  required_value: string
+  threshold_unit: string
+  last_checked_at: string
+  notes?: string | null
+}
+
+export interface DashboardStudentSummary {
+  student_id: number
+  student_name: string
+  current_gpa?: number | null
+  attendance_rate?: number | null
+  assignments_due_count: number
+  pacing_status?: string | null
+  compliance_status?: ComplianceState | null
+}
+
+export interface DashboardSystemStatus {
+  status: 'healthy' | 'degraded' | 'unhealthy'
+  checked_at: string
+  healthy_services: number
+  degraded_services: number
+  unhealthy_services: number
+  not_configured_services: number
+  affected_services: string[]
+}
+
+export interface DashboardData {
+  role: FamilyRole
+  generated_at: string
+  selected_student_id?: number | null
+  today_schedule: DashboardScheduleItem[]
+  upcoming_assignments: DashboardAssignmentItem[]
+  recent_grades: DashboardGradeItem[]
+  attendance_today: DashboardAttendanceItem[]
+  pacing_alerts: DashboardPacingAlertItem[]
+  compliance_warnings: DashboardComplianceWarningItem[]
+  system_status?: DashboardSystemStatus | null
+  student_summaries: DashboardStudentSummary[]
 }
 
 export interface ImportJobError {

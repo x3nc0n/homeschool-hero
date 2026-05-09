@@ -38,6 +38,7 @@ import { ResourceLibraryPage } from '@/pages/ResourceLibraryPage'
 import { SearchPage } from '@/pages/SearchPage'
 import { SetupPage } from '@/pages/SetupPage'
 import { StudentsPage } from '@/pages/StudentsPage'
+import { StudentDetailPage } from '@/pages/StudentDetailPage'
 import { SubjectsPage } from '@/pages/SubjectsPage'
 import { TranscriptsPage } from '@/pages/TranscriptsPage'
 import { UploadPage } from '@/pages/UploadPage'
@@ -47,11 +48,8 @@ function LoadingScreen() {
   return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
 }
 
-function defaultRouteForRole(role: FamilyRole | null) {
-  if (role === 'student_viewer') {
-    return '/planner'
-  }
-  return '/dashboard'
+function defaultRouteForRole(_role: FamilyRole | null) {
+  return '/'
 }
 
 function RoleRoute({ allowedRoles, element }: { allowedRoles: FamilyRole[]; element: JSX.Element }) {
@@ -63,7 +61,7 @@ function RoleRoute({ allowedRoles, element }: { allowedRoles: FamilyRole[]; elem
 }
 
 function ProtectedRoutes() {
-  const { loading, isAuthenticated, bootstrapRequired, role } = useAuth()
+  const { loading, isAuthenticated, bootstrapRequired } = useAuth()
 
   if (loading) {
     return <LoadingScreen />
@@ -76,9 +74,13 @@ function ProtectedRoutes() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<Navigate to={defaultRouteForRole(role)} replace />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/dashboard" element={<Navigate to="/" replace />} />
         <Route path="/students" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<StudentsPage />} />} />
+        <Route
+          path="/students/:studentId"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<StudentDetailPage />} />}
+        />
         <Route path="/subjects" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<SubjectsPage />} />} />
         <Route path="/calendar" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CalendarPage />} />} />
         <Route path="/attendance" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<AttendancePage />} />} />
