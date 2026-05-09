@@ -1,34 +1,53 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import type { AuthSession, RegisterPayload } from '@/types/api'
 import { api, ApiError } from '@/lib/api'
 
 type AuthContextValue = {
   isAuthenticated: boolean
   loading: boolean
+  bootstrapRequired: boolean
   userName: string
-  login: (password: string) => Promise<void>
+  familyName: string
+  login: (email: string, password: string) => Promise<void>
+  register: (payload: RegisterPayload) => Promise<void>
   logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
+function getUserName(session: AuthSession | null) {
+  return session?.user.display_name || 'Parent'
+}
+
+function getFamilyName(session: AuthSession | null) {
+  return session?.family.name || ''
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [userName, setUserName] = useState('Parent')
+  const [session, setSession] = useState<AuthSession | null>(null)
+  const [bootstrapRequired, setBootstrapRequired] = useState(false)
 
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        const session = await api.me()
-        setIsAuthenticated(Boolean(session.authenticated))
-        if (session.user?.name) {
-          setUserName(session.user.name)
-        }
+        const currentSession = await api.me()
+        setSession(currentSession)
+        setBootstrapRequired(false)
       } catch (error) {
-        if (!(error instanceof ApiError && [401, 403].includes(error.status))) {
+        if (error instanceof ApiError && [401, 403].includes(error.status)) {
+          try {
+            const status = await api.getBootstrapStatus()
+            setBootstrapRequired(Boolean(status.bootstrap_required))
+          } catch (statusError) {
+            console.error(statusError)
+            setBootstrapRequired(false)
+          }
+        } else {
           console.error(error)
+          setBootstrapRequired(false)
         }
-        setIsAuthenticated(false)
+        setSession(null)
       } finally {
         setLoading(false)
       }
@@ -39,22 +58,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
-      isAuthenticated,
+      isAuthenticated: Boolean(session?.authenticated),
       loading,
-      userName,
-      login: async (password: string) => {
-        const session = await api.login(password)
-        setIsAuthenticated(Boolean(session.authenticated))
-        if (session.user?.name) {
-          setUserName(session.user.name)
-        }
+      bootstrapRequired,
+      userName: getUserName(session),
+      familyName: getFamilyName(session),
+      login: async (email: string, password: string) => {
+        const nextSession = await api.login(email, password)
+        setSession(nextSession)
+        setBootstrapRequired(false)
+      },
+      register: async (payload: RegisterPayload) => {
+        const nextSession = await api.register(payload)
+        setSession(nextSession)
+        setBootstrapRequired(false)
       },
       logout: async () => {
         await api.logout()
-        setIsAuthenticated(false)
+        setSession(null)
+        setBootstrapRequired(false)
       },
     }),
-    [isAuthenticated, loading, userName],
+    [bootstrapRequired, loading, session],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

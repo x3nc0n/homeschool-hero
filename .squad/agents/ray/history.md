@@ -51,3 +51,5 @@
 - Orchestration log recorded: Docker crash diagnosis + Ollama integration ✅ COMPLETE
 - Production plan finalized by Egon (40 todos, 9 functional areas, explicit dependencies)
 - Team ready for phase 3 parallel workstreams: multi-family tenancy, RBAC, compliance, performance
+- 2026-05-08 — Replaced legacy shared family-password auth with owner bootstrap, per-user email/password sessions, and family-scoped tenancy across backend models, routers, tests, and frontend auth screens.
+- 2026-05-08 — Added a migration path that creates a default family plus owner account from legacy auth settings so existing installs keep their data and can sign in after upgrade.

@@ -8,19 +8,20 @@ import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { QuizzesPage } from '@/pages/QuizzesPage'
 import { ReviewQueuePage } from '@/pages/ReviewQueuePage'
+import { SetupPage } from '@/pages/SetupPage'
 import { StudentsPage } from '@/pages/StudentsPage'
 import { SubjectsPage } from '@/pages/SubjectsPage'
 import { UploadPage } from '@/pages/UploadPage'
 
 function ProtectedRoutes() {
-  const { loading, isAuthenticated } = useAuth()
+  const { loading, isAuthenticated, bootstrapRequired } = useAuth()
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
+    return <Navigate to={bootstrapRequired ? '/setup' : '/login'} replace />
   }
 
   return (
@@ -42,7 +43,7 @@ function ProtectedRoutes() {
 }
 
 function LoginRoute() {
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, bootstrapRequired } = useAuth()
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
@@ -52,7 +53,29 @@ function LoginRoute() {
     return <Navigate to="/dashboard" replace />
   }
 
+  if (bootstrapRequired) {
+    return <Navigate to="/setup" replace />
+  }
+
   return <LoginPage />
+}
+
+function SetupRoute() {
+  const { isAuthenticated, loading, bootstrapRequired } = useAuth()
+
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading session…</div>
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  if (!bootstrapRequired) {
+    return <Navigate to="/login" replace />
+  }
+
+  return <SetupPage />
 }
 
 export default function App() {
@@ -60,6 +83,7 @@ export default function App() {
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
+        <Route path="/setup" element={<SetupRoute />} />
         <Route path="*" element={<ProtectedRoutes />} />
       </Routes>
     </AuthProvider>

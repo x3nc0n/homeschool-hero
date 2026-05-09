@@ -12,18 +12,23 @@ from backend.schemas.grades import (
     GradeRead,
     GradeUpdate,
 )
+from backend.security import AuthSession, get_auth_session, get_family_record
 
-router = APIRouter(prefix="/grades", tags=["grades"])
+router = APIRouter(prefix='/grades', tags=['grades'])
 
 
-@router.get("", response_model=list[GradeRead])
+@router.get('', response_model=list[GradeRead])
 async def list_grades(
     student_id: int | None = Query(default=None),
     subject_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(get_auth_session),
 ) -> list[Grade]:
-    stmt = select(Grade).join(Submission, Submission.id == Grade.submission_id).join(
-        Assignment, Assignment.id == Submission.assignment_id
+    stmt = (
+        select(Grade)
+        .join(Submission, Submission.id == Grade.submission_id)
+        .join(Assignment, Assignment.id == Submission.assignment_id)
+        .where(Grade.family_id == auth.family_id)
     )
     if student_id:
         stmt = stmt.where(Grade.student_id == student_id)
@@ -34,29 +39,41 @@ async def list_grades(
     return list(result.scalars().all())
 
 
-@router.post("", response_model=GradeRead, status_code=status.HTTP_201_CREATED)
-async def create_grade(payload: GradeCreate, db: AsyncSession = Depends(get_db)) -> Grade:
-    if not await db.get(Submission, payload.submission_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Submission not found")
-    if not await db.get(Student, payload.student_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+@router.post('', response_model=GradeRead, status_code=status.HTTP_201_CREATED)
+async def create_grade(
+    payload: GradeCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(get_auth_session),
+) -> Grade:
+    submission = await get_family_record(db, Submission, payload.submission_id, auth.family_id)
+    if not submission:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Submission not found')
+    student = await get_family_record(db, Student, payload.student_id, auth.family_id)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
 
-    existing = await db.execute(select(Grade).where(Grade.submission_id == payload.submission_id))
+    existing = await db.execute(
+        select(Grade).where(Grade.family_id == auth.family_id, Grade.submission_id == payload.submission_id)
+    )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Grade already exists for submission")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Grade already exists for submission')
 
-    grade = Grade(**payload.model_dump())
+    grade = Grade(family_id=auth.family_id, **payload.model_dump())
     db.add(grade)
     await db.commit()
     await db.refresh(grade)
     return grade
 
 
-@router.get("/averages/student/{student_id}", response_model=list[GradeAverageByStudent])
-async def averages_by_student(student_id: int, db: AsyncSession = Depends(get_db)) -> list[GradeAverageByStudent]:
-    student = await db.get(Student, student_id)
+@router.get('/averages/student/{student_id}', response_model=list[GradeAverageByStudent])
+async def averages_by_student(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(get_auth_session),
+) -> list[GradeAverageByStudent]:
+    student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
     stmt = (
         select(
             Grade.student_id,
@@ -69,7 +86,7 @@ async def averages_by_student(student_id: int, db: AsyncSession = Depends(get_db
         .join(Submission, Submission.id == Grade.submission_id)
         .join(Assignment, Assignment.id == Submission.assignment_id)
         .join(Subject, Subject.id == Assignment.subject_id)
-        .where(Grade.student_id == student_id)
+        .where(Grade.family_id == auth.family_id, Grade.student_id == student_id)
         .group_by(Grade.student_id, Student.name, Subject.id, Subject.name)
         .order_by(Subject.name)
     )
@@ -86,11 +103,15 @@ async def averages_by_student(student_id: int, db: AsyncSession = Depends(get_db
     ]
 
 
-@router.get("/averages/subject/{subject_id}", response_model=list[GradeAverageBySubject])
-async def averages_by_subject(subject_id: int, db: AsyncSession = Depends(get_db)) -> list[GradeAverageBySubject]:
-    subject = await db.get(Subject, subject_id)
+@router.get('/averages/subject/{subject_id}', response_model=list[GradeAverageBySubject])
+async def averages_by_subject(
+    subject_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(get_auth_session),
+) -> list[GradeAverageBySubject]:
+    subject = await get_family_record(db, Subject, subject_id, auth.family_id)
     if not subject:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Subject not found')
     stmt = (
         select(
             Subject.id,
@@ -103,7 +124,7 @@ async def averages_by_subject(subject_id: int, db: AsyncSession = Depends(get_db
         .join(Assignment, Assignment.id == Submission.assignment_id)
         .join(Subject, Subject.id == Assignment.subject_id)
         .join(Student, Student.id == Grade.student_id)
-        .where(Subject.id == subject_id)
+        .where(Grade.family_id == auth.family_id, Subject.id == subject_id)
         .group_by(Subject.id, Subject.name, Grade.student_id, Student.name)
         .order_by(Student.name)
     )
@@ -120,11 +141,12 @@ async def averages_by_subject(subject_id: int, db: AsyncSession = Depends(get_db
     ]
 
 
-@router.get("/history", response_model=list[GradeHistoryItem])
+@router.get('/history', response_model=list[GradeHistoryItem])
 async def grade_history(
     student_id: int | None = Query(default=None),
     subject_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(get_auth_session),
 ) -> list[GradeHistoryItem]:
     stmt = (
         select(
@@ -145,6 +167,7 @@ async def grade_history(
         .join(Submission, Submission.id == Grade.submission_id)
         .join(Assignment, Assignment.id == Submission.assignment_id)
         .join(Subject, Subject.id == Assignment.subject_id)
+        .where(Grade.family_id == auth.family_id)
     )
     if student_id:
         stmt = stmt.where(Grade.student_id == student_id)
@@ -172,25 +195,37 @@ async def grade_history(
     ]
 
 
-@router.get("/gradebook")
-async def gradebook(db: AsyncSession = Depends(get_db)):
-    rows = await grade_history(student_id=None, subject_id=None, db=db)
-    return {"items": rows}
+@router.get('/gradebook')
+async def gradebook(
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(get_auth_session),
+):
+    rows = await grade_history(student_id=None, subject_id=None, db=db, auth=auth)
+    return {'items': rows}
 
 
-@router.get("/{grade_id}", response_model=GradeRead)
-async def get_grade(grade_id: int, db: AsyncSession = Depends(get_db)) -> Grade:
-    grade = await db.get(Grade, grade_id)
+@router.get('/{grade_id}', response_model=GradeRead)
+async def get_grade(
+    grade_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(get_auth_session),
+) -> Grade:
+    grade = await get_family_record(db, Grade, grade_id, auth.family_id)
     if not grade:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Grade not found')
     return grade
 
 
-@router.put("/{grade_id}", response_model=GradeRead)
-async def update_grade(grade_id: int, payload: GradeUpdate, db: AsyncSession = Depends(get_db)) -> Grade:
-    grade = await db.get(Grade, grade_id)
+@router.put('/{grade_id}', response_model=GradeRead)
+async def update_grade(
+    grade_id: int,
+    payload: GradeUpdate,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(get_auth_session),
+) -> Grade:
+    grade = await get_family_record(db, Grade, grade_id, auth.family_id)
     if not grade:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Grade not found')
     for key, value in payload.model_dump().items():
         setattr(grade, key, value)
     await db.commit()
@@ -198,10 +233,14 @@ async def update_grade(grade_id: int, payload: GradeUpdate, db: AsyncSession = D
     return grade
 
 
-@router.delete("/{grade_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_grade(grade_id: int, db: AsyncSession = Depends(get_db)) -> None:
-    grade = await db.get(Grade, grade_id)
+@router.delete('/{grade_id}', status_code=status.HTTP_204_NO_CONTENT)
+async def delete_grade(
+    grade_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(get_auth_session),
+) -> None:
+    grade = await get_family_record(db, Grade, grade_id, auth.family_id)
     if not grade:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Grade not found')
     await db.delete(grade)
     await db.commit()

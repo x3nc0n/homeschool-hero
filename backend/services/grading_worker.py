@@ -20,40 +20,40 @@ logger = logging.getLogger(__name__)
 
 def _to_letter_grade(score: float) -> str:
     if score >= 90:
-        return "A"
+        return 'A'
     if score >= 80:
-        return "B"
+        return 'B'
     if score >= 70:
-        return "C"
+        return 'C'
     if score >= 60:
-        return "D"
-    return "F"
+        return 'D'
+    return 'F'
 
 
 def process_grading_job(job: dict[str, Any]) -> dict[str, Any]:
     output = {**job}
     try:
-        extracted = extract_text(str(job.get("file_path", "")))
+        extracted = extract_text(str(job.get('file_path', '')))
         ai = grade_submission_text(
-            assignment_description=str(job.get("assignment_description", "")),
-            answer_key=job.get("answer_key"),
+            assignment_description=str(job.get('assignment_description', '')),
+            answer_key=job.get('answer_key'),
             submission_text=extracted,
         )
     except Exception as exc:
-        output.update({"status": "needs_review", "error_message": str(exc), "ai_confidence": 0.0})
+        output.update({'status': 'needs_review', 'error_message': str(exc), 'ai_confidence': 0.0})
         return output
 
-    confidence = float(ai.get("confidence", 0.0))
-    output["ocr_result"] = extracted
-    output["ai_confidence"] = confidence
-    output["score"] = float(ai.get("score", 0.0))
-    output["max_score"] = float(ai.get("max_score", 100.0))
-    output["feedback"] = str(ai.get("feedback", ""))
-    output["unavailable"] = bool(ai.get("unavailable", False))
-    if output["unavailable"]:
-        output["status"] = "needs_review"
+    confidence = float(ai.get('confidence', 0.0))
+    output['ocr_result'] = extracted
+    output['ai_confidence'] = confidence
+    output['score'] = float(ai.get('score', 0.0))
+    output['max_score'] = float(ai.get('max_score', 100.0))
+    output['feedback'] = str(ai.get('feedback', ''))
+    output['unavailable'] = bool(ai.get('unavailable', False))
+    if output['unavailable']:
+        output['status'] = 'needs_review'
         return output
-    output["status"] = "complete" if confidence >= settings.confidence_threshold else "needs_review"
+    output['status'] = 'complete' if confidence >= settings.confidence_threshold else 'needs_review'
     return output
 
 
@@ -104,41 +104,44 @@ async def process_queued_job_once() -> bool:
             submission = await db.get(Submission, job.submission_id)
             if not submission:
                 job.status = GradingJobStatus.failed
-                job.error_message = "Submission not found"
+                job.error_message = 'Submission not found'
                 job.completed_at = datetime.now(timezone.utc)
                 await db.commit()
                 return True
             assignment = await db.get(Assignment, submission.assignment_id)
             job_result = process_grading_job(
                 {
-                    "id": job.id,
-                    "submission_id": submission.id,
-                    "file_path": submission.file_path,
-                    "assignment_description": assignment.description if assignment else "",
-                    "answer_key": None,
-                    "status": job.status.value,
+                    'id': job.id,
+                    'submission_id': submission.id,
+                    'file_path': submission.file_path,
+                    'assignment_description': assignment.description if assignment else '',
+                    'answer_key': None,
+                    'status': job.status.value,
                 }
             )
 
-            ocr_result = job_result.get("ocr_result", "")
-            submission.ocr_text = ocr_result if isinstance(ocr_result, str) else ""
+            ocr_result = job_result.get('ocr_result', '')
+            submission.ocr_text = ocr_result if isinstance(ocr_result, str) else ''
             job.ocr_result = submission.ocr_text
-            job.ai_grade = float(job_result.get("score", 0.0))
-            job.ai_feedback = str(job_result.get("feedback", ""))
-            job.ai_confidence = float(job_result.get("ai_confidence", 0.0))
-            job.error_message = job_result.get("error_message")
+            job.ai_grade = float(job_result.get('score', 0.0))
+            job.ai_feedback = str(job_result.get('feedback', ''))
+            job.ai_confidence = float(job_result.get('ai_confidence', 0.0))
+            job.error_message = job_result.get('error_message')
             job.completed_at = datetime.now(timezone.utc)
 
-            if job_result.get("status") == "complete":
+            if job_result.get('status') == 'complete':
                 grade = (
-                    await db.execute(select(Grade).where(Grade.submission_id == submission.id).limit(1))
+                    await db.execute(
+                        select(Grade).where(Grade.family_id == submission.family_id, Grade.submission_id == submission.id).limit(1)
+                    )
                 ).scalar_one_or_none()
-                score = float(job_result.get("score", 0.0))
-                max_score = float(job_result.get("max_score", 100.0))
-                feedback = str(job_result.get("feedback", ""))
-                confidence = float(job_result.get("ai_confidence", 0.0))
+                score = float(job_result.get('score', 0.0))
+                max_score = float(job_result.get('max_score', 100.0))
+                feedback = str(job_result.get('feedback', ''))
+                confidence = float(job_result.get('ai_confidence', 0.0))
                 if grade is None:
                     grade = Grade(
+                        family_id=submission.family_id,
                         submission_id=submission.id,
                         student_id=submission.student_id,
                         score=score,
@@ -157,16 +160,16 @@ async def process_queued_job_once() -> bool:
                     grade.graded_by = GradedBy.ai
                     grade.ai_confidence = confidence
                 job.status = GradingJobStatus.complete
-            elif job_result.get("status") == "needs_review":
+            elif job_result.get('status') == 'needs_review':
                 job.status = GradingJobStatus.needs_review
             else:
                 job.status = GradingJobStatus.failed
-                job.error_message = "Unexpected grading status"
+                job.error_message = 'Unexpected grading status'
 
             await db.commit()
             return True
     except Exception as exc:
-        logger.exception("Failed processing grading job %s", job_id)
+        logger.exception('Failed processing grading job %s', job_id)
         await _finalize_failed(job_id, str(exc))
         return True
 
@@ -183,14 +186,14 @@ async def _worker_loop(stop_event: threading.Event) -> None:
 class GradingWorkerThread:
     def __init__(self) -> None:
         self._stop_event = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="grading-worker", daemon=True)
+        self._thread = threading.Thread(target=self._run, name='grading-worker', daemon=True)
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
             try:
                 asyncio.run(_worker_loop(self._stop_event))
             except Exception:
-                logger.exception("Grading worker loop crashed; retrying shortly.")
+                logger.exception('Grading worker loop crashed; retrying shortly.')
                 time.sleep(1)
 
     def start(self) -> None:

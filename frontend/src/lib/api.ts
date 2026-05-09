@@ -2,9 +2,11 @@ import type {
   ApiErrorPayload,
   Assignment,
   AuthSession,
+  BootstrapStatus,
   Grade,
   Quiz,
   QuizAttempt,
+  RegisterPayload,
   ReviewDecisionPayload,
   ReviewQueueItem,
   Student,
@@ -62,10 +64,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  login(password: string) {
+  getBootstrapStatus() {
+    return request<BootstrapStatus>('/auth/bootstrap')
+  },
+
+  register(payload: RegisterPayload) {
+    return request<AuthSession>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  login(email: string, password: string, familyId?: number) {
     return request<AuthSession>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ email, password, family_id: familyId }),
     })
   },
 

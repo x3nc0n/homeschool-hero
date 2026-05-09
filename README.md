@@ -25,6 +25,13 @@ The default `docker compose up --build` flow starts:
 
 Uploads are persisted in a Docker volume mounted at `/data/uploads`, Postgres data is persisted in a named volume, and Ollama models are cached in a named volume. The first startup takes longer because Compose now pulls the default `llama3.2` model automatically so grading works end-to-end without extra setup.
 
+## Authentication and tenancy
+
+- First run now shows a one-time owner setup flow that creates the first family and owner account.
+- Existing single-family installs are migrated into one default family plus one owner user automatically.
+- The migrated owner uses `BOOTSTRAP_OWNER_EMAIL` for login and reuses the previous `FAMILY_PASSWORD` or `FAMILY_PASSWORD_HASH` as the new password.
+- All family data is tenant-scoped in the API and database using `family_id` foreign keys.
+
 ## Environment variables
 
 | Variable | Required | Description |
@@ -34,12 +41,16 @@ Uploads are persisted in a Docker volume mounted at `/data/uploads`, Postgres da
 | `POSTGRES_DB` | Yes | Postgres database name. |
 | `DATABASE_URL` | Yes | Async SQLAlchemy connection string used by FastAPI and Alembic. |
 | `SECRET_KEY` | Yes | Signing key for session cookies. Change this for any real deployment. |
-| `SESSION_COOKIE_NAME` | No | Cookie name for the family session. |
+| `SESSION_COOKIE_NAME` | No | Cookie name for the authenticated user session. |
 | `SESSION_MAX_AGE_SECONDS` | No | Session lifetime in seconds. |
-| `FAMILY_PASSWORD` | Yes* | Default family admin password used on first run. |
-| `FAMILY_PASSWORD_HASH` | No | Optional bcrypt hash; overrides `FAMILY_PASSWORD` when set. |
-| `FAMILY_PIN` | No | Optional alternate PIN login. |
-| `FAMILY_PIN_HASH` | No | Optional bcrypt hash for the PIN. |
+| `SESSION_COOKIE_SECURE` | No | Set to `true` when serving over HTTPS. |
+| `BOOTSTRAP_OWNER_EMAIL` | No | Email used by the initial owner account and migration-created owner user. |
+| `BOOTSTRAP_OWNER_DISPLAY_NAME` | No | Display name for the bootstrap owner account. |
+| `BOOTSTRAP_FAMILY_NAME` | No | Default family name used during bootstrap and legacy migration. |
+| `BOOTSTRAP_TIMEZONE` | No | Default family timezone for bootstrap and legacy migration. |
+| `BOOTSTRAP_GRADING_SCALE` | No | Default family grading scale for bootstrap and legacy migration. |
+| `FAMILY_PASSWORD` | Yes* | Legacy password source reused when migrating an existing single-family install. |
+| `FAMILY_PASSWORD_HASH` | No | Legacy bcrypt hash source reused when migrating an existing single-family install. |
 | `AI_PROVIDER` | No | `ollama` or `openai`. Leave as `ollama` for the standard local stack. |
 | `OLLAMA_HOST` | No | Base URL for the Ollama service. |
 | `OLLAMA_MODEL` | No | Ollama model name to pre-pull and use for grading. Defaults to `llama3.2`. |
@@ -48,7 +59,7 @@ Uploads are persisted in a Docker volume mounted at `/data/uploads`, Postgres da
 | `GRADING_POLL_INTERVAL` | No | Seconds between grading worker polls. |
 | `UPLOAD_DIR` | No | Filesystem path for uploaded work inside the app container. |
 
-\* Set either `FAMILY_PASSWORD` or `FAMILY_PASSWORD_HASH`.
+\* Keep `FAMILY_PASSWORD` or `FAMILY_PASSWORD_HASH` populated when upgrading an existing installation from the legacy single-family auth model.
 
 ## What the container does on startup
 
@@ -67,7 +78,7 @@ Uploads are persisted in a Docker volume mounted at `/data/uploads`, Postgres da
 
 ## CI/CD and quality gates
 
-Pull requests into `main` must pass these GitHub Actions quality gates before merge:
+Pull requests into `main` are expected to pass these GitHub Actions quality gates before merge:
 
 - **Backend quality gate** — installs OCR dependencies, runs backend pytest, and enforces backend coverage at `76%` or higher.
 - **Migration checks** — runs Alembic upgrade/downgrade/upgrade against PostgreSQL so schema changes are validated on the production database family.

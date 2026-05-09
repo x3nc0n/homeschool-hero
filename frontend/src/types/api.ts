@@ -1,17 +1,48 @@
 export type AssignmentStatus = 'pending' | 'complete' | 'graded'
 export type ReviewAction = 'approve' | 'modify' | 'reject'
+export type FamilyRole = 'parent' | 'co-parent' | 'tutor' | 'student_viewer'
 
 export interface ApiErrorPayload {
   detail?: string
   message?: string
 }
 
+export interface User {
+  id: number
+  email: string
+  display_name: string
+  is_active: boolean
+}
+
+export interface Family {
+  id: number
+  name: string
+}
+
+export interface FamilyMembership {
+  role: FamilyRole
+  is_owner: boolean
+}
+
 export interface AuthSession {
   authenticated: boolean
-  user?: {
-    id?: string
-    name?: string
-  }
+  user: User
+  family: Family
+  membership: FamilyMembership
+  message?: string
+}
+
+export interface BootstrapStatus {
+  bootstrap_required: boolean
+}
+
+export interface RegisterPayload {
+  family_name: string
+  email: string
+  display_name: string
+  password: string
+  timezone?: string
+  grading_scale?: string
 }
 
 export interface Student {

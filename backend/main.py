@@ -23,27 +23,28 @@ from backend.routers import (
 from backend.routers.grading import router as grading_router
 from backend.security import verify_session_token
 from backend.services.grading_worker import create_worker
-from backend.startup import ensure_family_auth_configured, ensure_runtime_directories, run_migrations
+from backend.startup import ensure_auth_runtime_configured, ensure_runtime_directories, run_migrations
 
-API_PREFIX = settings.api_prefix.rstrip("/")
-FRONTEND_DIST_DIR = Path(__file__).resolve().parents[1] / "frontend" / "dist"
-FRONTEND_INDEX = FRONTEND_DIST_DIR / "index.html"
+API_PREFIX = settings.api_prefix.rstrip('/')
+FRONTEND_DIST_DIR = Path(__file__).resolve().parents[1] / 'frontend' / 'dist'
+FRONTEND_INDEX = FRONTEND_DIST_DIR / 'index.html'
 PUBLIC_API_PATHS = {
-    f"{API_PREFIX}/auth/login",
-    f"{API_PREFIX}/health",
+    f'{API_PREFIX}/auth/bootstrap',
+    f'{API_PREFIX}/auth/login',
+    f'{API_PREFIX}/auth/register',
+    f'{API_PREFIX}/health',
 }
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     worker = None
+    ensure_runtime_directories()
     if settings.testing:
-        ensure_runtime_directories()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     else:
-        ensure_runtime_directories()
-        ensure_family_auth_configured()
+        ensure_auth_runtime_configured()
         await asyncio.to_thread(run_migrations)
         worker = create_worker()
         worker.start()
@@ -53,24 +54,24 @@ async def lifespan(_: FastAPI):
 
 
 def _is_api_path(path: str) -> bool:
-    return path == API_PREFIX or path.startswith(f"{API_PREFIX}/")
+    return path == API_PREFIX or path.startswith(f'{API_PREFIX}/')
 
 
 async def _check_database_health() -> str:
     async with engine.connect() as connection:
-        await connection.execute(text("SELECT 1"))
-    return "ok"
+        await connection.execute(text('SELECT 1'))
+    return 'ok'
 
 
 async def _check_ai_health() -> str:
     if settings.testing:
-        return "skipped"
+        return 'skipped'
 
     provider = settings.ai_provider.lower().strip()
-    if provider == "openai":
+    if provider == 'openai':
         if settings.openai_api_key:
-            return "configured"
-        raise RuntimeError("OPENAI_API_KEY is not configured")
+            return 'configured'
+        raise RuntimeError('OPENAI_API_KEY is not configured')
 
     ollama_url = f"{settings.ollama_host.rstrip('/')}/api/tags"
     async with httpx.AsyncClient(timeout=5.0) as client:
@@ -80,43 +81,41 @@ async def _check_ai_health() -> str:
     body = response.json()
     configured_model = settings.ollama_model.strip()
     available_models = {
-        str(model.get("name", "")).strip()
-        for model in body.get("models", [])
+        str(model.get('name', '')).strip()
+        for model in body.get('models', [])
         if isinstance(model, dict)
     }
     if not any(
-        name == configured_model
-        or name == f"{configured_model}:latest"
-        or name.startswith(f"{configured_model}:")
+        name == configured_model or name == f'{configured_model}:latest' or name.startswith(f'{configured_model}:')
         for name in available_models
     ):
         raise RuntimeError(f"Ollama model '{configured_model}' is not loaded")
 
-    return "ok"
+    return 'ok'
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     if FRONTEND_DIST_DIR.exists():
-        assets_dir = FRONTEND_DIST_DIR / "assets"
+        assets_dir = FRONTEND_DIST_DIR / 'assets'
         if assets_dir.exists():
-            app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
-    app.mount("/uploads", StaticFiles(directory=settings.upload_dir, check_dir=False), name="uploads")
+            app.mount('/assets', StaticFiles(directory=assets_dir), name='frontend-assets')
+    app.mount('/uploads', StaticFiles(directory=settings.upload_dir, check_dir=False), name='uploads')
 
-    @app.middleware("http")
+    @app.middleware('http')
     async def session_auth_middleware(request: Request, call_next):
         path = request.url.path
-        is_public = path in PUBLIC_API_PATHS or path.startswith("/docs") or path.startswith("/openapi")
+        is_public = path in PUBLIC_API_PATHS or path.startswith('/docs') or path.startswith('/openapi')
         if _is_api_path(path) and not is_public:
             token = request.cookies.get(settings.session_cookie_name)
             session = verify_session_token(token)
             if not session:
-                return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+                return JSONResponse(status_code=401, content={'detail': 'Authentication required'})
             request.state.session = session
         return await call_next(request)
 
-    @app.get(f"{API_PREFIX}/health")
+    @app.get(f'{API_PREFIX}/health')
     async def api_health() -> dict[str, str]:
         try:
             database_status, ai_status = await asyncio.gather(
@@ -125,9 +124,9 @@ def create_app() -> FastAPI:
             )
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
-        return {"status": "ok", "database": database_status, "ai": ai_status}
+        return {'status': 'ok', 'database': database_status, 'ai': ai_status}
 
-    @app.get("/health", include_in_schema=False)
+    @app.get('/health', include_in_schema=False)
     async def health_alias() -> dict[str, str]:
         return await api_health()
 
@@ -140,26 +139,26 @@ def create_app() -> FastAPI:
     app.include_router(quizzes_router, prefix=API_PREFIX)
     app.include_router(grading_router, prefix=API_PREFIX)
 
-    @app.get("/", include_in_schema=False)
+    @app.get('/', include_in_schema=False)
     async def serve_index() -> FileResponse:
         if not FRONTEND_INDEX.exists():
-            raise HTTPException(status_code=404, detail="Frontend build not found")
+            raise HTTPException(status_code=404, detail='Frontend build not found')
         return FileResponse(FRONTEND_INDEX)
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    @app.get('/{full_path:path}', include_in_schema=False)
     async def serve_spa(full_path: str) -> FileResponse:
-        if _is_api_path(f"/{full_path}"):
-            raise HTTPException(status_code=404, detail="Not found")
+        if _is_api_path(f'/{full_path}'):
+            raise HTTPException(status_code=404, detail='Not found')
 
         candidate = (FRONTEND_DIST_DIR / full_path).resolve()
         if FRONTEND_DIST_DIR.exists() and str(candidate).startswith(str(FRONTEND_DIST_DIR.resolve())) and candidate.is_file():
             return FileResponse(candidate)
 
         if not FRONTEND_INDEX.exists():
-            raise HTTPException(status_code=404, detail="Frontend build not found")
+            raise HTTPException(status_code=404, detail='Frontend build not found')
 
         if Path(full_path).suffix:
-            raise HTTPException(status_code=404, detail="Not found")
+            raise HTTPException(status_code=404, detail='Not found')
         return FileResponse(FRONTEND_INDEX)
 
     return app

@@ -16,7 +16,7 @@ const navItems = [
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { logout, userName } = useAuth()
+  const { logout, userName, familyName } = useAuth()
 
   return (
     <div className="mx-auto min-h-screen max-w-7xl px-3 py-4 md:px-6">
@@ -24,7 +24,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-xl font-bold md:text-2xl">Homeschool Hero</h1>
-            <p className="text-sm text-muted-foreground">Welcome back, {userName}</p>
+            <p className="text-sm text-muted-foreground">
+              Welcome back, {userName}
+              {familyName ? ` · ${familyName}` : ''}
+            </p>
           </div>
           <Button variant="outline" onClick={() => void logout()}>
             <LogOut className="mr-2 h-4 w-4" />
