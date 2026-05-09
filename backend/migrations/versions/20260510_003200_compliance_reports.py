@@ -19,6 +19,12 @@ down_revision: Union[str, Sequence[str], None] = '20260510_003100'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops the compliance_reports table and the compliance_report_type and compliance_report_status enum types.
+- All compliance report data will be permanently lost; export reports before rolling back.
+- Composite indexes are dropped before the table to avoid constraint conflicts.
+"""
+
 compliance_report_type = sa.Enum(
     'annual_assessment',
     'quarterly_report',

@@ -401,19 +401,6 @@ def calendar_event_payload(
     return payload
 
 
-def schedule_payload(
-    student_id: int | str,
-    school_year_id: int | str,
-    *,
-    name: str = 'Default Schedule',
-) -> dict[str, Any]:
-    return {
-        'student_id': student_id,
-        'school_year_id': school_year_id,
-        'name': name,
-    }
-
-
 def attendance_daily_payload(
     attendance_date: str,
     records: list[dict[str, Any]],
@@ -465,56 +452,6 @@ def attendance_hours_payload(
         'check_out_time': check_out_time,
         'notes': notes,
     }
-
-
-def schedule_block_payload(
-    subject_id: int | str,
-    *,
-    day_of_week: int = 0,
-    start_time: str = '09:00',
-    end_time: str = '10:00',
-    location: str | None = 'Dining Room',
-    notes: str | None = 'Warm-up and lesson',
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        'subject_id': subject_id,
-        'day_of_week': day_of_week,
-        'start_time': start_time,
-        'end_time': end_time,
-    }
-    if location is not None:
-        payload['location'] = location
-    if notes is not None:
-        payload['notes'] = notes
-    return payload
-
-
-def schedule_override_payload(
-    schedule_id: int | str,
-    *,
-    date: str = '2025-09-15',
-    override_type: str = 'add',
-    original_block_id: int | str | None = None,
-    subject_id: int | str | None = None,
-    start_time: str | None = '13:00',
-    end_time: str | None = '14:00',
-    reason: str = 'Field trip',
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        'schedule_id': schedule_id,
-        'date': date,
-        'override_type': override_type,
-        'reason': reason,
-    }
-    if original_block_id is not None:
-        payload['original_block_id'] = original_block_id
-    if subject_id is not None:
-        payload['subject_id'] = subject_id
-    if start_time is not None:
-        payload['start_time'] = start_time
-    if end_time is not None:
-        payload['end_time'] = end_time
-    return payload
 
 
 def curriculum_package_payload(

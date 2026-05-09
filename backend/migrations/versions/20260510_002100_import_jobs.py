@@ -19,6 +19,12 @@ down_revision: Union[str, Sequence[str], None] = ('20260510_001700', '20260510_0
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops the import_jobs table and the import_entity_type and import_job_status enum types.
+- All import job history will be permanently lost; no row data is migrated elsewhere.
+- Export pending/failed import records before rolling back if recovery is needed.
+"""
+
 import_entity_type = sa.Enum(
     'students',
     'subjects',

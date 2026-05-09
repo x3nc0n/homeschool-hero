@@ -19,6 +19,12 @@ down_revision: Union[str, None] = '20260510_000100'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops attendance_excuses and attendance_records tables, plus the attendance_status enum.
+- All attendance history will be permanently lost; export records before rolling back.
+- attendance_excuses is removed before attendance_records to satisfy the foreign-key dependency.
+"""
+
 attendance_status = sa.Enum('present', 'absent', 'tardy', 'excused', name='attendance_status')
 
 

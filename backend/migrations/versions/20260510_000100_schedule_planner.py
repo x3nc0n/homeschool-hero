@@ -19,6 +19,12 @@ down_revision: Union[str, Sequence[str], None] = ('20260509_070500', '20260509_2
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops schedule_overrides, schedule_blocks, and schedules tables, plus the schedule_override_type enum.
+- All schedule and block data will be permanently lost; export before rolling back.
+- Tables are removed in reverse dependency order.
+"""
+
 schedule_override_type = sa.Enum('cancel', 'reschedule', 'add', name='schedule_override_type')
 
 

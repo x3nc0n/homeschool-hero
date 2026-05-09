@@ -107,6 +107,7 @@ def _check_cache_health_sync(config: Settings = settings) -> dict[str, Any]:
         connection = socket.create_connection((host, port), timeout=2.0)
         if parsed.scheme == 'rediss':
             context = ssl.create_default_context()
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             sock = context.wrap_socket(connection, server_hostname=host)
         else:
             sock = connection

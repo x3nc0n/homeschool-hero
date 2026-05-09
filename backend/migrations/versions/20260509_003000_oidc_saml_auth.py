@@ -19,6 +19,13 @@ down_revision: Union[str, Sequence[str], None] = ('20260508_231600', '20260509_0
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() removes auth_provider and external_id columns from users and drops their index and unique constraint.
+- Users who authenticated exclusively via OIDC or SAML will lose their auth link; ensure local passwords are set before rollback.
+- No other table is affected.
+"""
+
+
 def upgrade() -> None:
     with op.batch_alter_table('users') as batch:
         batch.add_column(sa.Column('auth_provider', sa.String(length=32), nullable=False, server_default='local'))

@@ -19,6 +19,13 @@ down_revision: Union[str, None] = '20260508_224850'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops calendar_events, grading_periods, terms, and school_years tables, plus the
+  term_type and calendar_event_type enum types.
+- All academic calendar data will be permanently lost; export before rolling back.
+- Tables are removed in reverse dependency order to satisfy foreign-key constraints.
+"""
+
 term_type = sa.Enum('semester', 'quarter', 'trimester', 'custom', name='term_type')
 calendar_event_type = sa.Enum('holiday', 'closure', 'custom', name='calendar_event_type')
 
