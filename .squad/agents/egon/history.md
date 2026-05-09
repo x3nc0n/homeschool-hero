@@ -2,6 +2,9 @@
 
 ## Learnings
 
+- 2026-05-09T15:00:00-05:00 — Cleared the remaining Dependabot backlog: merged #8, #9, #10, #12, #14, #15, and #20; closed #13 as a duplicate of #12; and closed #7, #11, and #16 after landing an equivalent dependency-alignment commit directly on `main`.
+- 2026-05-09T15:00:00-05:00 — Verified that `pytest==9.0.3` and `pytest-asyncio==1.3.0` work with `asyncio_mode = auto`; CI also requires pinned `requirements.txt` versions to stay aligned with `backend/requirements-test.txt` because both files are installed in sequence.
+
 - 2026-05-08T21:57:09.039-05:00 — Drafted the next-phase feature plan covering scheduled NAS backups, GitHub security scanning, scan-driven issue automation, guarded Squad auto-remediation, and the self-hosted v1.0 roadmap.
 - 2026-05-08T21:57:09.039-05:00 — Replaced the conservative phased plan with a production-ready functional-area execution plan covering multi-family tenancy, RBAC, academic operations, compliance, data portability, graceful degradation, and self-hosted operations.
 - Project: homeschool-hero — open-source homeschool platform for families

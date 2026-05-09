@@ -69,6 +69,12 @@
 - **Assignments:** #22 (Insecure TLS, backend/services/health.py:110) → Ray; #23-25 (Redundant assignments, backend/tests/contracts.py) → Winston.
 - **Impact:** Clear role boundaries enforce accountability; appropriate expertise applied to each issue; consistent routing for future security/quality triage.
 
+### Egon Dependabot Sweep (2026-05-09)
+- **Author:** Egon
+- **Context:** Eleven open Dependabot PRs remained after earlier CI failures. After the direct version-bump PRs landed, the remaining backend range-only PRs no longer merged cleanly and would have left CI install conflicts unless the pinned requirements files were aligned too.
+- **Decision:** Merged #8, #9, #10, #12, #14, #15, and #20; closed #13 as a duplicate of #12; and applied a direct follow-up alignment on `main` for `pytest-asyncio`, `pydantic-settings`, and `APScheduler`, then closed #7, #11, and #16 as superseded.
+- **Impact:** The Dependabot queue is clear, `pytest 9.0.3` plus `pytest-asyncio 1.3.0` are validated with `asyncio_mode = auto`, and CI dependency installs remain consistent because `requirements.txt`, `requirements-prod.txt`, and `backend/requirements-test.txt` now agree on shared package versions.
+
 ### Ray AG-02 Submission Versioning (2026-05-09)
 - **Author:** Ray
 - **Context:** Submission uploads need deterministic storage, resubmission history, and single current version controlling grading/review.
