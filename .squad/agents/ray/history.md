@@ -99,3 +99,5 @@
 - IO-01: Production Docker with optional service profiles (commit c1790b2) ✅ COMPLETE
 - SD-01: Application hardening with CSRF/rate-limiting (commit 1fad126) — 84 tests passing ✅ COMPLETE
 - All 5 Wave 3 deliverables merged; decisions recorded in decisions.md; orchestration logs finalized
+- 2026-05-09T23:39:29-05:00 — Completed AM-03 curriculum packages + resource library: added curriculum package/unit/lesson/resource persistence with Alembic migration, family-scoped CRUD/clone/link APIs, and tutor-capable curriculum/resource management UI pages plus clone workflow.
+- 2026-05-09T23:39:29-05:00 — Verified AM-03 with cd backend && python -m pytest -q (98 passed, 2 skipped), targeted curriculum/calendar/authorization coverage, and cd frontend && npm run lint && npm run build; frontend lint still reports one pre-existing CalendarPage hook warning outside AM-03.

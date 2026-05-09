@@ -10,6 +10,9 @@ const navItems: Array<{ to: string; label: string; icon: typeof LayoutDashboard;
   { to: '/students', label: 'Students', icon: Users, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/subjects', label: 'Subjects', icon: BookMarked, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/planner', label: 'Planner', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+  { to: '/curriculum', label: 'Curriculum', icon: BookMarked, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/resources', label: 'Resources', icon: FileUp, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/assignments', label: 'Assignments', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/upload', label: 'Uploads', icon: FileUp, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/grades', label: 'Grade Book', icon: GraduationCap, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
@@ -47,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Log out
           </Button>
         </div>
-        <nav className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-9">
+        <nav className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-11">
           {items.map((item) => (
             <NavLink
               key={item.to}

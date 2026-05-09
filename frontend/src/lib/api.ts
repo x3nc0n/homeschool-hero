@@ -1,5 +1,6 @@
 import type {
   AcceptInvitationPayload,
+  DailyAgenda,
   AuditEventFilters,
   AuditEventListResponse,
   ApiErrorPayload,
@@ -8,6 +9,11 @@ import type {
   AssignmentListResponse,
   AssignmentUpsertPayload,
   CalendarEvent,
+  Schedule,
+  ScheduleBlock,
+  ScheduleDetail,
+  ScheduleOverride,
+  ScheduleOverrideType,
   CurriculumLesson,
   CurriculumPackage,
   CurriculumPackageDetail,
@@ -36,6 +42,7 @@ import type {
   Subject,
   Submission,
   Term,
+  WeeklyAgenda,
 } from '@/types/api'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
@@ -282,6 +289,74 @@ export const api = {
 
   deleteCalendarEvent(id: number) {
     return request<void>(`/calendar/events/${id}`, { method: 'DELETE' })
+  },
+
+  listSchedules(studentId?: number) {
+    const params = new URLSearchParams()
+    if (studentId) {
+      params.set('student_id', String(studentId))
+    }
+    const query = params.toString()
+    return request<Schedule[]>(`/schedule${query ? `?${query}` : ''}`)
+  },
+
+  getSchedule(id: number) {
+    return request<ScheduleDetail>(`/schedule/${id}`)
+  },
+
+  createSchedule(payload: Pick<Schedule, 'student_id' | 'school_year_id' | 'name'>) {
+    return request<Schedule>('/schedule', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateSchedule(id: number, payload: Pick<Schedule, 'student_id' | 'school_year_id' | 'name'>) {
+    return request<Schedule>(`/schedule/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteSchedule(id: number) {
+    return request<void>(`/schedule/${id}`, { method: 'DELETE' })
+  },
+
+  createScheduleBlock(
+    scheduleId: number,
+    payload: Pick<ScheduleBlock, 'subject_id' | 'day_of_week' | 'start_time' | 'end_time' | 'location' | 'notes'>,
+  ) {
+    return request<ScheduleBlock>(`/schedule/${scheduleId}/blocks`, { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateScheduleBlock(
+    blockId: number,
+    payload: Pick<ScheduleBlock, 'subject_id' | 'day_of_week' | 'start_time' | 'end_time' | 'location' | 'notes'>,
+  ) {
+    return request<ScheduleBlock>(`/schedule/blocks/${blockId}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteScheduleBlock(blockId: number) {
+    return request<void>(`/schedule/blocks/${blockId}`, { method: 'DELETE' })
+  },
+
+  createScheduleOverride(payload: {
+    schedule_id: number
+    date: string
+    original_block_id?: number
+    override_type: ScheduleOverrideType
+    subject_id?: number
+    start_time?: string
+    end_time?: string
+    reason: string
+  }) {
+    return request<ScheduleOverride>('/schedule/override', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  deleteScheduleOverride(overrideId: number) {
+    return request<void>(`/schedule/override/${overrideId}`, { method: 'DELETE' })
+  },
+
+  getDailyAgenda(studentId: number, date: string) {
+    return request<DailyAgenda>(`/schedule/${studentId}/agenda?date=${encodeURIComponent(date)}`)
+  },
+
+  getWeeklyAgenda(studentId: number, date: string) {
+    return request<WeeklyAgenda>(`/schedule/${studentId}/week?date=${encodeURIComponent(date)}`)
   },
 
   listCurriculumPackages(schoolYearId?: number) {

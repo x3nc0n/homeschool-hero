@@ -8,12 +8,15 @@ import { AcceptInvitationPage } from '@/pages/AcceptInvitationPage'
 import { AssignmentsPage } from '@/pages/AssignmentsPage'
 import { AuditLogPage } from '@/pages/AuditLogPage'
 import { CalendarPage } from '@/pages/CalendarPage'
+import { CurriculumPage } from '@/pages/CurriculumPage'
 import { GradesPage } from '@/pages/GradesPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
+import { PlannerPage } from '@/pages/PlannerPage'
 import { QuizzesPage } from '@/pages/QuizzesPage'
 import { ReviewQueuePage } from '@/pages/ReviewQueuePage'
+import { ResourceLibraryPage } from '@/pages/ResourceLibraryPage'
 import { SetupPage } from '@/pages/SetupPage'
 import { StudentsPage } from '@/pages/StudentsPage'
 import { SubjectsPage } from '@/pages/SubjectsPage'
@@ -25,7 +28,7 @@ function LoadingScreen() {
 
 function defaultRouteForRole(role: FamilyRole | null) {
   if (role === 'student_viewer') {
-    return '/assignments'
+    return '/planner'
   }
   return '/dashboard'
 }
@@ -57,6 +60,9 @@ function ProtectedRoutes() {
         <Route path="/students" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<StudentsPage />} />} />
         <Route path="/subjects" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<SubjectsPage />} />} />
         <Route path="/calendar" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CalendarPage />} />} />
+        <Route path="/planner" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PlannerPage />} />} />
+        <Route path="/curriculum" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CurriculumPage />} />} />
+        <Route path="/resources" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ResourceLibraryPage />} />} />
         <Route path="/assignments" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<AssignmentsPage />} />} />
         <Route path="/upload" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<UploadPage />} />} />
         <Route path="/grades" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<GradesPage />} />} />
