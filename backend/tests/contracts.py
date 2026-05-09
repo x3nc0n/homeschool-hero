@@ -62,7 +62,7 @@ SERVICE_CANDIDATES = {
 
 VALIDATION_STATUS_CODES = {400, 422}
 
-UPLOADS_DIR = Path(__file__).resolve().parents[2] / "data" / "uploads-test"
+UPLOADS_DIR = Path(__file__).resolve().parents[1] / ".pytest-state" / "uploads-test"
 
 
 def student_payload(name: str = "Ada Lovelace") -> dict[str, Any]:

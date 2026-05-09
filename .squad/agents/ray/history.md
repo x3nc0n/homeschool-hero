@@ -42,3 +42,4 @@
 - All 33 backend tests passing, frontend build clean
 - Commit: aa9555d — "Polish MVP Docker setup"
 - MVP fully containerized and ready for deployment
+- 2026-05-08T21:36:16.718-05:00 — Added GitHub Actions CI for backend pytest + coverage, frontend lint/build checks, and Docker image verification; CI uses the existing SQLite-based backend test harness instead of a Postgres service.

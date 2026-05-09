@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,16 @@ def _set_test_environment() -> None:
 _set_test_environment()
 
 
+def _clear_uploads_dir() -> None:
+    if not UPLOADS_DIR.exists():
+        return
+    for child in UPLOADS_DIR.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def _import_optional_module(*names: str):
     for name in names:
         try:
@@ -79,7 +90,7 @@ def backend_module(test_environment):
     return _import_optional_module("backend.main", "main")
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="session")
 async def database_schema(test_environment):
     database_module = _import_optional_module("backend.database")
     models_module = _import_optional_module("backend.models")
@@ -99,9 +110,7 @@ async def reset_database(database_schema):
         for table in reversed(models_module.Base.metadata.sorted_tables):
             await session.execute(delete(table))
         await session.commit()
-    for child in UPLOADS_DIR.glob("*"):
-        if child.is_file():
-            child.unlink()
+    _clear_uploads_dir()
     yield
 
 

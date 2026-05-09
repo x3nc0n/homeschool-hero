@@ -11,6 +11,8 @@
 - 2026-05-08T17:04:55.759-05:00 — Backend pytest infrastructure now runs against SQLite + httpx async clients from `backend/`, with shared fixtures for auth, seeded entities, uploads, and DB reset between tests.
 - 2026-05-08T17:04:55.759-05:00 — API coverage now spans auth, students, subjects, assignments, submissions, grades, quizzes, and review queue flows; grading pipeline service tests are staged with mocks and marked pending where Ray's implementation is still stabilizing.
 - 2026-05-08T17:04:55.759-05:00 — `/grades/history` and the averages endpoints are currently tracked with xfail coverage because the backend route ordering still needs to settle before those gradebook queries can be enforced.
+- 2026-05-08T21:36:16.718-05:00 — CI-safe backend tests now keep SQLite uploads under `backend/.pytest-state`, reuse a session-scoped schema with per-test data cleanup, and avoid a shared module-level `TestClient`.
+- 2026-05-08T21:36:16.718-05:00 — Grading pipeline tests now mock Tesseract/Ollama/OpenAI behavior directly and the backend grade history/average routes are ordered so CI can assert them without xfail.
 
 ### Phase 1 Completion (2026-05-08T22:04:55Z)
 - Test infrastructure tasks 21-22 completed successfully: pytest contracts, async httpx clients, mocked dependencies ✓

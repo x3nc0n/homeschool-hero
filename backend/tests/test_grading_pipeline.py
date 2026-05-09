@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+from pathlib import Path
 
+from PIL import Image
 import pytest
 
 from tests.contracts import GRADING, SERVICE_CANDIDATES
@@ -23,27 +24,33 @@ def _load_service_module(*names: str):
     pytest.skip("Grading service modules are not implemented yet.")
 
 
+def _artifact_dir() -> Path:
+    path = Path(__file__).resolve().parents[1] / ".pytest-state" / "grading-pipeline"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="OCR implementation is still a stub in the current backend branch.", strict=False)
 async def test_ocr_service_uses_mocked_tesseract(monkeypatch):
     ocr_module = _load_service_module("services.ocr", "backend.services.ocr")
     extractor = resolve_attr(ocr_module, SERVICE_CANDIDATES["ocr"], label="OCR service")
+    image_path = _artifact_dir() / "worksheet.png"
+    Image.new("RGB", (8, 8), "white").save(image_path)
 
-    monkeypatch.setattr("PIL.Image.open", lambda *_args, **_kwargs: SimpleNamespace(), raising=False)
+    monkeypatch.setattr(ocr_module, "preprocess_image", lambda image: image)
     monkeypatch.setattr(
         "pytesseract.image_to_string",
         lambda *_args, **_kwargs: "problem 1: 3/4\nproblem 2: 1/2",
         raising=False,
     )
 
-    result = await maybe_await(extractor("worksheet.png"))
+    result = await maybe_await(extractor(str(image_path)))
 
     assert isinstance(result, str)
     assert "3/4" in result
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="AI grader implementation is still a stub in the current backend branch.", strict=False)
 async def test_ai_grader_returns_mocked_score_and_confidence(monkeypatch):
     grader_module = _load_service_module("services.ai_grader", "backend.services.ai_grader")
     grader = resolve_attr(grader_module, SERVICE_CANDIDATES["ai_grade"], label="AI grader")
@@ -74,12 +81,11 @@ async def test_ai_grader_returns_mocked_score_and_confidence(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="Grading worker processing flow is not implemented yet.", strict=False)
 async def test_grading_worker_auto_completes_high_confidence_job(monkeypatch):
     worker_module = _load_service_module("services.grading_worker", "backend.services.grading_worker")
     processor = resolve_attr(worker_module, SERVICE_CANDIDATES["worker"], label="Grading worker")
 
-    monkeypatch.setattr(worker_module, "extract_text_from_image", lambda *_args, **_kwargs: "correct work", raising=False)
+    monkeypatch.setattr(worker_module, "extract_text", lambda *_args, **_kwargs: "correct work", raising=False)
     monkeypatch.setattr(
         worker_module,
         "grade_submission_text",
@@ -95,12 +101,11 @@ async def test_grading_worker_auto_completes_high_confidence_job(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="Grading worker processing flow is not implemented yet.", strict=False)
 async def test_grading_worker_routes_low_confidence_job_to_review(monkeypatch):
     worker_module = _load_service_module("services.grading_worker", "backend.services.grading_worker")
     processor = resolve_attr(worker_module, SERVICE_CANDIDATES["worker"], label="Grading worker")
 
-    monkeypatch.setattr(worker_module, "extract_text_from_image", lambda *_args, **_kwargs: "unclear work", raising=False)
+    monkeypatch.setattr(worker_module, "extract_text", lambda *_args, **_kwargs: "unclear work", raising=False)
     monkeypatch.setattr(
         worker_module,
         "grade_submission_text",
@@ -116,12 +121,11 @@ async def test_grading_worker_routes_low_confidence_job_to_review(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="Grading worker processing flow is not implemented yet.", strict=False)
 async def test_grading_worker_ai_failure_falls_back_to_review(monkeypatch):
     worker_module = _load_service_module("services.grading_worker", "backend.services.grading_worker")
     processor = resolve_attr(worker_module, SERVICE_CANDIDATES["worker"], label="Grading worker")
 
-    monkeypatch.setattr(worker_module, "extract_text_from_image", lambda *_args, **_kwargs: "some work", raising=False)
+    monkeypatch.setattr(worker_module, "extract_text", lambda *_args, **_kwargs: "some work", raising=False)
 
     def _raise(*_args, **_kwargs):
         raise RuntimeError("model unavailable")

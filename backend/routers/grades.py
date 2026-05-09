@@ -52,35 +52,6 @@ async def create_grade(payload: GradeCreate, db: AsyncSession = Depends(get_db))
     return grade
 
 
-@router.get("/{grade_id}", response_model=GradeRead)
-async def get_grade(grade_id: int, db: AsyncSession = Depends(get_db)) -> Grade:
-    grade = await db.get(Grade, grade_id)
-    if not grade:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade not found")
-    return grade
-
-
-@router.put("/{grade_id}", response_model=GradeRead)
-async def update_grade(grade_id: int, payload: GradeUpdate, db: AsyncSession = Depends(get_db)) -> Grade:
-    grade = await db.get(Grade, grade_id)
-    if not grade:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade not found")
-    for key, value in payload.model_dump().items():
-        setattr(grade, key, value)
-    await db.commit()
-    await db.refresh(grade)
-    return grade
-
-
-@router.delete("/{grade_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_grade(grade_id: int, db: AsyncSession = Depends(get_db)) -> None:
-    grade = await db.get(Grade, grade_id)
-    if not grade:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade not found")
-    await db.delete(grade)
-    await db.commit()
-
-
 @router.get("/averages/student/{student_id}", response_model=list[GradeAverageByStudent])
 async def averages_by_student(student_id: int, db: AsyncSession = Depends(get_db)) -> list[GradeAverageByStudent]:
     student = await db.get(Student, student_id)
@@ -205,3 +176,32 @@ async def grade_history(
 async def gradebook(db: AsyncSession = Depends(get_db)):
     rows = await grade_history(student_id=None, subject_id=None, db=db)
     return {"items": rows}
+
+
+@router.get("/{grade_id}", response_model=GradeRead)
+async def get_grade(grade_id: int, db: AsyncSession = Depends(get_db)) -> Grade:
+    grade = await db.get(Grade, grade_id)
+    if not grade:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade not found")
+    return grade
+
+
+@router.put("/{grade_id}", response_model=GradeRead)
+async def update_grade(grade_id: int, payload: GradeUpdate, db: AsyncSession = Depends(get_db)) -> Grade:
+    grade = await db.get(Grade, grade_id)
+    if not grade:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade not found")
+    for key, value in payload.model_dump().items():
+        setattr(grade, key, value)
+    await db.commit()
+    await db.refresh(grade)
+    return grade
+
+
+@router.delete("/{grade_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_grade(grade_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    grade = await db.get(Grade, grade_id)
+    if not grade:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade not found")
+    await db.delete(grade)
+    await db.commit()

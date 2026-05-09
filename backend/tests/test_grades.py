@@ -43,21 +43,24 @@ async def test_grades_crud_happy_path(authorized_client, seeded_submission, seed
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="Current backend route ordering shadows /grades/history and average endpoints.", strict=False)
 async def test_grade_queries_return_history_and_averages(authorized_client, seeded_grade, seeded_student, seeded_subject):
     history = await authorized_client.get(GRADES["history"])
     assert history.status_code == 200, history.text
-    assert history.json(), "expected at least one grade history row"
+    history_payload = history.json()
+    assert history_payload, "expected at least one grade history row"
+    assert history_payload[0]["student_id"] == response_id(seeded_student)
 
     student_averages = await authorized_client.get(
         GRADES["student_averages"].format(student_id=response_id(seeded_student))
     )
     assert student_averages.status_code == 200, student_averages.text
+    assert student_averages.json()
 
     subject_averages = await authorized_client.get(
         GRADES["subject_averages"].format(subject_id=response_id(seeded_subject))
     )
     assert subject_averages.status_code == 200, subject_averages.text
+    assert subject_averages.json()
 
 
 @pytest.mark.asyncio

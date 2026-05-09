@@ -1,5 +1,7 @@
 # Homeschool Hero
 
+[![CI](https://github.com/x3nc0n/homeschool-hero/actions/workflows/ci.yml/badge.svg)](https://github.com/x3nc0n/homeschool-hero/actions/workflows/ci.yml)
+
 Homeschool Hero is a self-hosted homeschool platform for assignments, uploads, OCR-assisted grading, and parent review.
 
 ## Quickstart
