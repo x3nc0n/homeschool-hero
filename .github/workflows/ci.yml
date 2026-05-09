@@ -262,8 +262,12 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker image
-        run: docker build --pull -t "${CI_IMAGE_NAME}" .
+        run: docker buildx build --builder "${{ steps.buildx.outputs.name }}" --pull --load -t "${CI_IMAGE_NAME}" .
 
       - name: Scan image with Trivy policy gate
         id: trivy-policy
