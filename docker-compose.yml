@@ -1,65 +1,130 @@
+name: homeschool-hero
+
+x-shared-env: &shared_env
+  - path: .env.example
+    required: true
+  - path: .env
+    required: false
+
+x-service-defaults: &service_defaults
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
   app:
+    <<: *service_defaults
     build:
       context: .
       dockerfile: Dockerfile
-    env_file: &shared_env
-      - path: .env.example
-        required: true
-      - path: .env
-        required: false
+    env_file: *shared_env
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    volumes:
+      - uploads_data:/data/uploads
+      - backups_data:/data/backups
+    mem_limit: ${APP_MEMORY_LIMIT:-1536m}
+    pids_limit: 256
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  db:
+    <<: *service_defaults
+    image: postgres:16-alpine
+    env_file: *shared_env
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
     volumes:
-      - uploads_data:/data/uploads
-
-  db:
-    image: postgres:16
-    env_file: *shared_env
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-    volumes:
       - pgdata:/var/lib/postgresql/data
+    mem_limit: ${DB_MEMORY_LIMIT:-1024m}
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
 
   ollama:
+    <<: *service_defaults
+    profiles: ["ai", "full"]
     image: ollama/ollama:latest
     env_file: *shared_env
+    entrypoint: ["/bin/sh", "/scripts/ollama-entrypoint.sh"]
     healthcheck:
-      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
-      interval: 15s
+      test: ["CMD-SHELL", "ollama show \"$$OLLAMA_MODEL\" >/dev/null 2>&1 || exit 1"]
+      interval: 20s
       timeout: 10s
+      retries: 15
+      start_period: 45s
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./scripts/ollama-entrypoint.sh:/scripts/ollama-entrypoint.sh:ro
+    mem_limit: ${OLLAMA_MEMORY_LIMIT:-6g}
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  smtp:
+    <<: *service_defaults
+    profiles: ["email", "full"]
+    image: axllent/mailpit:latest
+    env_file: *shared_env
+    ports:
+      - "${SMTP_DEV_PORT:-1025}:1025"
+      - "${SMTP_WEB_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8025/livez >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
       retries: 10
+      start_period: 15s
+    mem_limit: ${SMTP_MEMORY_LIMIT:-256m}
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  backup:
+    <<: *service_defaults
+    profiles: ["backup", "full"]
+    image: postgres:16-alpine
+    env_file: *shared_env
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/scripts/backup-worker.sh"]
+    command: ["loop"]
+    healthcheck:
+      test: ["CMD-SHELL", "/bin/sh /scripts/backup-worker.sh healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
       start_period: 30s
     volumes:
-      - ollama_data:/root/.ollama
-
-  ollama-model:
-    image: ollama/ollama:latest
-    env_file: *shared_env
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    depends_on:
-      ollama:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c", "ollama pull \"$$OLLAMA_MODEL\""]
-    restart: "no"
-    volumes:
-      - ollama_data:/root/.ollama
+      - backups_data:/data/backups
+      - uploads_data:/data/uploads:ro
+      - ./scripts/backup-worker.sh:/scripts/backup-worker.sh:ro
+    mem_limit: ${BACKUP_MEMORY_LIMIT:-256m}
+    read_only: true
+    tmpfs:
+      - /tmp
 
 volumes:
   pgdata:
   uploads_data:
+  backups_data:
   ollama_data:

@@ -78,3 +78,4 @@
 - All 4 inbox decisions merged and deduplicated into active decisions registry
 - 2026-05-08 — Added startup validation for required backend config, a runtime capability registry for AI/email/backup/OCR, and health reporting that stays green when only optional services are down.
 - 2026-05-08 — Updated the grading and upload flows to degrade cleanly when AI or OCR are unavailable, and added frontend capability context plus dashboard/upload/review cues for reduced functionality.
+- 2026-05-08T23:15:59-05:00 — Completed IO-01 deployment hardening: Compose now ships a minimal base stack plus `ai`, `email`, `backup`, and `full` profiles; app image runs as non-root with `tini`; helper start/backup scripts and production env/docs were added; compose and Docker image verified.

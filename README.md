@@ -11,23 +11,117 @@ Homeschool Hero is a self-hosted homeschool platform for assignments, uploads, O
 ```bash
 git clone https://github.com/x3nc0n/homeschool-hero.git
 cd homeschool-hero
-# optional: copy .env.example to .env if you want to override defaults
 docker compose up --build
 # Open http://localhost:8000
 ```
 
-The default `docker compose up --build` flow starts:
+The default `docker compose up --build` flow starts only the required base stack:
 
 - `app` — FastAPI API + bundled React UI on port `8000`
 - `db` — PostgreSQL 16 with persistent data
-- `ollama` — local LLM runtime for grading
-- `ollama-model` — one-shot model bootstrap that pulls the default grading model before the app starts
 
-Uploads are persisted in a Docker volume mounted at `/data/uploads`, Postgres data is persisted in a named volume, and Ollama models are cached in a named volume. The first startup takes longer because Compose now pulls the default `llama3.2` model automatically so grading works end-to-end without extra setup.
+AI, email, and scheduled backups are optional. If those services are not running, the app stays healthy and reports a degraded-but-usable capability state.
+
+## Compose profiles
+
+Optional services can be enabled without changing application code:
+
+```bash
+# AI grading with local Ollama
+docker compose --profile ai up --build
+
+# Local SMTP relay (Mailpit)
+docker compose --profile email up --build
+
+# Scheduled backups
+docker compose --profile backup up --build
+
+# Everything
+docker compose --profile full up --build
+```
+
+Profile mapping:
+
+- Base stack: `app`, `db`
+- `ai`: adds `ollama`
+- `email`: adds `smtp`
+- `backup`: adds `backup`
+- `full`: enables all optional services
+
+## First-run helpers
+
+Use the helper scripts if you want `.env` bootstrapped automatically with a generated `SECRET_KEY`:
+
+```bash
+./scripts/start.sh
+./scripts/start.sh --profile full
+```
+
+```powershell
+.\scripts\start.ps1
+.\scripts\start.ps1 --profile email
+```
+
+Manual backup trigger:
+
+```bash
+./scripts/backup.sh
+```
+
+## Production deployment
+
+The shipped Compose topology is designed for single-host, self-hosted deployments:
+
+- All services use `restart: unless-stopped`
+- Persistent named volumes store database state, uploads, Ollama models, and backups
+- Every service defines a health check
+- Containers use memory limits
+- Security hardening is enabled with dropped Linux capabilities, `no-new-privileges`, and read-only root filesystems where practical
+- The app image runs as a non-root user and uses `tini` for signal handling
+
+Recommended production steps:
+
+1. Copy `.env.example` to `.env`
+2. Replace `SECRET_KEY`, database credentials, and bootstrap defaults
+3. Set `SESSION_COOKIE_SECURE=true` behind HTTPS
+4. Set `INVITATION_BASE_URL` to your external URL
+5. For production email, replace the default SMTP settings with your real relay
+6. For scheduled backups, keep `BACKUP_TARGET=/data/backups` and enable the `backup` profile
+7. Enable the `ai` profile only if the host has enough RAM for Ollama
+
+Example:
+
+```bash
+docker compose --profile full up -d --build
+docker compose ps
+docker compose logs -f app
+```
+
+## Common operations
+
+```bash
+# Validate the rendered Compose config
+docker compose config
+
+# Validate the fully enabled stack
+docker compose --profile full config
+
+# Stop services but keep data
+docker compose down
+
+# Stop services and remove volumes
+docker compose down -v
+
+# Review app health
+curl http://localhost:8000/health
+
+# Review capabilities
+curl http://localhost:8000/api/capabilities
+```
 
 ## Authentication and tenancy
 
-- First run now shows a one-time owner setup flow that creates the first family and owner account.
+- First run shows a one-time owner setup flow that creates the first family and owner account.
 - Existing single-family installs are migrated into one default family plus one owner user automatically.
 - The migrated owner uses `BOOTSTRAP_OWNER_EMAIL` for login and reuses the previous `FAMILY_PASSWORD` or `FAMILY_PASSWORD_HASH` as the new password.
 - All family data is tenant-scoped in the API and database using `family_id` foreign keys.
@@ -36,6 +130,7 @@ Uploads are persisted in a Docker volume mounted at `/data/uploads`, Postgres da
 
 | Variable | Required | Description |
 | --- | --- | --- |
+| `APP_PORT` | No | Host port published for the web app. |
 | `POSTGRES_USER` | Yes | Postgres username for the `db` container. |
 | `POSTGRES_PASSWORD` | Yes | Postgres password for the `db` container. |
 | `POSTGRES_DB` | Yes | Postgres database name. |
@@ -51,30 +146,52 @@ Uploads are persisted in a Docker volume mounted at `/data/uploads`, Postgres da
 | `BOOTSTRAP_GRADING_SCALE` | No | Default family grading scale for bootstrap and legacy migration. |
 | `FAMILY_PASSWORD` | Yes* | Legacy password source reused when migrating an existing single-family install. |
 | `FAMILY_PASSWORD_HASH` | No | Legacy bcrypt hash source reused when migrating an existing single-family install. |
-| `AI_PROVIDER` | No | `ollama` or `openai`. Leave as `ollama` for the standard local stack. |
+| `INVITATION_BASE_URL` | No | External base URL used when building invitation links. |
+| `AI_PROVIDER` | No | `ollama` or `openai`. Leave as `ollama` when the `ai` profile is enabled. |
 | `OLLAMA_HOST` | No | Base URL for the Ollama service. |
-| `OLLAMA_MODEL` | No | Ollama model name to pre-pull and use for grading. Defaults to `llama3.2`. |
+| `OLLAMA_MODEL` | No | Ollama model name to pre-pull and use for grading. |
 | `OPENAI_API_KEY` | No | Required only when `AI_PROVIDER=openai`. |
+| `SMTP_HOST` | No | SMTP relay host. Defaults to the optional `smtp` service for local profile-based installs. |
+| `SMTP_PORT` | No | SMTP relay port. |
+| `SMTP_USERNAME` | No | SMTP username for authenticated relays. |
+| `SMTP_PASSWORD` | No | SMTP password for authenticated relays. |
+| `SMTP_FROM_EMAIL` | No | Sender address for invitation emails. |
+| `SMTP_USE_TLS` | No | Enable STARTTLS for SMTP connections. |
+| `SMTP_DEV_PORT` | No | Host port published for the optional local SMTP listener. |
+| `SMTP_WEB_PORT` | No | Host port published for the optional Mailpit web UI. |
+| `BACKUP_TARGET` | No | Filesystem path used by the app and backup worker for persistent backups. |
+| `BACKUP_SOURCE_HOST` | No | Database hostname used by the backup worker. |
+| `BACKUP_SOURCE_PORT` | No | Database port used by the backup worker. |
+| `BACKUP_INTERVAL_SECONDS` | No | Seconds between scheduled backups in the `backup` profile. |
+| `BACKUP_RETENTION_DAYS` | No | Number of days to keep backup artifacts. |
+| `BACKUP_FILENAME_PREFIX` | No | Filename prefix for generated backup archives. |
 | `CONFIDENCE_THRESHOLD` | No | AI auto-approval threshold between `0` and `1`. |
 | `GRADING_POLL_INTERVAL` | No | Seconds between grading worker polls. |
 | `UPLOAD_DIR` | No | Filesystem path for uploaded work inside the app container. |
+| `APP_MEMORY_LIMIT` | No | Memory limit for the `app` service. |
+| `DB_MEMORY_LIMIT` | No | Memory limit for the `db` service. |
+| `OLLAMA_MEMORY_LIMIT` | No | Memory limit for the `ollama` service. |
+| `SMTP_MEMORY_LIMIT` | No | Memory limit for the `smtp` service. |
+| `BACKUP_MEMORY_LIMIT` | No | Memory limit for the `backup` service. |
 
 \* Keep `FAMILY_PASSWORD` or `FAMILY_PASSWORD_HASH` populated when upgrading an existing installation from the legacy single-family auth model.
 
 ## What the container does on startup
 
 - Runs Alembic migrations automatically
-- Waits for PostgreSQL and Ollama to be ready
-- Pulls the configured Ollama model automatically
-- Ensures the uploads directory exists
+- Waits for PostgreSQL
 - Starts the background grading worker
+- Ensures the uploads directory exists
 - Serves the React SPA and FastAPI API from the same port
+
+If the `ai` profile is enabled, the Ollama container also pre-pulls the configured model before becoming healthy.
 
 ## Local URLs
 
 - App + API: `http://localhost:8000`
-- API health check: `http://localhost:8000/api/health`
+- API health check: `http://localhost:8000/health`
 - API docs: `http://localhost:8000/docs`
+- Mailpit UI (when `email` profile is enabled): `http://localhost:8025`
 
 ## CI/CD and quality gates
 
@@ -88,7 +205,8 @@ Pull requests into `main` are expected to pass these GitHub Actions quality gate
 
 Additional automation:
 
-- **Security workflow** — runs weekly and on pull requests with CodeQL analysis for Python and JavaScript/TypeScript, publishing findings to the GitHub Security tab.
+- **Security workflow** — runs weekly and on pull requests with CodeQL plus Trivy image analysis, publishing findings to the GitHub Security tab and artifacting reports for issue automation.
+- **Security issue sync** — after each completed security run, opens or refreshes `security` issues for `HIGH`/`CRITICAL` findings, routes them through `squad`, and closes them when the finding disappears.
 - **Dependabot** — opens weekly dependency update PRs for pip, npm, and GitHub Actions.
 - **Release workflow** — pushing a `v*` tag builds and publishes `ghcr.io/x3nc0n/homeschool-hero`, then creates a GitHub Release with generated notes.
 
@@ -98,7 +216,7 @@ See `docs/security-scanning.md` for the full security scanning playbook, severit
 
 - Run backend tests from a clean state with `cd backend && python -m pytest -q`.
 - Run frontend checks with `cd frontend && npm ci && npm run lint && npm run build`.
-- Keep `.trivyignore` limited to reviewed exceptions only.
+- Keep `.trivyignore` limited to reviewed exceptions only, with a reason comment directly above each ignored CVE.
 - Add Gitleaks to your local pre-commit workflow so staged changes are scanned before you push.
 
 ### Local pre-commit secret scanning
