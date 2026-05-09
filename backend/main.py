@@ -15,6 +15,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, get_db
+from backend.i18n import DATE_FORMAT_HINT, build_error_payload, error_detail, parse_accept_language
 from backend.models import Base
 from backend.openapi import API_DESCRIPTION, API_SUMMARY, API_VERSION, configure_openapi
 from backend.rate_limit import RateLimitRule, RateLimiter
@@ -147,19 +148,6 @@ def _is_public_api_path(path: str) -> bool:
     return path.startswith(f'{API_PREFIX}/invitations/') and path.endswith('/accept')
 
 
-def _error_payload(code: str, message: str, *, details: object | None = None) -> dict[str, object]:
-    payload: dict[str, object] = {
-        'detail': message,
-        'error': {
-            'code': code,
-            'message': message,
-        },
-    }
-    if details is not None:
-        payload['error']['details'] = details
-    return payload
-
-
 def _json_safe(value: object) -> object:
     if isinstance(value, dict):
         return {str(key): _json_safe(item) for key, item in value.items()}
@@ -189,8 +177,30 @@ def _apply_security_headers(response: JSONResponse | FileResponse) -> None:
         del response.headers['Server']
 
 
+def _append_vary_header(response: JSONResponse | FileResponse, value: str) -> None:
+    existing = response.headers.get('Vary')
+    if not existing:
+        response.headers['Vary'] = value
+        return
+    values = {item.strip() for item in existing.split(',') if item.strip()}
+    values.add(value)
+    response.headers['Vary'] = ', '.join(sorted(values))
+
+
+def _get_request_locale(request: Request) -> str:
+    locale = getattr(request.state, 'locale', None)
+    if isinstance(locale, str) and locale:
+        return locale
+    return parse_accept_language(request.headers.get('accept-language'))
+
+
 def _apply_transport_headers(request: Request, response: JSONResponse | FileResponse) -> None:
     _apply_security_headers(response)
+    locale = _get_request_locale(request)
+    response.headers['Content-Language'] = locale
+    response.headers['X-Response-Locale'] = locale
+    response.headers['X-Date-Format-Hint'] = f"locale={locale}; dateStyle={DATE_FORMAT_HINT['date_style']}; timeStyle={DATE_FORMAT_HINT['time_style']}"
+    _append_vary_header(response, 'Accept-Language')
     if settings.hsts_enabled and is_secure_request(request):
         value = [f'max-age={settings.hsts_max_age_seconds}']
         if settings.hsts_include_subdomains:
@@ -223,9 +233,10 @@ def _get_rate_limit(request: Request, session: dict[str, object] | None) -> tupl
 
 
 def _maintenance_payload(*, message: str, source: str) -> dict[str, object]:
-    return _error_payload(
-        'maintenance_mode',
-        message,
+    return error_detail(
+        code='maintenance_mode',
+        message_key='errors.maintenance.active',
+        default_message=message,
         details={
             'maintenance': {
                 'active': True,
@@ -290,10 +301,15 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-        message = exc.detail if isinstance(exc.detail, str) else 'Request failed'
         response = JSONResponse(
             status_code=exc.status_code,
-            content=_error_payload('http_error', message, details=None if isinstance(exc.detail, str) else exc.detail),
+            content=build_error_payload(
+                exc.detail,
+                locale=_get_request_locale(request),
+                requested_locale=request.headers.get('accept-language'),
+                fallback_code='http_error',
+                fallback_message='Request failed',
+            ),
             headers=exc.headers,
         )
         _apply_transport_headers(request, response)
@@ -303,7 +319,16 @@ def create_app() -> FastAPI:
     async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         response = JSONResponse(
             status_code=422,
-            content=_error_payload('validation_error', 'Invalid request.', details=_json_safe(exc.errors())),
+            content=build_error_payload(
+                error_detail(
+                    code='validation_error',
+                    message_key='errors.request.invalid',
+                    default_message='Invalid request.',
+                    details=_json_safe(exc.errors()),
+                ),
+                locale=_get_request_locale(request),
+                requested_locale=request.headers.get('accept-language'),
+            ),
         )
         _apply_transport_headers(request, response)
         return response
@@ -321,7 +346,16 @@ def create_app() -> FastAPI:
         details = {'type': exc.__class__.__name__} if settings.testing else None
         response = JSONResponse(
             status_code=500,
-            content=_error_payload('internal_error', 'An unexpected error occurred.', details=details),
+            content=build_error_payload(
+                error_detail(
+                    code='internal_error',
+                    message_key='errors.request.internal',
+                    default_message='An unexpected error occurred.',
+                    details=details,
+                ),
+                locale=_get_request_locale(request),
+                requested_locale=request.headers.get('accept-language'),
+            ),
         )
         _apply_transport_headers(request, response)
         return response
@@ -329,6 +363,7 @@ def create_app() -> FastAPI:
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):
         path = request.url.path
+        request.state.locale = parse_accept_language(request.headers.get('accept-language'))
         correlation_id = request.headers.get('x-correlation-id') or str(uuid.uuid4())
         request.state.correlation_id = correlation_id
         context_token = bind_context(correlation_id=correlation_id, action='http_request')
@@ -369,7 +404,11 @@ def create_app() -> FastAPI:
                 if not bypass_allowed:
                     response = JSONResponse(
                         status_code=503,
-                        content=_maintenance_payload(message=maintenance_status.message, source=maintenance_status.source),
+                        content=build_error_payload(
+                            _maintenance_payload(message=maintenance_status.message, source=maintenance_status.source),
+                            locale=_get_request_locale(request),
+                            requested_locale=request.headers.get('accept-language'),
+                        ),
                     )
                     _apply_transport_headers(request, response)
                     return response
@@ -378,7 +417,15 @@ def create_app() -> FastAPI:
                 if not session:
                     response = JSONResponse(
                         status_code=401,
-                        content=_error_payload('auth_required', 'Authentication required'),
+                        content=build_error_payload(
+                            error_detail(
+                                code='auth_required',
+                                message_key='errors.auth.required',
+                                default_message='Authentication required',
+                            ),
+                            locale=_get_request_locale(request),
+                            requested_locale=request.headers.get('accept-language'),
+                        ),
                     )
                     _apply_transport_headers(request, response)
                     return response
@@ -388,7 +435,13 @@ def create_app() -> FastAPI:
                     except HTTPException as exc:
                         response = JSONResponse(
                             status_code=exc.status_code,
-                            content=_error_payload('csrf_failed', str(exc.detail)),
+                            content=build_error_payload(
+                                exc.detail,
+                                locale=_get_request_locale(request),
+                                requested_locale=request.headers.get('accept-language'),
+                                fallback_code='csrf_failed',
+                                fallback_message='CSRF validation failed',
+                            ),
                         )
                         _apply_transport_headers(request, response)
                         return response
@@ -409,7 +462,15 @@ def create_app() -> FastAPI:
                 if not allowed:
                     response = JSONResponse(
                         status_code=429,
-                        content=_error_payload('rate_limited', 'Too many requests. Please try again later.'),
+                        content=build_error_payload(
+                            error_detail(
+                                code='rate_limited',
+                                message_key='errors.request.rate_limited',
+                                default_message='Too many requests. Please try again later.',
+                            ),
+                            locale=_get_request_locale(request),
+                            requested_locale=request.headers.get('accept-language'),
+                        ),
                         headers={'Retry-After': str(retry_after)},
                     )
                     _apply_transport_headers(request, response)

@@ -19,7 +19,8 @@ export const resources = {
   },
 } as const
 
-void i18n.use(initReactI18next).init({
+void i18n.use(initReactI18next)
+void i18n.init({
   resources,
   lng: getInitialLanguage(),
   fallbackLng: 'en',

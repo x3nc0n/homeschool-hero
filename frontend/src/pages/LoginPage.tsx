@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowRightCircle, Lock } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
@@ -10,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
 
 export function LoginPage() {
+  const { t } = useTranslation('auth')
   const { login, bootstrapRequired } = useAuth()
   const { auth } = useCapabilities()
   const [searchParams] = useSearchParams()
@@ -30,7 +32,7 @@ export function LoginPage() {
     try {
       await login(email, password)
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : 'Unable to sign in')
+      setError(loginError instanceof Error ? loginError.message : t('login.error'))
     } finally {
       setIsSubmitting(false)
     }
@@ -44,9 +46,9 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl">Welcome back</CardTitle>
+          <CardTitle className="text-2xl">{t('login.title')}</CardTitle>
           <CardDescription>
-            {showOidc || showSaml ? 'Choose your sign-in method.' : 'Sign in with your email address and password.'}
+            {showOidc || showSaml ? t('login.descriptionProviders') : t('login.descriptionDefault')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -54,57 +56,57 @@ export function LoginPage() {
             {showOidc ? (
               <Button className="w-full" type="button" variant="outline" onClick={() => handleExternalLogin('oidc')}>
                 <ArrowRightCircle className="mr-2 h-4 w-4" />
-                Continue with OIDC
+                {t('login.oidc')}
               </Button>
             ) : null}
             {showSaml ? (
               <Button className="w-full" type="button" variant="outline" onClick={() => handleExternalLogin('saml')}>
                 <ArrowRightCircle className="mr-2 h-4 w-4" />
-                Continue with SAML
+                {t('login.saml')}
               </Button>
             ) : null}
             {showLocalLogin && (showOidc || showSaml) ? (
-              <p className="text-center text-xs uppercase tracking-wide text-muted-foreground">or use local sign-in</p>
+              <p className="text-center text-xs uppercase tracking-wide text-muted-foreground">{t('login.orLocal')}</p>
             ) : null}
             {showLocalLogin ? (
               <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">{t('login.email')}</Label>
                   <Input
                     id="email"
                     type="email"
                     autoComplete="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder="parent@example.com"
+                    placeholder={t('login.emailPlaceholder')}
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">{t('login.password')}</Label>
                   <Input
                     id="password"
                     type="password"
                     autoComplete="current-password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    placeholder="••••••••"
+                    placeholder={t('login.passwordPlaceholder')}
                     required
                   />
                 </div>
                 {error ? <p className="text-sm text-destructive">{error}</p> : null}
                 <Button className="w-full" type="submit" disabled={isSubmitting}>
                   <Lock className="mr-2 h-4 w-4" />
-                  {isSubmitting ? 'Signing in…' : 'Sign in'}
+                  {isSubmitting ? t('login.submitting') : t('login.submit')}
                 </Button>
               </form>
             ) : null}
             {providerError ? <p className="text-sm text-destructive">{providerError}</p> : null}
             {bootstrapRequired ? (
               <p className="text-sm text-muted-foreground">
-                Need to create the first family owner?{' '}
+                {t('login.bootstrapPrompt')}{' '}
                 <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/setup">
-                  Start setup
+                  {t('login.bootstrapLink')}
                 </Link>
               </p>
             ) : null}
