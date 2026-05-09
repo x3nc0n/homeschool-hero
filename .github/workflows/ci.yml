@@ -10,14 +10,19 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
+  security-events: write
+
+env:
+  COVERAGE_FAIL_UNDER: '76'
+  CI_IMAGE_NAME: homeschool-hero:ci
 
 jobs:
   backend-tests:
-    name: Backend tests
+    name: Backend quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -53,7 +58,8 @@ jobs:
         env:
           TESTING: '1'
         run: |
-          python -m pytest -vv --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml
+          rm -rf .pytest-state
+          python -m pytest -vv --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=${COVERAGE_FAIL_UNDER}
 
       - name: Upload coverage report
         if: always()
@@ -62,6 +68,55 @@ jobs:
           name: backend-coverage
           path: backend/coverage.xml
           if-no-files-found: ignore
+
+  migration-checks:
+    name: Migration checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: homeschool_hero_ci
+          POSTGRES_USER: homeschool
+          POSTGRES_PASSWORD: changeme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U homeschool -d homeschool_hero_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            backend/requirements-test.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          if [ -f backend/requirements-test.txt ]; then
+            python -m pip install -r backend/requirements-test.txt
+          fi
+
+      - name: Verify Alembic migrations
+        env:
+          APP_ENV: test
+          TESTING: '1'
+          DATABASE_URL: postgresql+asyncpg://homeschool:changeme@127.0.0.1:5432/homeschool_hero_ci
+        run: |
+          python -m alembic -c backend/alembic.ini upgrade head
+          python -m alembic -c backend/alembic.ini downgrade base
+          python -m alembic -c backend/alembic.ini upgrade head
 
   frontend-tests:
     name: Frontend checks
@@ -107,13 +162,68 @@ jobs:
         if: steps.scripts.outputs.has_test == 'true'
         run: npm test
 
-  docker-build:
-    name: Docker build
+  container-checks:
+    name: Container checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Verify Docker build
-        run: docker build .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: docker build -t "${CI_IMAGE_NAME}" .
+
+      - name: Scan image with Trivy policy gate
+        id: trivy-policy
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.CI_IMAGE_NAME }}
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          trivyignores: .trivyignore
+
+      - name: Generate Trivy SARIF
+        if: always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.CI_IMAGE_NAME }}
+          format: sarif
+          output: trivy-results.sarif
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+          trivyignores: .trivyignore
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-image
+
+      - name: Enforce Trivy vulnerability policy
+        if: steps.trivy-policy.outcome == 'failure'
+        run: |
+          echo "Trivy found HIGH or CRITICAL vulnerabilities."
+          exit 1
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

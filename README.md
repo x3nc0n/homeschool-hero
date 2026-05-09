@@ -1,6 +1,8 @@
 # Homeschool Hero
 
 [![CI](https://github.com/x3nc0n/homeschool-hero/actions/workflows/ci.yml/badge.svg)](https://github.com/x3nc0n/homeschool-hero/actions/workflows/ci.yml)
+[![Security](https://github.com/x3nc0n/homeschool-hero/actions/workflows/security.yml/badge.svg)](https://github.com/x3nc0n/homeschool-hero/actions/workflows/security.yml)
+[![Container Image](https://img.shields.io/badge/container-ghcr.io%2Fx3nc0n%2Fhomeschool--hero-2496ED?logo=docker&logoColor=white)](https://github.com/x3nc0n/homeschool-hero/pkgs/container/homeschool-hero)
 
 Homeschool Hero is a self-hosted homeschool platform for assignments, uploads, OCR-assisted grading, and parent review.
 
@@ -62,3 +64,26 @@ Uploads are persisted in a Docker volume mounted at `/data/uploads`, Postgres da
 - App + API: `http://localhost:8000`
 - API health check: `http://localhost:8000/api/health`
 - API docs: `http://localhost:8000/docs`
+
+## CI/CD and quality gates
+
+Pull requests into `main` must pass these GitHub Actions quality gates before merge:
+
+- **Backend quality gate** — installs OCR dependencies, runs backend pytest, and enforces backend coverage at `76%` or higher.
+- **Migration checks** — runs Alembic upgrade/downgrade/upgrade against PostgreSQL so schema changes are validated on the production database family.
+- **Frontend checks** — runs the existing frontend lint and production build steps.
+- **Container checks** — builds the production image, scans it with Trivy, and fails on `HIGH`/`CRITICAL` vulnerabilities unless they are explicitly listed in `.trivyignore`.
+- **Secret scan** — runs Gitleaks on pull requests to catch committed secrets early.
+
+Additional automation:
+
+- **Security workflow** — runs weekly and on pull requests with CodeQL analysis for Python and JavaScript/TypeScript, publishing findings to the GitHub Security tab.
+- **Dependabot** — opens weekly dependency update PRs for pip, npm, and GitHub Actions.
+- **Release workflow** — pushing a `v*` tag builds and publishes `ghcr.io/x3nc0n/homeschool-hero`, then creates a GitHub Release with generated notes.
+
+### Contributor recommendations
+
+- Run backend tests from a clean state with `cd backend && python -m pytest -q`.
+- Run frontend checks with `cd frontend && npm ci && npm run lint && npm run build`.
+- Keep `.trivyignore` limited to reviewed exceptions only.
+- Add Gitleaks to your local pre-commit workflow so staged changes are scanned before you push.
