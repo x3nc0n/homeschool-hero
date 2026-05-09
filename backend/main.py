@@ -60,6 +60,7 @@ from backend.services.health import build_simple_health_payload, get_runtime_sta
 from backend.services.logging_config import bind_context, configure_logging, log_action, reset_context, update_context
 from backend.services.maintenance import get_maintenance_status, session_can_bypass_maintenance
 from backend.services.monitoring import collect_metrics_payload, get_monitoring, install_monitoring
+from backend.seed_demo import seed_demo_data
 from backend.startup import (
     ensure_database_migrations,
     ensure_auth_runtime_configured,
@@ -106,6 +107,19 @@ EXPORT_RATE_LIMIT = RateLimitRule('export', 5, 60)
 GENERAL_RATE_LIMIT = RateLimitRule('general', 100, 60)
 
 
+async def maybe_seed_demo_data() -> bool:
+    if not settings.demo_mode:
+        return False
+
+    async with AsyncSessionLocal() as session:
+        seeded = await seed_demo_data(session)
+    if seeded:
+        logger.info('Demo mode seed data loaded for a fresh install')
+    else:
+        logger.info('Demo mode seed skipped because family data already exists')
+    return seeded
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     worker = None
@@ -124,6 +138,7 @@ async def lifespan(app: FastAPI):
         ensure_auth_runtime_configured()
         await asyncio.to_thread(ensure_database_migrations)
         app.state.database_migrated = True
+        await maybe_seed_demo_data()
         worker = create_worker()
         worker.start()
         backup_scheduler = get_backup_scheduler()

@@ -99,6 +99,7 @@ class Settings(BaseSettings):
         'Homeschool Hero is temporarily unavailable while we perform maintenance. Please check back soon.',
         alias='MAINTENANCE_MESSAGE',
     )
+    demo_mode: bool = Field(False, alias='DEMO_MODE')
     testing: bool = Field(False, alias='TESTING')
 
     @property

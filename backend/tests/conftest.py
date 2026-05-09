@@ -59,6 +59,7 @@ def _set_test_environment() -> None:
     os.environ['BOOTSTRAP_GRADING_SCALE'] = 'letter'
     os.environ['FAMILY_PASSWORD'] = 'legacy-password'
     os.environ['CONFIDENCE_THRESHOLD'] = '0.8'
+    os.environ['DEMO_MODE'] = '0'
     os.environ['UPLOAD_DIR'] = str(UPLOADS_DIR.resolve())
 
 

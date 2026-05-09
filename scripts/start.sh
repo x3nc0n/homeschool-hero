@@ -12,7 +12,7 @@ import secrets
 
 path = Path(".env")
 content = path.read_text(encoding="utf-8")
-content = content.replace("SECRET_KEY=super-secret-change-me", f"SECRET_KEY={secrets.token_urlsafe(48)}", 1)
+content = content.replace("SECRET_KEY=change-me-in-production", f"SECRET_KEY={secrets.token_urlsafe(48)}", 1)
 path.write_text(content, encoding="utf-8")
 PY
   echo "Created .env from .env.example with a generated SECRET_KEY."
