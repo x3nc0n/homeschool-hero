@@ -281,7 +281,7 @@ jobs:
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           exit-code: '1'
-          ignorefile: .trivyignore
+          trivyignores: .trivyignore
 
       - name: Generate Trivy SARIF
         if: always()
@@ -296,7 +296,7 @@ jobs:
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           exit-code: '0'
-          ignorefile: .trivyignore
+          trivyignores: .trivyignore
 
       - name: Upload Trivy SARIF
         if: always()
