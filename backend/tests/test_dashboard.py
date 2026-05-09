@@ -400,3 +400,31 @@ async def test_dashboard_handles_empty_state(authorized_client):
     assert payload['compliance_warnings'] == []
     assert payload['student_summaries'] == []
     assert payload['system_status'] is not None
+
+
+@pytest.mark.asyncio
+async def test_dashboard_selected_student_handles_optional_widget_failures(authorized_client, monkeypatch):
+    student = await authorized_client.post(STUDENTS['collection'], json=student_payload('New Kid'))
+    assert student.status_code == 201, student.text
+    student_id = response_id(student.json())
+
+    async def _boom(*_args, **_kwargs):
+        raise RuntimeError('boom')
+
+    monkeypatch.setattr('backend.routers.dashboard.calculate_gradebook_summary', _boom)
+    monkeypatch.setattr('backend.routers.dashboard._build_pacing_status_payload', _boom)
+    monkeypatch.setattr('backend.routers.dashboard.get_dashboard_payload', _boom)
+    monkeypatch.setattr('backend.routers.dashboard.collect_service_health', _boom)
+
+    response = await authorized_client.get(f"{DASHBOARD['summary']}?student_id={student_id}")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    assert payload['selected_student_id'] == student_id
+    assert len(payload['student_summaries']) == 1
+    assert payload['student_summaries'][0]['student_id'] == student_id
+    assert payload['student_summaries'][0]['current_gpa'] is None
+    assert payload['attendance_today'][0]['student_id'] == student_id
+    assert payload['pacing_alerts'] == []
+    assert payload['compliance_warnings'] == []
+    assert payload['system_status'] is None

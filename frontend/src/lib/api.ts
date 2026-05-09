@@ -512,6 +512,10 @@ export const api = {
     return request<Student[]>('/students')
   },
 
+  getStudent(id: number) {
+    return request<Student>(`/students/${id}`)
+  },
+
   createStudent(payload: Pick<Student, 'name'>) {
     return request<Student>('/students', { method: 'POST', body: JSON.stringify(payload) })
   },

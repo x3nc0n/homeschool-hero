@@ -19,6 +19,7 @@ export function StudentsPage() {
   const [error, setError] = useState('')
   const [draftName, setDraftName] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -38,16 +39,36 @@ export function StudentsPage() {
 
   const saveStudent = async () => {
     if (!draftName.trim() || !canEditStudents) return
+    setSaving(true)
+    setError('')
+    try {
+      if (editingId) {
+        await api.updateStudent(editingId, { name: draftName.trim() })
+        setEditingId(null)
+      } else {
+        await api.createStudent({ name: draftName.trim() })
+      }
 
-    if (editingId) {
-      await api.updateStudent(editingId, { name: draftName.trim() })
-      setEditingId(null)
-    } else {
-      await api.createStudent({ name: draftName.trim() })
+      setDraftName('')
+      await load()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save student')
+    } finally {
+      setSaving(false)
     }
+  }
 
-    setDraftName('')
-    await load()
+  const removeStudent = async (studentId: number) => {
+    setSaving(true)
+    setError('')
+    try {
+      await api.deleteStudent(studentId)
+      await load()
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete student')
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) return <LoadingState message="Loading students…" />
@@ -64,10 +85,11 @@ export function StudentsPage() {
             <Input
               className="max-w-sm"
               placeholder="Student name"
+              disabled={saving}
               value={draftName}
               onChange={(event) => setDraftName(event.target.value)}
             />
-            <Button onClick={() => void saveStudent()}>
+            <Button disabled={saving || !draftName.trim()} onClick={() => void saveStudent()}>
               <Plus className="mr-2 h-4 w-4" />
               {editingId ? 'Update' : 'Add'} student
             </Button>
@@ -101,6 +123,7 @@ export function StudentsPage() {
                         </Link>
                       </Button>
                       <Button
+                        disabled={saving}
                         size="sm"
                         variant="outline"
                         onClick={() => {
@@ -111,7 +134,7 @@ export function StudentsPage() {
                         <Pencil className="mr-2 h-3.5 w-3.5" />
                         Edit
                       </Button>
-                      <Button size="sm" variant="destructive" onClick={() => void api.deleteStudent(student.id).then(load)}>
+                      <Button disabled={saving} size="sm" variant="destructive" onClick={() => void removeStudent(student.id)}>
                         <Trash2 className="mr-2 h-3.5 w-3.5" />
                         Delete
                       </Button>

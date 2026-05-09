@@ -88,3 +88,7 @@
 
 ### Teacher documentation (2026-05-09T13:37:25.539-05:00)
 - Created the comprehensive Parent/Teacher User Guide at `docs/teacher-guide.md`.
+
+### Student profile dashboard hardening (2026-05-09T14:45:14.180-05:00)
+- The student profile page was backed entirely by the dashboard aggregator, so any optional widget failure (grade summary, pacing, compliance, or system health) surfaced as a generic "An unexpected error occurred" page after opening a student.
+- Fixed it by making backend dashboard widget loading best-effort instead of all-or-nothing, and by having the frontend fetch the student record separately so the profile still renders basic student info even if dashboard widgets fail.

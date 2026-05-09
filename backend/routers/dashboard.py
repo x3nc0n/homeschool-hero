@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
+import logging
+from typing import Awaitable, Callable, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
@@ -42,6 +44,8 @@ from backend.services.gradebook import calculate_gradebook_summary
 from backend.services.health import collect_service_health, summarize_health
 
 router = APIRouter(prefix='/dashboard', tags=['dashboard'])
+logger = logging.getLogger(__name__)
+T = TypeVar('T')
 
 
 def _normalize_datetime(value: datetime | None) -> datetime | None:
@@ -126,6 +130,33 @@ def _summarize_compliance_status(statuses: list[object]) -> ComplianceState | No
     return ComplianceState.compliant
 
 
+async def _best_effort_dashboard_section(section_name: str, loader: Callable[[], Awaitable[T]], fallback: T) -> T:
+    try:
+        return await loader()
+    except Exception:
+        logger.exception('Dashboard section failed to load', extra={'section': section_name})
+        return fallback
+
+
+async def _build_system_status(generated_at: datetime) -> DashboardSystemStatus:
+    services = await collect_service_health()
+    overall, summary = summarize_health(services)
+    affected_services = [
+        str(service.get('label') or service.get('name'))
+        for service in services.values()
+        if service.get('status') in {'degraded', 'unhealthy'}
+    ]
+    return DashboardSystemStatus(
+        status=overall,
+        checked_at=generated_at,
+        healthy_services=summary['healthy'],
+        degraded_services=summary['degraded'],
+        unhealthy_services=summary['unhealthy'],
+        not_configured_services=summary['not_configured'],
+        affected_services=affected_services,
+    )
+
+
 @router.get('', response_model=DashboardRead)
 async def get_dashboard(
     request: Request,
@@ -142,22 +173,18 @@ async def get_dashboard(
     student_map = {student.id: student for student in students}
 
     if not students:
-        overall, summary = summarize_health(await collect_service_health())
+        system_status = None
+        if auth.role != 'student_viewer':
+            system_status = await _best_effort_dashboard_section(
+                'system status',
+                lambda: _build_system_status(generated_at),
+                None,
+            )
         return DashboardRead(
             role=auth.role,
             generated_at=generated_at,
             selected_student_id=student_id,
-            system_status=DashboardSystemStatus(
-                status=overall,
-                checked_at=generated_at,
-                healthy_services=summary['healthy'],
-                degraded_services=summary['degraded'],
-                unhealthy_services=summary['unhealthy'],
-                not_configured_services=summary['not_configured'],
-                affected_services=[],
-            )
-            if auth.role != 'student_viewer'
-            else None,
+            system_status=system_status,
         )
 
     school_year = await _resolve_school_year(db, auth.family_id, today)
@@ -339,11 +366,15 @@ async def get_dashboard(
     pacing_alerts: list[DashboardPacingAlertItem] = []
     if auth.role != 'student_viewer':
         for current_student in students:
-            pacing_payload = await _build_pacing_status_payload(
-                db,
-                family_id=auth.family_id,
-                student_id=current_student.id,
-                subject_id=None,
+            pacing_payload = await _best_effort_dashboard_section(
+                f'pacing:{current_student.id}',
+                lambda current_student=current_student: _build_pacing_status_payload(
+                    db,
+                    family_id=auth.family_id,
+                    student_id=current_student.id,
+                    subject_id=None,
+                ),
+                {'items': []},
             )
             items = list(pacing_payload.get('items', []))
             pacing_by_student[current_student.id] = items
@@ -367,10 +398,14 @@ async def get_dashboard(
     compliance_by_student: dict[int, list[object]] = defaultdict(list)
     compliance_warnings: list[DashboardComplianceWarningItem] = []
     if auth.role != 'student_viewer':
-        _state_code, _resolved_school_year, compliance_payload = await get_dashboard_payload(
-            db,
-            family_id=auth.family_id,
-            school_year_id=school_year.id if school_year is not None else None,
+        compliance_payload = await _best_effort_dashboard_section(
+            'compliance',
+            lambda: _load_compliance_payload(
+                db,
+                family_id=auth.family_id,
+                school_year_id=school_year.id if school_year is not None else None,
+            ),
+            [],
         )
         for student_record, statuses in compliance_payload:
             if student_record.id not in student_map:
@@ -402,7 +437,15 @@ async def get_dashboard(
         if item.student_id is not None:
             assignments_due_by_student[item.student_id] += 1
     for current_student in students:
-        gradebook_summary = await calculate_gradebook_summary(db, family_id=auth.family_id, student_id=current_student.id)
+        gradebook_summary = await _best_effort_dashboard_section(
+            f'gradebook-summary:{current_student.id}',
+            lambda current_student=current_student: calculate_gradebook_summary(
+                db,
+                family_id=auth.family_id,
+                student_id=current_student.id,
+            ),
+            {'gpa': None},
+        )
         attendance_counts = attendance_summary_by_student.get(current_student.id, {})
         total_records = int(attendance_counts.get('total', 0))
         attended = int(attendance_counts.get('present', 0)) + int(attendance_counts.get('tardy', 0)) + int(
@@ -423,21 +466,10 @@ async def get_dashboard(
 
     system_status = None
     if auth.role != 'student_viewer':
-        services = await collect_service_health()
-        overall, summary = summarize_health(services)
-        affected_services = [
-            str(service.get('label') or service.get('name'))
-            for service in services.values()
-            if service.get('status') in {'degraded', 'unhealthy'}
-        ]
-        system_status = DashboardSystemStatus(
-            status=overall,
-            checked_at=generated_at,
-            healthy_services=summary['healthy'],
-            degraded_services=summary['degraded'],
-            unhealthy_services=summary['unhealthy'],
-            not_configured_services=summary['not_configured'],
-            affected_services=affected_services,
+        system_status = await _best_effort_dashboard_section(
+            'system status',
+            lambda: _build_system_status(generated_at),
+            None,
         )
 
     return DashboardRead(
@@ -453,3 +485,17 @@ async def get_dashboard(
         system_status=system_status,
         student_summaries=student_summaries,
     )
+
+
+async def _load_compliance_payload(
+    db: AsyncSession,
+    *,
+    family_id: int,
+    school_year_id: int | None,
+) -> list[tuple[Student, list[object]]]:
+    _state_code, _resolved_school_year, compliance_payload = await get_dashboard_payload(
+        db,
+        family_id=family_id,
+        school_year_id=school_year_id,
+    )
+    return compliance_payload
