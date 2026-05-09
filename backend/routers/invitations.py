@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import AuditAction, Family, FamilyMembership, FamilyRole, Invitation, Student, User
+from backend.models import AuditAction, Family, FamilyMembership, FamilyRole, Invitation, NotificationType, Student, User
 from backend.routers.auth import _session_response, _set_session_cookie
 from backend.schemas.auth import SessionResponse
 from backend.schemas.invitations import InvitationAccept, InvitationCreate, InvitationRead
@@ -18,6 +18,7 @@ from backend.security import AuthSession, get_family_record, hash_password, norm
 from backend.services.audit import log_event
 from backend.services.authorization import Capability, require_capabilities
 from backend.services.invitations import build_invitation_link, dispatch_invitation
+from backend.services.notifications import create_family_notifications, create_notification
 
 router = APIRouter(prefix='/invitations', tags=['invitations'])
 
@@ -123,6 +124,28 @@ async def create_invitation(
     await db.commit()
     await db.refresh(invitation, attribute_names=['student'])
 
+    await create_family_notifications(
+        db,
+        family_id=auth.family_id,
+        notification_type=NotificationType.invitation,
+        title=f'Invitation created for {invitation.email}',
+        message=f'{invitation.role.value.replace("_", " ")} access was invited and expires on {expires_at.date().isoformat()}.',
+        link='/invitations',
+        roles={FamilyRole.parent, FamilyRole.co_parent},
+    )
+    existing_user = (await db.execute(select(User).where(User.email == invitation.email))).scalar_one_or_none()
+    if existing_user is not None:
+        await create_notification(
+            db,
+            existing_user.id,
+            NotificationType.invitation,
+            title=f'You were invited to join {auth.family_name}',
+            message='Open the invitation page to accept access to this family workspace.',
+            link=build_invitation_link(invitation.id, invitation.token),
+            family_id=auth.family_id,
+        )
+    await db.commit()
+
     delivery_method, email_sent, _ = dispatch_invitation(
         email=invitation.email,
         family_name=auth.family_name,
@@ -210,6 +233,24 @@ async def accept_invitation(
     )
     db.add(membership)
     invitation.accepted_at = now
+    await create_family_notifications(
+        db,
+        family_id=invitation.family_id,
+        notification_type=NotificationType.invitation,
+        title=f'Invitation accepted by {invitation.email}',
+        message=f'{payload.display_name.strip() or invitation.email} joined the family workspace.',
+        link='/invitations',
+        roles={FamilyRole.parent, FamilyRole.co_parent},
+    )
+    await create_notification(
+        db,
+        user.id,
+        NotificationType.invitation,
+        title=f'Welcome to {family.name}',
+        message='Your invitation has been accepted and your access is ready.',
+        link='/dashboard',
+        family_id=family.id,
+    )
     await db.commit()
 
     auth = AuthSession(

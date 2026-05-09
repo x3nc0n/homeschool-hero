@@ -102,3 +102,6 @@ class GradeHistoryItem(BaseModel):
     letter_grade: str | None
     graded_by: GradedBy
     created_at: datetime
+    grading_period_id: int | None = None
+    grading_period_name: str | None = None
+    notes: str | None = None

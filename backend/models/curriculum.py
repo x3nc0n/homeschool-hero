@@ -75,6 +75,12 @@ class CurriculumUnit(TimestampMixin, Base):
         cascade='all, delete-orphan',
         order_by='(CurriculumLesson.sequence_order, CurriculumLesson.id)',
     )
+    pacing_targets = relationship(
+        'PacingTarget',
+        back_populates='curriculum_unit',
+        cascade='all, delete-orphan',
+        order_by='PacingTarget.target_start_date',
+    )
 
 
 class CurriculumLesson(TimestampMixin, Base):
@@ -91,6 +97,12 @@ class CurriculumLesson(TimestampMixin, Base):
 
     unit = relationship('CurriculumUnit', back_populates='lessons')
     resources = relationship('Resource', secondary='lesson_resources', back_populates='lessons')
+    lesson_plans = relationship(
+        'LessonPlan',
+        back_populates='curriculum_lesson',
+        cascade='all, delete-orphan',
+        order_by='LessonPlan.target_date',
+    )
 
 
 class Resource(TimestampMixin, Base):

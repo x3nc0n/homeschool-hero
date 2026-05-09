@@ -287,7 +287,15 @@ async def seeded_submission(
             'assignment_id': str(response_id(seeded_assignment)),
             'student_id': str(response_id(seeded_student)),
         },
-        files={'file': ('fractions.txt', b'fraction work', 'text/plain')},
+        files={
+            'file': (
+                'fractions.png',
+                b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
+                b'\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xcf\xc0\xf0'
+                b'\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82',
+                'image/png',
+            )
+        },
     )
     assert response.status_code in {200, 201, 202}, response.text
     return response.json()

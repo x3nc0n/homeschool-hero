@@ -53,7 +53,7 @@ def validate_password_policy(password: str) -> str:
 
 
 def sanitize_filename(filename: str) -> str:
-    candidate = Path(filename).name.strip()
+    candidate = Path(filename.replace('\\', '/')).name.strip()
     candidate = SAFE_FILENAME_CHARS_RE.sub('_', candidate).strip(' .')
     if not candidate:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Filename is required')

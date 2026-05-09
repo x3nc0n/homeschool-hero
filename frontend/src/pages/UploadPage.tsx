@@ -1,38 +1,109 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FileUpload } from '@/components/features/FileUpload'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useCapabilities } from '@/context/CapabilitiesContext'
 import { api } from '@/lib/api'
-import type { Assignment, Student, Submission } from '@/types/api'
+import type { Assignment, Student, Submission, SubmissionDetail, SubmissionVersion } from '@/types/api'
 import { LoadingState } from '@/components/common/LoadingState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { EmptyState } from '@/components/common/EmptyState'
 
+function formatBytes(bytes?: number) {
+  if (!bytes) return 'Unknown size'
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${bytes} B`
+}
+
+function formatVersionMeta(version: SubmissionVersion) {
+  const details = [formatBytes(version.file_size_bytes)]
+  if (version.page_count) details.push(`${version.page_count} page${version.page_count === 1 ? '' : 's'}`)
+  if (version.image_width && version.image_height) details.push(`${version.image_width}×${version.image_height}`)
+  return details.join(' • ')
+}
+
 export function UploadPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
-  const [latestSubmission, setLatestSubmission] = useState<Submission | null>(null)
+  const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [latestSubmission, setLatestSubmission] = useState<SubmissionDetail | null>(null)
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null)
+  const [selectedSubmission, setSelectedSubmission] = useState<SubmissionDetail | null>(null)
+  const [resubmitTarget, setResubmitTarget] = useState<SubmissionDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [error, setError] = useState('')
   const { capabilities } = useCapabilities()
 
-  const load = async () => {
+  const studentLabelById = useMemo(
+    () => Object.fromEntries(students.map((student) => [student.id, student.name])),
+    [students],
+  )
+  const assignmentLabelById = useMemo(
+    () => Object.fromEntries(assignments.map((assignment) => [assignment.id, assignment.title])),
+    [assignments],
+  )
+
+  const loadCurrentSubmissions = useCallback(async (preferredId?: number) => {
+    const submissionData = await api.listSubmissions()
+    setSubmissions(submissionData)
+    const nextSelectedId = preferredId ?? selectedSubmissionId ?? submissionData[0]?.id ?? null
+    setSelectedSubmissionId(nextSelectedId)
+  }, [selectedSubmissionId])
+
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const [studentData, assignmentData] = await Promise.all([api.listStudents(), api.listAssignments({ page: 1, page_size: 100 })])
+      const [studentData, assignmentData, submissionData] = await Promise.all([
+        api.listStudents(),
+        api.listAssignments({ page: 1, page_size: 100 }),
+        api.listSubmissions(),
+      ])
       setStudents(studentData)
       setAssignments(assignmentData.items)
+      setSubmissions(submissionData)
+      setSelectedSubmissionId((current) => current ?? submissionData[0]?.id ?? null)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load upload data')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  const loadSubmissionDetail = useCallback(async (submissionId: number) => {
+    setDetailLoading(true)
+    try {
+      const detail = await api.getSubmission(submissionId)
+      setSelectedSubmission(detail)
+    } catch (detailError) {
+      setError(detailError instanceof Error ? detailError.message : 'Unable to load submission detail')
+    } finally {
+      setDetailLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [load])
+
+  useEffect(() => {
+    if (!selectedSubmissionId) {
+      setSelectedSubmission(null)
+      return
+    }
+    void loadSubmissionDetail(selectedSubmissionId)
+  }, [loadSubmissionDetail, selectedSubmissionId])
+
+  const handleUploaded = useCallback(async (submission: SubmissionDetail) => {
+    setLatestSubmission(submission)
+    setSelectedSubmission(submission)
+    setSelectedSubmissionId(submission.id)
+    setResubmitTarget(null)
+    await loadCurrentSubmissions(submission.id)
+  }, [loadCurrentSubmissions])
 
   if (loading) return <LoadingState message="Loading upload screen…" />
   if (error) return <ErrorState message={error} onRetry={() => void load()} />
@@ -59,28 +130,119 @@ export function UploadPage() {
       <FileUpload
         students={students}
         assignments={assignments}
-        onUploaded={setLatestSubmission}
+        onUploaded={(submission) => void handleUploaded(submission)}
         aiAvailable={capabilities.ai_grading.enabled}
         ocrAvailable={capabilities.ocr.enabled}
+        resubmitTarget={resubmitTarget}
+        onResubmitCleared={() => setResubmitTarget(null)}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Latest upload</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {latestSubmission ? (
-            <div className="rounded-md border p-3 text-sm">
-              <p>
-                Submission #{latestSubmission.id} uploaded for assignment {latestSubmission.assignment_id}, student{' '}
-                {latestSubmission.student_id}.
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No uploads this session yet.</p>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Current submissions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {submissions.length ? (
+              submissions.map((submission) => (
+                <button
+                  key={submission.id}
+                  type="button"
+                  className={`w-full rounded-lg border p-3 text-left transition ${
+                    selectedSubmissionId === submission.id ? 'border-primary bg-primary/5' : 'hover:border-primary/40'
+                  }`}
+                  onClick={() => setSelectedSubmissionId(submission.id)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{assignmentLabelById[submission.assignment_id] || `Assignment #${submission.assignment_id}`}</p>
+                      <p className="text-sm text-muted-foreground">{studentLabelById[submission.student_id] || `Student #${submission.student_id}`}</p>
+                    </div>
+                    <Badge variant="secondary">v{submission.submission_version || 1}</Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{submission.file_name || submission.original_filename || 'Uploaded file'}</p>
+                </button>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No submissions uploaded yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Submission detail</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {detailLoading ? (
+              <LoadingState message="Loading submission detail…" />
+            ) : selectedSubmission ? (
+              <>
+                <div className="rounded-lg border p-4 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-medium">
+                        {assignmentLabelById[selectedSubmission.assignment_id] || `Assignment #${selectedSubmission.assignment_id}`}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {studentLabelById[selectedSubmission.student_id] || `Student #${selectedSubmission.student_id}`}
+                      </p>
+                    </div>
+                    <Badge>Current version v{selectedSubmission.submission_version || 1}</Badge>
+                  </div>
+                  <div className="mt-3 space-y-1 text-muted-foreground">
+                    <p>{selectedSubmission.file_name || selectedSubmission.original_filename}</p>
+                    <p>{formatVersionMeta(selectedSubmission)}</p>
+                    {selectedSubmission.file_url ? (
+                      <a className="text-primary underline-offset-4 hover:underline" href={selectedSubmission.file_url} target="_blank" rel="noreferrer">
+                        Open file
+                      </a>
+                    ) : null}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button type="button" onClick={() => setResubmitTarget(selectedSubmission)}>
+                      Resubmit new version
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold">Version history</h3>
+                    <span className="text-xs text-muted-foreground">{selectedSubmission.version_history.length} version(s)</span>
+                  </div>
+                  <div className="space-y-3">
+                    {selectedSubmission.version_history.map((version) => (
+                      <div key={version.id} className="rounded-lg border p-3 text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Version {version.submission_version || 1}</span>
+                            {version.is_current ? <Badge>Current</Badge> : <Badge variant="secondary">Archived</Badge>}
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {version.uploaded_at ? new Date(version.uploaded_at).toLocaleString() : 'Unknown upload time'}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-muted-foreground">{version.file_name || version.original_filename}</p>
+                        <p className="text-xs text-muted-foreground">{formatVersionMeta(version)}</p>
+                        {version.file_url ? (
+                          <a className="mt-2 inline-flex text-primary underline-offset-4 hover:underline" href={version.file_url} target="_blank" rel="noreferrer">
+                            View version
+                          </a>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : latestSubmission ? (
+              <p className="text-sm text-muted-foreground">Latest upload saved as submission #{latestSubmission.id}.</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Choose a submission to review its version history.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

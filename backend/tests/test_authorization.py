@@ -72,7 +72,15 @@ async def test_rbac_enforces_role_permissions(authorized_client, secondary_clien
     forbidden_upload = await secondary_client.post(
         '/api/submissions',
         data={'assignment_id': str(response_id(seeded_assignment)), 'student_id': str(student_id)},
-        files={'file': ('fractions.txt', b'test', 'text/plain')},
+        files={
+            'file': (
+                'fractions.png',
+                b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
+                b'\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xcf\xc0\xf0'
+                b'\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82',
+                'image/png',
+            )
+        },
     )
     assert forbidden_upload.status_code == 403, forbidden_upload.text
 

@@ -28,6 +28,10 @@ AUDIT = {
     'collection': f'{API_PREFIX}/audit',
 }
 
+SEARCH = {
+    'collection': f'{API_PREFIX}/search',
+}
+
 STUDENTS = {
     'collection': f'{API_PREFIX}/students',
     'detail': f'{API_PREFIX}/students/{{student_id}}',
@@ -71,6 +75,13 @@ GRADING = {
     'reject': f'{API_PREFIX}/grading/review-queue/{{job_id}}/reject',
 }
 
+NOTIFICATIONS = {
+    'collection': f'{API_PREFIX}/notifications',
+    'detail_read': f'{API_PREFIX}/notifications/{{notification_id}}/read',
+    'read_all': f'{API_PREFIX}/notifications/read-all',
+    'preferences': f'{API_PREFIX}/notifications/preferences',
+}
+
 CALENDAR = {
     'school_years': f'{API_PREFIX}/calendar/school-years',
     'school_year_detail': f'{API_PREFIX}/calendar/school-years/{{school_year_id}}',
@@ -84,6 +95,15 @@ CALENDAR = {
     'days': f'{API_PREFIX}/calendar/{{school_year_id}}/days',
 }
 
+ATTENDANCE = {
+    'collection': f'{API_PREFIX}/attendance',
+    'daily': f'{API_PREFIX}/attendance/daily',
+    'hours': f'{API_PREFIX}/attendance/hours',
+    'summary': f'{API_PREFIX}/attendance/summary',
+    'excuses': f'{API_PREFIX}/attendance/excuses',
+    'excuse_approve': f'{API_PREFIX}/attendance/excuses/{{excuse_id}}/approve',
+}
+
 SCHEDULE = {
     'collection': f'{API_PREFIX}/schedule',
     'detail': f'{API_PREFIX}/schedule/{{schedule_id}}',
@@ -93,6 +113,17 @@ SCHEDULE = {
     'override_detail': f'{API_PREFIX}/schedule/override/{{override_id}}',
     'agenda': f'{API_PREFIX}/schedule/{{student_id}}/agenda',
     'week': f'{API_PREFIX}/schedule/{{student_id}}/week',
+}
+
+LESSON_PLANS = {
+    'collection': f'{API_PREFIX}/lesson-plans',
+    'detail': f'{API_PREFIX}/lesson-plans/{{lesson_plan_id}}',
+    'generate': f'{API_PREFIX}/lesson-plans/generate',
+    'bulk_status': f'{API_PREFIX}/lesson-plans/bulk-status',
+    'generate_assignments': f'{API_PREFIX}/lesson-plans/generate-assignments',
+    'pacing': f'{API_PREFIX}/pacing/{{student_id}}',
+    'pacing_targets': f'{API_PREFIX}/pacing-targets',
+    'pacing_target_detail': f'{API_PREFIX}/pacing-targets/{{pacing_target_id}}',
 }
 
 CURRICULUM = {
@@ -274,6 +305,59 @@ def schedule_payload(
         'student_id': student_id,
         'school_year_id': school_year_id,
         'name': name,
+    }
+
+
+def attendance_daily_payload(
+    attendance_date: str,
+    records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        'date': attendance_date,
+        'records': records,
+    }
+
+
+def attendance_record_payload(
+    student_id: int | str,
+    *,
+    status: str = 'present',
+    instructional_hours: str | float | None = '5.50',
+    check_in_time: str | None = None,
+    check_out_time: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        'student_id': student_id,
+        'status': status,
+    }
+    if instructional_hours is not None:
+        payload['instructional_hours'] = instructional_hours
+    if check_in_time is not None:
+        payload['check_in_time'] = check_in_time
+    if check_out_time is not None:
+        payload['check_out_time'] = check_out_time
+    if notes is not None:
+        payload['notes'] = notes
+    return payload
+
+
+def attendance_hours_payload(
+    student_id: int | str,
+    *,
+    attendance_date: str = '2025-09-10',
+    instructional_hours: str | float = '4.25',
+    check_in_time: str | None = '09:00:00',
+    check_out_time: str | None = '13:15:00',
+    notes: str | None = 'Independent reading and math drills',
+) -> dict[str, Any]:
+    return {
+        'student_id': student_id,
+        'date': attendance_date,
+        'instructional_hours': instructional_hours,
+        'check_in_time': check_in_time,
+        'check_out_time': check_out_time,
+        'notes': notes,
     }
 
 

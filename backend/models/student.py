@@ -19,3 +19,6 @@ class Student(TimestampMixin, Base):
     viewer_memberships = relationship('FamilyMembership', back_populates='student')
     viewer_invitations = relationship('Invitation', back_populates='student')
     schedules = relationship('Schedule', back_populates='student', cascade='all, delete-orphan')
+    lesson_plans = relationship('LessonPlan', back_populates='student', cascade='all, delete-orphan')
+    pacing_targets = relationship('PacingTarget', back_populates='student', cascade='all, delete-orphan')
+    attendance_records = relationship('AttendanceRecord', back_populates='student', cascade='all, delete-orphan')

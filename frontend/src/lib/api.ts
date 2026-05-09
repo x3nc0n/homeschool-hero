@@ -1,5 +1,9 @@
 import type {
   AcceptInvitationPayload,
+  AttendanceExcuse,
+  AttendanceHoursSummary,
+  AttendanceRecord,
+  AttendanceSummary,
   DailyAgenda,
   AuditEventFilters,
   AuditEventListResponse,
@@ -24,10 +28,15 @@ import type {
   CapabilitiesResponse,
   CreateInvitationPayload,
   Grade,
+  GradeHistoryFilters,
+  GradeHistoryItem,
   HealthResponse,
   GradingPeriod,
   InstructionalDayCount,
   Invitation,
+  Notification,
+  NotificationListResponse,
+  NotificationPreference,
   MetricsResponse,
   Quiz,
   QuizAttempt,
@@ -40,9 +49,12 @@ import type {
   SchoolYearDetail,
   Student,
   Subject,
+  SubmissionDetail,
   Submission,
   Term,
   WeeklyAgenda,
+  SearchFilters,
+  SearchResponse,
 } from '@/types/api'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
@@ -170,6 +182,40 @@ export const api = {
     return request<Invitation[]>('/invitations')
   },
 
+  listNotifications(filters: { page?: number; page_size?: number; read?: boolean } = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null) {
+        return
+      }
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<NotificationListResponse>(`/notifications${query ? `?${query}` : ''}`)
+  },
+
+  markNotificationRead(id: number, read = true) {
+    return request<Notification>(`/notifications/${id}/read`, {
+      method: 'PATCH',
+      body: JSON.stringify({ read }),
+    })
+  },
+
+  markAllNotificationsRead() {
+    return request<{ updated: number }>('/notifications/read-all', { method: 'POST' })
+  },
+
+  getNotificationPreferences() {
+    return request<NotificationPreference[]>('/notifications/preferences')
+  },
+
+  updateNotificationPreferences(preferences: NotificationPreference[]) {
+    return request<NotificationPreference[]>('/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ preferences }),
+    })
+  },
+
   listAuditEvents(filters: AuditEventFilters = {}) {
     const params = new URLSearchParams()
     Object.entries(filters).forEach(([key, value]) => {
@@ -180,6 +226,18 @@ export const api = {
     })
     const query = params.toString()
     return request<AuditEventListResponse>(`/audit${query ? `?${query}` : ''}`)
+  },
+
+  search(filters: SearchFilters = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '' || value === 'all') {
+        return
+      }
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<SearchResponse>(`/search${query ? `?${query}` : ''}`)
   },
 
   createInvitation(payload: CreateInvitationPayload) {
@@ -220,6 +278,59 @@ export const api = {
 
   deleteSubject(id: number) {
     return request<void>(`/subjects/${id}`, { method: 'DELETE' })
+  },
+
+  listAttendance(filters: { student_id?: number; date?: string; date_from?: string; date_to?: string } = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<AttendanceRecord[]>(`/attendance${query ? `?${query}` : ''}`)
+  },
+
+  recordDailyAttendance(payload: {
+    date: string
+    records: Array<{
+      student_id: number
+      status: string
+      instructional_hours?: string | number
+      check_in_time?: string
+      check_out_time?: string
+      notes?: string | null
+    }>
+  }) {
+    return request<AttendanceRecord[]>('/attendance/daily', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  logInstructionalHours(payload: {
+    student_id: number
+    date: string
+    instructional_hours: string | number
+    check_in_time?: string | null
+    check_out_time?: string | null
+    notes?: string | null
+  }) {
+    return request<AttendanceRecord>('/attendance/hours', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  getAttendanceSummary(studentId: number, period: 'day' | 'week' | 'term' | 'year', schoolYearId?: number) {
+    const params = new URLSearchParams({ student_id: String(studentId), period })
+    if (schoolYearId) params.set('school_year_id', String(schoolYearId))
+    return request<AttendanceSummary>(`/attendance/summary?${params.toString()}`)
+  },
+
+  getAttendanceHours(studentId: number, schoolYearId: number) {
+    return request<AttendanceHoursSummary>(`/attendance/hours?student_id=${studentId}&school_year_id=${schoolYearId}`)
+  },
+
+  createAttendanceExcuse(formData: FormData) {
+    return request<AttendanceExcuse>('/attendance/excuses', { method: 'POST', body: formData })
+  },
+
+  approveAttendanceExcuse(excuseId: number) {
+    return request<AttendanceExcuse>(`/attendance/excuses/${excuseId}/approve`, { method: 'POST' })
   },
 
   listSchoolYears() {
@@ -480,6 +591,18 @@ export const api = {
     return request<Grade[]>('/grades')
   },
 
+  listGradeHistory(filters: GradeHistoryFilters = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') {
+        return
+      }
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<GradeHistoryItem[]>(`/grades/history${query ? `?${query}` : ''}`)
+  },
+
   createGrade(payload: Partial<Grade>) {
     return request<Grade>('/grades', { method: 'POST', body: JSON.stringify(payload) })
   },
@@ -537,13 +660,16 @@ export const api = {
   },
 
   uploadSubmission(
-    payload: { assignment_id: number; student_id: number; file: File },
+    payload: { assignment_id: number; student_id: number; file: File; resubmission_of_submission_id?: number },
     onProgress?: (progress: number) => void,
   ) {
-    return new Promise<Submission>((resolve, reject) => {
+    return new Promise<SubmissionDetail>((resolve, reject) => {
       const formData = new FormData()
       formData.append('assignment_id', String(payload.assignment_id))
       formData.append('student_id', String(payload.student_id))
+      if (payload.resubmission_of_submission_id) {
+        formData.append('resubmission_of_submission_id', String(payload.resubmission_of_submission_id))
+      }
       formData.append('file', payload.file)
 
       const xhr = new XMLHttpRequest()
@@ -562,7 +688,7 @@ export const api = {
 
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText) as Submission)
+          resolve(JSON.parse(xhr.responseText) as SubmissionDetail)
           return
         }
 
@@ -577,5 +703,13 @@ export const api = {
       xhr.onerror = () => reject(new ApiError(500, 'Network error during upload'))
       xhr.send(formData)
     })
+  },
+
+  listSubmissions() {
+    return request<Submission[]>('/submissions')
+  },
+
+  getSubmission(id: number) {
+    return request<SubmissionDetail>(`/submissions/${id}`)
   },
 }

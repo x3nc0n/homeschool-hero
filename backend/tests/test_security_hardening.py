@@ -74,7 +74,7 @@ async def test_upload_validation_rejects_oversized_and_invalid_mime(authorized_c
             'assignment_id': str(response_id(seeded_assignment)),
             'student_id': str(response_id(seeded_student)),
         },
-        files={'file': ('large.txt', b'a' * (settings.upload_max_bytes + 1), 'text/plain')},
+        files={'file': ('large.png', b'a' * (settings.upload_max_bytes + 1), 'image/png')},
     )
     assert oversized.status_code == 413, oversized.text
 

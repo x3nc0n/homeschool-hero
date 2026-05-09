@@ -298,8 +298,10 @@ def _apply_status_filter(stmt, status_value: str):
 
 @router.get('', response_model=AssignmentListResponse)
 async def list_assignments(
+    q: str | None = Query(default=None, min_length=1, max_length=200),
     category: AssignmentCategory | None = Query(default=None),
     grading_period_id: int | None = Query(default=None, gt=0),
+    subject_id: int | None = Query(default=None, gt=0),
     student_id: int | None = Query(default=None, gt=0),
     status_filter: str | None = Query(default=None, alias='status'),
     due_from: date | None = Query(default=None),
@@ -319,10 +321,22 @@ async def list_assignments(
             )
 
     stmt = _assignment_query(auth)
+    if q:
+        lowered = f'%{q.strip().lower()}%'
+        stmt = stmt.join(Subject, Subject.id == Assignment.subject_id).where(
+            or_(
+                func.lower(Assignment.title).like(lowered),
+                func.lower(func.coalesce(Assignment.description, '')).like(lowered),
+                func.lower(func.coalesce(Assignment.rubric_description, '')).like(lowered),
+                func.lower(Subject.name).like(lowered),
+            )
+        )
     if category is not None:
         stmt = stmt.where(Assignment.category == category)
     if grading_period_id is not None:
         stmt = stmt.where(Assignment.grading_period_id == grading_period_id)
+    if subject_id is not None:
+        stmt = stmt.where(Assignment.subject_id == subject_id)
     if scoped_student_id is not None:
         stmt = stmt.where(
             or_(

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
 import type {
   Assignment,
@@ -81,6 +82,7 @@ function normalizeTargetMap(assignment: Assignment): Record<string, TargetDraft>
 }
 
 export function AssignmentsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { canManageCurriculum } = useAuth()
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -95,8 +97,10 @@ export function AssignmentsPage() {
   const [form, setForm] = useState<AssignmentForm>(emptyForm())
   const [targets, setTargets] = useState<Record<string, TargetDraft>>({})
   const [filters, setFilters] = useState({
+    q: searchParams.get('q') || searchParams.get('search') || '',
     category: 'all',
     grading_period_id: 'all',
+    subject_id: searchParams.get('subject_id') || 'all',
     student_id: 'all',
     status: 'all',
     due_from: '',
@@ -115,8 +119,10 @@ export function AssignmentsPage() {
       )
       const [assignmentData, subjectData, studentData] = await Promise.all([
         api.listAssignments({
+          q: filters.q || undefined,
           category: filters.category as AssignmentCategory | 'all',
           grading_period_id: filters.grading_period_id === 'all' ? undefined : Number(filters.grading_period_id),
+          subject_id: filters.subject_id === 'all' ? undefined : Number(filters.subject_id),
           student_id: filters.student_id === 'all' ? undefined : Number(filters.student_id),
           status: filters.status as AssignmentStatus | AssignmentTargetStatus | 'all',
           due_from: filters.due_from || undefined,
@@ -143,6 +149,16 @@ export function AssignmentsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (!value || value === 'all') return
+      params.set(key === 'q' ? 'search' : key, value)
+    })
+    params.set('page', String(page))
+    setSearchParams(params, { replace: true })
+  }, [filters, page, setSearchParams])
 
   const resetForm = () => {
     setEditing(null)
@@ -451,7 +467,11 @@ export function AssignmentsPage() {
           <CardTitle>Assignment list</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
+            <div className="space-y-2 xl:col-span-2">
+              <Label>Search</Label>
+              <Input value={filters.q} onChange={(event) => { setFilters((prev) => ({ ...prev, q: event.target.value })); setPage(1) }} placeholder="Assignment title, note, or subject" />
+            </div>
             <div className="space-y-2">
               <Label>Category</Label>
               <Select value={filters.category} onValueChange={(value) => { setFilters((prev) => ({ ...prev, category: value })); setPage(1) }}>
@@ -479,6 +499,22 @@ export function AssignmentsPage() {
                   {gradingPeriods.map((gradingPeriod) => (
                     <SelectItem key={gradingPeriod.id} value={String(gradingPeriod.id)}>
                       {gradingPeriod.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Subject</Label>
+              <Select value={filters.subject_id} onValueChange={(value) => { setFilters((prev) => ({ ...prev, subject_id: value })); setPage(1) }}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All subjects</SelectItem>
+                  {subjects.map((subject) => (
+                    <SelectItem key={subject.id} value={String(subject.id)}>
+                      {subject.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -524,6 +560,10 @@ export function AssignmentsPage() {
             <div className="space-y-2">
               <Label>Due from</Label>
               <Input type="date" value={filters.due_from} onChange={(event) => { setFilters((prev) => ({ ...prev, due_from: event.target.value })); setPage(1) }} />
+            </div>
+            <div className="space-y-2">
+              <Label>Due to</Label>
+              <Input type="date" value={filters.due_to} onChange={(event) => { setFilters((prev) => ({ ...prev, due_to: event.target.value })); setPage(1) }} />
             </div>
             <div className="space-y-2">
               <Label>Sort</Label>

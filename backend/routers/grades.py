@@ -1,9 +1,22 @@
+from datetime import date, datetime, time, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import Float, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
-from backend.models import Assignment, AssignmentTarget, AssignmentTargetStatus, AuditAction, Grade, Student, Subject, Submission
+from backend.models import (
+    Assignment,
+    AssignmentTarget,
+    AssignmentTargetStatus,
+    AuditAction,
+    Grade,
+    GradingPeriod,
+    Student,
+    Subject,
+    Submission,
+    Term,
+)
 from backend.schemas.grades import (
     GradeAverageByStudent,
     GradeAverageBySubject,
@@ -15,8 +28,21 @@ from backend.schemas.grades import (
 from backend.security import AuthSession, get_family_record
 from backend.services.audit import log_event
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.notifications import create_grading_complete_notifications
 
 router = APIRouter(prefix='/grades', tags=['grades'])
+
+
+def _normalize_date_floor(value: date | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.combine(value, time.min, tzinfo=timezone.utc)
+
+
+def _normalize_date_ceil(value: date | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.combine(value, time.max, tzinfo=timezone.utc)
 
 
 def _grade_snapshot(grade: Grade) -> dict[str, object | None]:
@@ -76,6 +102,11 @@ async def create_grade(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
     if submission.student_id != payload.student_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Submission does not belong to the selected student')
+    if not submission.is_current:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail='Only the current submission version can be graded',
+        )
 
     existing = await db.execute(
         select(Grade).where(Grade.family_id == auth.family_id, Grade.submission_id == payload.submission_id)
@@ -106,6 +137,15 @@ async def create_grade(
         before=None,
         after=_grade_snapshot(grade),
         request=request,
+    )
+    assignment = await get_family_record(db, Assignment, submission.assignment_id, auth.family_id)
+    await create_grading_complete_notifications(
+        db,
+        family_id=auth.family_id,
+        assignment_title=assignment.title if assignment else 'Assignment',
+        student_name=student.name,
+        score=grade.score,
+        max_score=grade.max_score,
     )
     await db.commit()
     await db.refresh(grade)
@@ -193,8 +233,15 @@ async def averages_by_subject(
 
 @router.get('/history', response_model=list[GradeHistoryItem])
 async def grade_history(
+    q: str | None = Query(default=None, min_length=1, max_length=200),
     student_id: int | None = Query(default=None),
     subject_id: int | None = Query(default=None),
+    grading_period_id: int | None = Query(default=None, gt=0),
+    term_id: int | None = Query(default=None, gt=0),
+    score_min: float | None = Query(default=None, ge=0),
+    score_max: float | None = Query(default=None, ge=0),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grade history')),
 ) -> list[GradeHistoryItem]:
@@ -218,17 +265,46 @@ async def grade_history(
             Grade.letter_grade,
             Grade.graded_by,
             Grade.created_at,
+            Assignment.grading_period_id,
+            GradingPeriod.name,
+            Grade.notes,
         )
         .join(Student, Student.id == Grade.student_id)
         .join(Submission, Submission.id == Grade.submission_id)
         .join(Assignment, Assignment.id == Submission.assignment_id)
         .join(Subject, Subject.id == Assignment.subject_id)
+        .outerjoin(GradingPeriod, GradingPeriod.id == Assignment.grading_period_id)
         .where(Grade.family_id == auth.family_id)
     )
     if scoped_student_id:
         stmt = stmt.where(Grade.student_id == scoped_student_id)
     if subject_id:
         stmt = stmt.where(Subject.id == subject_id)
+    if grading_period_id:
+        stmt = stmt.where(Assignment.grading_period_id == grading_period_id)
+    if term_id:
+        stmt = stmt.join(Term, Term.id == GradingPeriod.term_id).where(Term.id == term_id)
+    if score_min is not None:
+        stmt = stmt.where((Grade.score / Grade.max_score) * 100.0 >= score_min)
+    if score_max is not None:
+        stmt = stmt.where((Grade.score / Grade.max_score) * 100.0 <= score_max)
+    if date_from is not None:
+        stmt = stmt.where(Grade.created_at >= _normalize_date_floor(date_from))
+    if date_to is not None:
+        stmt = stmt.where(Grade.created_at <= _normalize_date_ceil(date_to))
+    if q:
+        lowered = f'%{q.strip().lower()}%'
+        stmt = stmt.where(
+            func.lower(
+                func.coalesce(Assignment.title, '')
+                + ' '
+                + func.coalesce(Subject.name, '')
+                + ' '
+                + func.coalesce(Student.name, '')
+                + ' '
+                + func.coalesce(Grade.notes, '')
+            ).like(lowered)
+        )
     stmt = stmt.order_by(Grade.created_at.desc())
     rows = (await db.execute(stmt)).all()
     return [
@@ -246,6 +322,9 @@ async def grade_history(
             letter_grade=row[9],
             graded_by=row[10],
             created_at=row[11],
+            grading_period_id=row[12],
+            grading_period_name=row[13],
+            notes=row[14],
         )
         for row in rows
     ]

@@ -11,6 +11,7 @@ from backend.database import get_db
 from backend.models import Grade, GradedBy, GradingJob, GradingJobStatus, Submission
 from backend.security import AuthSession
 from backend.services.authorization import Capability, require_capabilities
+from backend.services.notifications import create_grading_complete_notifications
 
 router = APIRouter(prefix='/grading', tags=['grading'])
 
@@ -72,6 +73,8 @@ async def _upsert_grade(job: GradingJob, family_id: int, score: float, feedback:
     submission = job.submission
     if submission is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Submission not found')
+    if not submission.is_current:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Only the current submission version can be graded')
 
     max_score = existing.max_score if existing else 100.0
     notes = feedback or job.ai_feedback
@@ -127,7 +130,12 @@ async def review_queue(
                 selectinload(GradingJob.submission).selectinload(Submission.assignment),
                 selectinload(GradingJob.submission).selectinload(Submission.student),
             )
-            .where(GradingJob.family_id == auth.family_id, GradingJob.status == GradingJobStatus.needs_review)
+            .join(Submission, Submission.id == GradingJob.submission_id)
+            .where(
+                GradingJob.family_id == auth.family_id,
+                GradingJob.status == GradingJobStatus.needs_review,
+                Submission.is_current.is_(True),
+            )
             .order_by(GradingJob.created_at)
         )
     ).scalars()
@@ -163,6 +171,14 @@ async def submit_review(
     job.status = GradingJobStatus.complete
     job.completed_at = datetime.now(timezone.utc)
     job.error_message = None
+    await create_grading_complete_notifications(
+        db,
+        family_id=auth.family_id,
+        assignment_title=job.submission.assignment.title if job.submission and job.submission.assignment else 'Assignment',
+        student_name=job.submission.student.name if job.submission and job.submission.student else 'Student',
+        score=score,
+        max_score=job.submission.assignment.max_score if job.submission and job.submission.assignment else 100.0,
+    )
     await db.commit()
     await db.refresh(job)
     return {'status': 'complete', 'job_id': job.id}
@@ -187,6 +203,14 @@ async def approve_review(
     job.status = GradingJobStatus.complete
     job.completed_at = datetime.now(timezone.utc)
     job.error_message = None
+    await create_grading_complete_notifications(
+        db,
+        family_id=auth.family_id,
+        assignment_title=job.submission.assignment.title if job.submission and job.submission.assignment else 'Assignment',
+        student_name=job.submission.student.name if job.submission and job.submission.student else 'Student',
+        score=payload.score,
+        max_score=job.submission.assignment.max_score if job.submission and job.submission.assignment else 100.0,
+    )
     await db.commit()
     return {'status': 'complete', 'job_id': job.id}
 

@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
-import { Camera, FileText, Upload } from 'lucide-react'
-import type { Assignment, Student, Submission } from '@/types/api'
+import { useEffect, useMemo, useState } from 'react'
+import { Camera, FileText, RotateCcw, Upload } from 'lucide-react'
+import type { Assignment, Student, Submission, SubmissionDetail } from '@/types/api'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,18 +15,46 @@ import {
 } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
 
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+const ALLOWED_FILE_LABEL = 'PDF, JPEG, PNG, HEIC, TIFF, WEBP'
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/heic',
+  'image/heif',
+  'image/tiff',
+  'image/webp',
+])
+const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.heic', '.heif', '.tif', '.tiff', '.webp']
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${bytes} B`
+}
+
+function isAllowedFile(file: File) {
+  const name = file.name.toLowerCase()
+  return ALLOWED_MIME_TYPES.has(file.type) || ALLOWED_EXTENSIONS.some((extension) => name.endsWith(extension))
+}
+
 export function FileUpload({
   students,
   assignments,
   onUploaded,
   aiAvailable,
   ocrAvailable,
+  resubmitTarget,
+  onResubmitCleared,
 }: {
   students: Student[]
   assignments: Assignment[]
-  onUploaded: (submission: Submission) => void
+  onUploaded: (submission: SubmissionDetail) => void
   aiAvailable: boolean
   ocrAvailable: boolean
+  resubmitTarget?: Submission | SubmissionDetail | null
+  onResubmitCleared?: () => void
 }) {
   const [selectedStudent, setSelectedStudent] = useState<string>('')
   const [selectedAssignment, setSelectedAssignment] = useState<string>('')
@@ -37,7 +65,23 @@ export function FileUpload({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  const isImage = useMemo(() => file?.type.startsWith('image/'), [file])
+  useEffect(() => {
+    if (!resubmitTarget) return
+    setSelectedStudent(String(resubmitTarget.student_id))
+    setSelectedAssignment(String(resubmitTarget.assignment_id))
+  }, [resubmitTarget])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
+
+  const isImage = useMemo(() => {
+    if (!file) return false
+    return ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
+  }, [file])
+  const isPdf = useMemo(() => file?.type === 'application/pdf', [file])
   const visibleAssignments = useMemo(
     () =>
       assignments.filter((assignment) => {
@@ -50,10 +94,18 @@ export function FileUpload({
 
   const onFileChange = (picked?: File) => {
     if (!picked) return
+    if (!isAllowedFile(picked)) {
+      setError(`Allowed file types: ${ALLOWED_FILE_LABEL}.`)
+      return
+    }
+    if (picked.size > MAX_UPLOAD_BYTES) {
+      setError('File exceeds the 25 MB size limit.')
+      return
+    }
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
     setFile(picked)
     setError('')
-    const objectUrl = URL.createObjectURL(picked)
-    setPreviewUrl(objectUrl)
+    setPreviewUrl(URL.createObjectURL(picked))
   }
 
   const handleSubmit = async () => {
@@ -72,15 +124,20 @@ export function FileUpload({
           file,
           student_id: Number(selectedStudent),
           assignment_id: Number(selectedAssignment),
+          resubmission_of_submission_id: resubmitTarget?.id,
         },
         setProgress,
       )
       setProgress(100)
       onUploaded(result)
       setFile(null)
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
       setPreviewUrl('')
-      setSelectedStudent('')
-      setSelectedAssignment('')
+      if (!resubmitTarget) {
+        setSelectedStudent('')
+        setSelectedAssignment('')
+      }
+      onResubmitCleared?.()
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Upload failed.')
     } finally {
@@ -91,7 +148,7 @@ export function FileUpload({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Submit student work</CardTitle>
+        <CardTitle>{resubmitTarget ? 'Resubmit student work' : 'Submit student work'}</CardTitle>
         <CardDescription>
           {ocrAvailable && aiAvailable
             ? 'Drag and drop a scan/photo or use camera capture on mobile.'
@@ -99,10 +156,29 @@ export function FileUpload({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+          <p className="font-medium">Allowed types: {ALLOWED_FILE_LABEL}</p>
+          <p className="text-muted-foreground">Maximum file size: 25 MB per file</p>
+        </div>
+
+        {resubmitTarget ? (
+          <div className="flex flex-col gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Resubmitting submission #{resubmitTarget.id}</p>
+              <p className="text-muted-foreground">
+                Next upload becomes version {(resubmitTarget.submission_version || 1) + 1} and preserves prior history.
+              </p>
+            </div>
+            <Button type="button" variant="outline" onClick={onResubmitCleared}>
+              Cancel resubmission
+            </Button>
+          </div>
+        ) : null}
+
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Student</Label>
-            <Select value={selectedStudent} onValueChange={setSelectedStudent}>
+            <Select value={selectedStudent} onValueChange={setSelectedStudent} disabled={Boolean(resubmitTarget)}>
               <SelectTrigger>
                 <SelectValue placeholder="Choose student" />
               </SelectTrigger>
@@ -117,7 +193,7 @@ export function FileUpload({
           </div>
           <div className="space-y-2">
             <Label>Assignment</Label>
-            <Select value={selectedAssignment} onValueChange={setSelectedAssignment}>
+            <Select value={selectedAssignment} onValueChange={setSelectedAssignment} disabled={Boolean(resubmitTarget)}>
               <SelectTrigger>
                 <SelectValue placeholder="Choose assignment" />
               </SelectTrigger>
@@ -149,14 +225,14 @@ export function FileUpload({
         >
           <Upload className="mx-auto mb-2 h-7 w-7 text-muted-foreground" />
           <p className="text-sm font-medium">Drop file here or browse</p>
-          <p className="mt-1 text-xs text-muted-foreground">Images and PDF files supported</p>
+          <p className="mt-1 text-xs text-muted-foreground">{ALLOWED_FILE_LABEL} supported</p>
           <div className="mt-3 flex flex-col justify-center gap-2 sm:flex-row">
             <Label htmlFor="file-upload" className="cursor-pointer">
               <Input
                 id="file-upload"
                 type="file"
                 className="hidden"
-                accept="image/*,application/pdf"
+                accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.tif,.tiff,.webp,application/pdf,image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
                 onChange={(event) => onFileChange(event.target.files?.[0])}
               />
               <Button type="button" variant="secondary">
@@ -169,7 +245,7 @@ export function FileUpload({
                 id="camera-upload"
                 type="file"
                 className="hidden"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
                 capture="environment"
                 onChange={(event) => onFileChange(event.target.files?.[0])}
               />
@@ -178,19 +254,27 @@ export function FileUpload({
                 Use camera
               </Button>
             </Label>
+            {resubmitTarget ? (
+              <Button type="button" variant="ghost" onClick={onResubmitCleared}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Clear
+              </Button>
+            ) : null}
           </div>
         </div>
 
         {file ? (
           <div className="rounded-lg border bg-muted/20 p-3 text-sm">
             <p className="font-medium">Selected: {file.name}</p>
-            <p className="text-muted-foreground">{Math.round(file.size / 1024)} KB</p>
+            <p className="text-muted-foreground">{formatBytes(file.size)}</p>
             {previewUrl ? (
               <div className="mt-3">
                 {isImage ? (
                   <img alt="Submission preview" src={previewUrl} className="max-h-56 rounded-md border object-contain" />
-                ) : (
+                ) : isPdf ? (
                   <iframe title="PDF preview" src={previewUrl} className="h-64 w-full rounded-md border" />
+                ) : (
+                  <p className="text-xs text-muted-foreground">Preview is unavailable for this file type, but the upload is supported.</p>
                 )}
               </div>
             ) : null}
@@ -207,7 +291,11 @@ export function FileUpload({
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         <Button type="button" onClick={() => void handleSubmit()} disabled={submitting || !file}>
-          {aiAvailable && ocrAvailable ? 'Upload submission' : 'Upload for manual review'}
+          {resubmitTarget
+            ? 'Upload new version'
+            : aiAvailable && ocrAvailable
+              ? 'Upload submission'
+              : 'Upload for manual review'}
         </Button>
       </CardContent>
     </Card>

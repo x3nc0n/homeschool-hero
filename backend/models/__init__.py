@@ -6,7 +6,9 @@ from backend.models.assignment import (
     AssignmentTarget,
     AssignmentTargetStatus,
 )
+from backend.models.attendance import AttendanceExcuse, AttendanceRecord, AttendanceStatus
 from backend.models.audit_event import AuditAction, AuditEvent
+from backend.models.lesson_plan import LessonPlan, LessonPlanStatus, PacingTarget
 from backend.models.calendar import CalendarEvent, CalendarEventType, GradingPeriod, SchoolYear, Term, TermType
 from backend.models.curriculum import (
     CurriculumLesson,
@@ -20,6 +22,7 @@ from backend.models.base import Base
 from backend.models.family import Family, FamilyMembership, FamilyRole, FamilySettings, Invitation
 from backend.models.grade import Grade, GradedBy
 from backend.models.grading_job import GradingJob, GradingJobStatus
+from backend.models.notification import Notification, NotificationPreference, NotificationType
 from backend.models.quiz import Quiz, QuizAttempt
 from backend.models.schedule import Schedule, ScheduleBlock, ScheduleOverride, ScheduleOverrideType
 from backend.models.student import Student
@@ -34,6 +37,9 @@ __all__ = [
     'AssignmentStatus',
     'AssignmentTarget',
     'AssignmentTargetStatus',
+    'AttendanceExcuse',
+    'AttendanceRecord',
+    'AttendanceStatus',
     'AuditAction',
     'AuditEvent',
     'Base',
@@ -53,6 +59,12 @@ __all__ = [
     'GradingJobStatus',
     'Invitation',
     'LessonResource',
+    'LessonPlan',
+    'LessonPlanStatus',
+    'Notification',
+    'NotificationPreference',
+    'NotificationType',
+    'PacingTarget',
     'Quiz',
     'QuizAttempt',
     'Resource',

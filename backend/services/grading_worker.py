@@ -11,13 +11,15 @@ from sqlalchemy import select
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal
-from backend.models import Assignment, Grade, GradedBy, GradingJob, GradingJobStatus, Submission
+from backend.models import Assignment, Grade, GradedBy, GradingJob, GradingJobStatus, Student, Submission
 from backend.services.ai_grader import grade_submission_text
 from backend.services.capabilities import get_capability_registry
 from backend.services.logging_config import log_action
+from backend.services.notifications import create_grading_complete_notifications, run_notification_maintenance
 from backend.services.ocr import extract_text
 
 logger = logging.getLogger(__name__)
+NOTIFICATION_MAINTENANCE_INTERVAL = max(settings.grading_poll_interval, 900.0)
 
 
 def _to_letter_grade(score: float) -> str:
@@ -248,7 +250,14 @@ async def process_queued_job_once() -> bool:
                 job.completed_at = datetime.now(timezone.utc)
                 await db.commit()
                 return True
+            if not submission.is_current:
+                job.status = GradingJobStatus.failed
+                job.error_message = 'Submission superseded by a newer version'
+                job.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+                return True
             assignment = await db.get(Assignment, submission.assignment_id)
+            student = await db.get(Student, submission.student_id)
             job_result = process_grading_job(
                 {
                     'id': job.id,
@@ -301,8 +310,25 @@ async def process_queued_job_once() -> bool:
                     grade.graded_by = GradedBy.ai
                     grade.ai_confidence = confidence
                 job.status = GradingJobStatus.complete
+                await create_grading_complete_notifications(
+                    db,
+                    family_id=submission.family_id,
+                    assignment_title=assignment.title if assignment else 'Assignment',
+                    student_name=student.name if student else 'Student',
+                    score=score,
+                    max_score=max_score,
+                )
             elif job_result.get('status') == 'needs_review':
                 job.status = GradingJobStatus.needs_review
+                await create_grading_complete_notifications(
+                    db,
+                    family_id=submission.family_id,
+                    assignment_title=assignment.title if assignment else 'Assignment',
+                    student_name=student.name if student else 'Student',
+                    score=None,
+                    max_score=None,
+                    needs_review=True,
+                )
             else:
                 job.status = GradingJobStatus.failed
                 job.error_message = 'Unexpected grading status'
@@ -316,8 +342,15 @@ async def process_queued_job_once() -> bool:
 
 
 async def _worker_loop(stop_event: threading.Event) -> None:
+    last_maintenance = 0.0
     while not stop_event.is_set():
         processed = await process_queued_job_once()
+        now = time.monotonic()
+        if now - last_maintenance >= NOTIFICATION_MAINTENANCE_INTERVAL:
+            async with AsyncSessionLocal() as db:
+                await run_notification_maintenance(db)
+                await db.commit()
+            last_maintenance = now
         if processed:
             await asyncio.sleep(0)
         else:

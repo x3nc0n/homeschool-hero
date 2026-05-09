@@ -46,6 +46,7 @@ class SchoolYear(TimestampMixin, Base):
         order_by='CalendarEvent.date',
     )
     schedules = relationship('Schedule', back_populates='school_year', cascade='all, delete-orphan')
+    lesson_plans = relationship('LessonPlan', back_populates='school_year', cascade='all, delete-orphan')
 
 
 class Term(TimestampMixin, Base):

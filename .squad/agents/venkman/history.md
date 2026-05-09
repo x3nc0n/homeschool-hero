@@ -24,3 +24,12 @@
 - Single-port deployment: backend API on /api + frontend on /
 - Frontend no longer requires separate development/build infrastructure
 - CORS configured for both dev (localhost) and prod deployment
+### UX-02 Notifications (2026-05-09T00:06:56-05:00)
+- Added backend notification models, Alembic migration, notification service, notification APIs, and background checks for due dates and backup alerts.
+- Hooked notifications into grading completion, invitation events, and security lockouts with optional SMTP email delivery plus per-user preferences.
+- Added frontend bell dropdown, full notifications page, notification preferences page, and validated with `cd backend && python -m pytest -v` plus `cd frontend && npm run build`.
+
+### UX-03 Search and advanced filtering (2026-05-09T03:55:00-05:00)
+- Added a unified backend search service and `/api/search` endpoint spanning assignments, grades, students, subjects, attendance notes, audit logs, curriculum, resources, and notifications with family/RBAC scoping, filters, snippets, and pagination.
+- Added global header search with Ctrl/Cmd+K, a dedicated search results page with facets/recent searches, and expanded inline filtering on assignments and grades to use backend-powered query parameters.
+- Validated with `cd backend && python -m pytest -v` (`115 passed, 1 skipped`) and `cd frontend && npm run build`.

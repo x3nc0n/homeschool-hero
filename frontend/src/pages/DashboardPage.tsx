@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '@/lib/api'
-import type { Assignment, DashboardSummary, Grade, HealthResponse, ReviewQueueItem } from '@/types/api'
+import type {
+  Assignment,
+  AttendanceHoursSummary,
+  AttendanceSummary,
+  DashboardSummary,
+  Grade,
+  HealthResponse,
+  ReviewQueueItem,
+  Student,
+} from '@/types/api'
 import { useAuth } from '@/context/AuthContext'
 import { useCapabilities } from '@/context/CapabilitiesContext'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -20,6 +29,9 @@ export function DashboardPage() {
   const [grades, setGrades] = useState<Grade[]>([])
   const [queue, setQueue] = useState<ReviewQueueItem[]>([])
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
+  const [attendanceSummary, setAttendanceSummary] = useState<AttendanceSummary | null>(null)
+  const [attendanceHours, setAttendanceHours] = useState<AttendanceHoursSummary | null>(null)
+  const [attendanceStudent, setAttendanceStudent] = useState<Student | null>(null)
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -28,18 +40,34 @@ export function DashboardPage() {
     setLoading(true)
     setError('')
     try {
-      const [assignmentData, gradeData, queueData, summaryData, healthData] = await Promise.all([
+      const [assignmentData, gradeData, queueData, summaryData, healthData, studentData, schoolYearData] = await Promise.all([
         api.listAssignments({ page: 1, page_size: 25 }),
         api.listGrades(),
         canReviewQueue ? api.listReviewQueue() : Promise.resolve([]),
         api.getDashboardSummary(),
         api.getHealth(),
+        api.listStudents(),
+        api.listSchoolYears(),
       ])
       setAssignments(assignmentData.items)
       setGrades(gradeData)
       setQueue(queueData)
       setDashboardSummary(summaryData)
       setHealth(healthData)
+      const snapshotStudent = studentData[0] || null
+      const snapshotYear = schoolYearData.find((schoolYear) => schoolYear.is_active) || schoolYearData[0] || null
+      setAttendanceStudent(snapshotStudent)
+      if (snapshotStudent && snapshotYear) {
+        const [attendanceSummaryData, attendanceHoursData] = await Promise.all([
+          api.getAttendanceSummary(snapshotStudent.id, 'year', snapshotYear.id),
+          api.getAttendanceHours(snapshotStudent.id, snapshotYear.id),
+        ])
+        setAttendanceSummary(attendanceSummaryData)
+        setAttendanceHours(attendanceHoursData)
+      } else {
+        setAttendanceSummary(null)
+        setAttendanceHours(null)
+      }
     } catch (dashboardError) {
       setError(dashboardError instanceof Error ? dashboardError.message : 'Unable to load dashboard')
     } finally {
@@ -85,6 +113,33 @@ export function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {attendanceStudent ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Attendance snapshot</CardTitle>
+            <CardDescription>
+              {attendanceStudent.name} · {attendanceSummary?.total_records ?? 0} recorded days
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border p-3">
+              <p className="text-xs uppercase text-muted-foreground">Attendance rate</p>
+              <p className="text-2xl font-semibold">{attendanceSummary ? `${attendanceSummary.attendance_rate.toFixed(1)}%` : '—'}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-xs uppercase text-muted-foreground">Instructional hours</p>
+              <p className="text-2xl font-semibold">{attendanceHours?.total_hours || '0.00'}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-xs uppercase text-muted-foreground">Excused / absent</p>
+              <p className="text-2xl font-semibold">
+                {(attendanceSummary?.excused || 0)} / {(attendanceSummary?.absent || 0)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card>

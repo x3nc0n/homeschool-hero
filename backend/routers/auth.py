@@ -34,6 +34,7 @@ from backend.services.auth_oidc import OIDCConfigurationError, begin_oidc_login,
 from backend.services.auth_provisioning import ExternalIdentity, provision_external_identity
 from backend.services.auth_saml import SAMLConfigurationError, begin_saml_login, complete_saml_login, get_metadata_xml
 from backend.services.audit import log_event
+from backend.services.notifications import create_security_alert_for_user
 
 router = APIRouter(prefix='/auth', tags=['auth'])
 
@@ -75,6 +76,12 @@ async def _register_failed_login(db: AsyncSession, user: User) -> None:
     if user.failed_login_attempts >= settings.auth_lockout_threshold:
         user.locked_until = get_lockout_deadline()
         user.failed_login_attempts = 0
+        await create_security_alert_for_user(
+            db,
+            user_id=user.id,
+            title='Account locked after repeated sign-in failures',
+            message='We temporarily locked this account after repeated unsuccessful sign-in attempts. Confirm the password and review recent access activity.',
+        )
     await db.commit()
 
 

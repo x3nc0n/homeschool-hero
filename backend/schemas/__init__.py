@@ -6,6 +6,16 @@ from backend.schemas.assignments import (
     AssignmentTargetRead,
     AssignmentUpdate,
 )
+from backend.schemas.attendance import (
+    AttendanceDailyUpsert,
+    AttendanceExcuseCreate,
+    AttendanceExcuseRead,
+    AttendanceHoursLog,
+    AttendanceHoursResponse,
+    AttendanceRecordRead,
+    AttendanceSummaryBucket,
+    AttendanceSummaryResponse,
+)
 from backend.schemas.auth import LoginRequest, LoginResponse, SessionResponse
 from backend.schemas.calendar import (
     CalendarEventCreate,
@@ -31,6 +41,15 @@ from backend.schemas.grades import (
     GradeRead,
     GradeUpdate,
 )
+from backend.schemas.notifications import (
+    NotificationListResponse,
+    NotificationPreferenceRead,
+    NotificationPreferenceUpdate,
+    NotificationPreferenceUpdateRequest,
+    NotificationRead,
+    NotificationReadAllResponse,
+    NotificationReadUpdate,
+)
 from backend.schemas.quizzes import QuizAttemptCreate, QuizAttemptRead, QuizCreate, QuizRead, QuizUpdate
 from backend.schemas.students import StudentCreate, StudentRead, StudentUpdate
 from backend.schemas.subjects import SubjectCreate, SubjectRead, SubjectUpdate
@@ -43,6 +62,14 @@ __all__ = [
     "AssignmentStatusUpdate",
     "AssignmentTargetRead",
     "AssignmentUpdate",
+    "AttendanceDailyUpsert",
+    "AttendanceExcuseCreate",
+    "AttendanceExcuseRead",
+    "AttendanceHoursLog",
+    "AttendanceHoursResponse",
+    "AttendanceRecordRead",
+    "AttendanceSummaryBucket",
+    "AttendanceSummaryResponse",
     "CalendarEventCreate",
     "CalendarEventRead",
     "CalendarEventUpdate",
@@ -58,6 +85,13 @@ __all__ = [
     "InstructionalDayCount",
     "LoginRequest",
     "LoginResponse",
+    "NotificationListResponse",
+    "NotificationPreferenceRead",
+    "NotificationPreferenceUpdate",
+    "NotificationPreferenceUpdateRequest",
+    "NotificationRead",
+    "NotificationReadAllResponse",
+    "NotificationReadUpdate",
     "QuizAttemptCreate",
     "QuizAttemptRead",
     "QuizCreate",

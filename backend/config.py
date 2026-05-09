@@ -50,12 +50,12 @@ class Settings(BaseSettings):
     confidence_threshold: float = Field(0.8, alias='CONFIDENCE_THRESHOLD')
     grading_poll_interval: float = Field(5.0, alias='GRADING_POLL_INTERVAL')
     upload_dir: str = Field('/data/uploads', alias='UPLOAD_DIR')
-    upload_max_bytes: int = Field(10 * 1024 * 1024, alias='UPLOAD_MAX_BYTES')
+    upload_max_bytes: int = Field(25 * 1024 * 1024, alias='UPLOAD_MAX_BYTES')
     enable_metrics_endpoint: bool = Field(False, alias='ENABLE_METRICS_ENDPOINT')
     log_level: str = Field('INFO', alias='LOG_LEVEL')
     log_json: bool | None = Field(default=None, alias='LOG_JSON')
     upload_allowed_mime_types_raw: str = Field(
-        'application/pdf,image/jpeg,image/png,image/webp,text/plain',
+        'application/pdf,image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp',
         alias='UPLOAD_ALLOWED_MIME_TYPES',
     )
 

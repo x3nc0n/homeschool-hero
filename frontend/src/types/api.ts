@@ -7,6 +7,14 @@ export type FamilyRole = 'parent' | 'co-parent' | 'tutor' | 'student_viewer'
 export type CapabilityName = 'ai_grading' | 'email' | 'backup' | 'ocr'
 export type AuthProvider = 'local' | 'oidc' | 'saml'
 export type ScheduleOverrideType = 'cancel' | 'reschedule' | 'add'
+export type AttendanceStatus = 'present' | 'absent' | 'tardy' | 'excused'
+export type NotificationType =
+  | 'due_date'
+  | 'grading_complete'
+  | 'backup_status'
+  | 'security_alert'
+  | 'invitation'
+  | 'compliance_reminder'
 export type AuditAction =
   | 'login'
   | 'logout'
@@ -27,6 +35,18 @@ export type ResourceType = 'file' | 'link' | 'note'
 export interface ApiErrorPayload {
   detail?: string
   message?: string
+}
+
+export interface GradeHistoryFilters {
+  q?: string
+  student_id?: number
+  subject_id?: number
+  grading_period_id?: number
+  term_id?: number
+  score_min?: number
+  score_max?: number
+  date_from?: string
+  date_to?: string
 }
 
 export interface CapabilityStatus {
@@ -203,8 +223,10 @@ export interface AssignmentListResponse {
 }
 
 export interface AssignmentFilters {
+  q?: string
   category?: AssignmentCategory | 'all'
   grading_period_id?: number
+  subject_id?: number
   student_id?: number
   status?: AssignmentStatus | AssignmentTargetStatus | 'all'
   due_from?: string
@@ -231,15 +253,30 @@ export interface AssignmentUpsertPayload {
   targets?: AssignmentTargetInput[]
 }
 
-export interface Submission {
+export interface SubmissionVersion {
   id: number
   assignment_id: number
   student_id: number
   file_path?: string
   file_url?: string
+  original_filename?: string
+  file_name?: string
   file_type?: string
+  file_size_bytes?: number
+  image_width?: number | null
+  image_height?: number | null
+  page_count?: number | null
+  submission_version?: number
+  parent_submission_id?: number | null
+  is_current?: boolean
   ocr_text?: string
   uploaded_at?: string
+}
+
+export type Submission = SubmissionVersion
+
+export interface SubmissionDetail extends SubmissionVersion {
+  version_history: SubmissionVersion[]
 }
 
 export interface Grade {
@@ -367,6 +404,74 @@ export interface AuditEventFilters {
   entity_id?: string
 }
 
+export type SearchEntityType =
+  | 'assignment'
+  | 'grade'
+  | 'student'
+  | 'subject'
+  | 'attendance_note'
+  | 'audit_log'
+  | 'curriculum'
+  | 'resource'
+  | 'note'
+  | 'notification'
+
+export interface SearchResult {
+  entity_type: SearchEntityType
+  entity_id: string
+  title: string
+  snippet: string
+  link: string
+  created_at?: string | null
+  student_id?: number | null
+  subject_id?: number | null
+  status?: string | null
+}
+
+export interface SearchResponse {
+  items: SearchResult[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+  facets: Record<string, number>
+}
+
+export interface SearchFilters {
+  q?: string
+  type?: SearchEntityType | 'all'
+  student_id?: number
+  subject_id?: number
+  term_id?: number
+  grading_period_id?: number
+  status?: string
+  date_from?: string
+  date_to?: string
+  score_min?: number
+  score_max?: number
+  page?: number
+  page_size?: number
+}
+
+export interface GradeHistoryItem {
+  grade_id: number
+  student_id: number
+  student_name: string
+  subject_id: number
+  subject_name: string
+  assignment_id: number
+  assignment_title: string
+  score: number
+  max_score: number
+  percent: number
+  letter_grade?: string | null
+  graded_by: 'human' | 'ai' | 'ai+human'
+  created_at: string
+  grading_period_id?: number | null
+  grading_period_name?: string | null
+  notes?: string | null
+}
+
 export interface DashboardActivityItem {
   id: string
   type: 'audit' | 'grading_job'
@@ -389,6 +494,97 @@ export interface DashboardSummary {
     metrics_enabled: boolean
     generated_at: string
   }
+}
+
+export interface Notification {
+  id: number
+  family_id: number
+  user_id: number
+  type: NotificationType
+  title: string
+  message: string
+  read: boolean
+  created_at: string
+  link?: string | null
+}
+
+export interface NotificationListResponse {
+  items: Notification[]
+  total: number
+  unread_count: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface NotificationPreference {
+  notification_type: NotificationType
+  in_app_enabled: boolean
+  email_enabled: boolean
+}
+
+export interface AttendanceExcuse {
+  id: number
+  family_id: number
+  attendance_record_id: number
+  reason: string
+  document_path?: string | null
+  document_url?: string | null
+  approved_by_user_id?: number | null
+  approved_at?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AttendanceRecord {
+  id: number
+  family_id: number
+  student_id: number
+  date: string
+  status: AttendanceStatus
+  check_in_time?: string | null
+  check_out_time?: string | null
+  instructional_hours: string
+  notes?: string | null
+  student?: Student | null
+  excuse?: AttendanceExcuse | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AttendanceSummaryBucket {
+  label: string
+  start_date: string
+  end_date: string
+  total_records: number
+  present: number
+  absent: number
+  tardy: number
+  excused: number
+  attendance_rate: number
+  total_hours: string
+}
+
+export interface AttendanceSummary {
+  student_id: number
+  school_year_id?: number | null
+  period: 'day' | 'week' | 'term' | 'year'
+  total_records: number
+  present: number
+  absent: number
+  tardy: number
+  excused: number
+  attendance_rate: number
+  total_hours: string
+  buckets: AttendanceSummaryBucket[]
+}
+
+export interface AttendanceHoursSummary {
+  student_id: number
+  school_year_id: number
+  total_hours: string
+  recorded_days: number
+  average_hours_per_day: number
 }
 
 export interface GradingPeriod {
