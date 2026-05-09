@@ -22,6 +22,11 @@ import type {
   CurriculumPackage,
   CurriculumPackageDetail,
   CurriculumUnit,
+  LessonPlan,
+  LessonPlanBulkStatusPayload,
+  LessonPlanFilters,
+  LessonPlanGenerationPayload,
+  LessonPlanUpsertPayload,
   AuthSession,
   BootstrapStatus,
   DashboardSummary,
@@ -38,6 +43,9 @@ import type {
   NotificationListResponse,
   NotificationPreference,
   MetricsResponse,
+  PacingStatusSummary,
+  PacingTarget,
+  PacingTargetUpsertPayload,
   Quiz,
   QuizAttempt,
   RegisterPayload,
@@ -529,6 +537,67 @@ export const api = {
 
   deleteCurriculumLesson(id: number) {
     return request<void>(`/curriculum/lessons/${id}`, { method: 'DELETE' })
+  },
+
+  listLessonPlans(filters: LessonPlanFilters = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '' || value === 'all') {
+        return
+      }
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<LessonPlan[]>(`/lesson-plans${query ? `?${query}` : ''}`)
+  },
+
+  createLessonPlan(payload: LessonPlanUpsertPayload) {
+    return request<LessonPlan>('/lesson-plans', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateLessonPlan(id: number, payload: LessonPlanUpsertPayload) {
+    return request<LessonPlan>(`/lesson-plans/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteLessonPlan(id: number) {
+    return request<void>(`/lesson-plans/${id}`, { method: 'DELETE' })
+  },
+
+  generateLessonPlans(payload: LessonPlanGenerationPayload) {
+    return request<LessonPlan[]>('/lesson-plans/generate', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  bulkUpdateLessonPlans(payload: LessonPlanBulkStatusPayload) {
+    return request<LessonPlan[]>('/lesson-plans/bulk-status', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  generateAssignmentsFromLessonPlans(payload: { lesson_plan_ids: number[]; include_existing?: boolean }) {
+    return request<Assignment[]>('/lesson-plans/generate-assignments', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  listPacingTargets(filters: { student_id?: number; subject_id?: number } = {}) {
+    const params = new URLSearchParams()
+    if (filters.student_id) params.set('student_id', String(filters.student_id))
+    if (filters.subject_id) params.set('subject_id', String(filters.subject_id))
+    const query = params.toString()
+    return request<PacingTarget[]>(`/pacing-targets${query ? `?${query}` : ''}`)
+  },
+
+  createPacingTarget(payload: PacingTargetUpsertPayload) {
+    return request<PacingTarget>('/pacing-targets', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updatePacingTarget(id: number, payload: PacingTargetUpsertPayload) {
+    return request<PacingTarget>(`/pacing-targets/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deletePacingTarget(id: number) {
+    return request<void>(`/pacing-targets/${id}`, { method: 'DELETE' })
+  },
+
+  getPacingStatus(studentId: number, subjectId?: number) {
+    const query = subjectId ? `?subject_id=${subjectId}` : ''
+    return request<PacingStatusSummary>(`/pacing/${studentId}${query}`)
   },
 
   listResources(filters: { search?: string; resource_type?: ResourceType | 'all'; tag?: string } = {}) {

@@ -7,6 +7,7 @@ import type {
   DashboardSummary,
   Grade,
   HealthResponse,
+  PacingStatusItem,
   ReviewQueueItem,
   Student,
 } from '@/types/api'
@@ -23,7 +24,7 @@ function average(values: number[]) {
 }
 
 export function DashboardPage() {
-  const { canReviewQueue } = useAuth()
+  const { canReviewQueue, studentId: scopedStudentId } = useAuth()
   const { status: capabilityStatus, optionalUnavailable } = useCapabilities()
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [grades, setGrades] = useState<Grade[]>([])
@@ -32,6 +33,7 @@ export function DashboardPage() {
   const [attendanceSummary, setAttendanceSummary] = useState<AttendanceSummary | null>(null)
   const [attendanceHours, setAttendanceHours] = useState<AttendanceHoursSummary | null>(null)
   const [attendanceStudent, setAttendanceStudent] = useState<Student | null>(null)
+  const [pacingItems, setPacingItems] = useState<PacingStatusItem[]>([])
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -54,9 +56,15 @@ export function DashboardPage() {
       setQueue(queueData)
       setDashboardSummary(summaryData)
       setHealth(healthData)
-      const snapshotStudent = studentData[0] || null
+      const snapshotStudent = studentData.find((student) => student.id === scopedStudentId) || studentData[0] || null
       const snapshotYear = schoolYearData.find((schoolYear) => schoolYear.is_active) || schoolYearData[0] || null
       setAttendanceStudent(snapshotStudent)
+      if (snapshotStudent) {
+        const pacingData = await api.getPacingStatus(snapshotStudent.id)
+        setPacingItems(pacingData.items.slice(0, 4))
+      } else {
+        setPacingItems([])
+      }
       if (snapshotStudent && snapshotYear) {
         const [attendanceSummaryData, attendanceHoursData] = await Promise.all([
           api.getAttendanceSummary(snapshotStudent.id, 'year', snapshotYear.id),
@@ -73,7 +81,7 @@ export function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [canReviewQueue])
+  }, [canReviewQueue, scopedStudentId])
 
   useEffect(() => {
     void load()
@@ -238,6 +246,36 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pacing snapshot</CardTitle>
+          <CardDescription>
+            {attendanceStudent?.name || 'Current student'} · ahead/on-track/behind by unit
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {pacingItems.length ? (
+            <div className="space-y-2">
+              {pacingItems.map((item) => (
+                <div key={item.pacing_target_id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
+                  <div>
+                    <p className="font-medium">{item.unit_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.completed_lessons}/{item.total_lessons} lessons complete
+                    </p>
+                  </div>
+                  <Badge variant={item.status === 'behind' ? 'destructive' : item.status === 'ahead' ? 'secondary' : 'outline'}>
+                    {item.status.replace('_', ' ')}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No pacing targets configured yet.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

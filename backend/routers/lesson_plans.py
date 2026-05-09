@@ -452,7 +452,7 @@ async def create_lesson_plan(
     return await _get_lesson_plan_or_404(db, auth.family_id, lesson_plan.id)
 
 
-@router.get('/lesson-plans/{lesson_plan_id}', response_model=LessonPlanRead)
+@router.get('/lesson-plans/{lesson_plan_id:int}', response_model=LessonPlanRead)
 async def get_lesson_plan(
     lesson_plan_id: int,
     db: AsyncSession = Depends(get_db),
@@ -463,7 +463,7 @@ async def get_lesson_plan(
     return lesson_plan
 
 
-@router.put('/lesson-plans/{lesson_plan_id}', response_model=LessonPlanRead)
+@router.put('/lesson-plans/{lesson_plan_id:int}', response_model=LessonPlanRead)
 async def update_lesson_plan(
     lesson_plan_id: int,
     payload: LessonPlanUpdate,
@@ -507,7 +507,7 @@ async def update_lesson_plan(
     return await _get_lesson_plan_or_404(db, auth.family_id, lesson_plan.id)
 
 
-@router.delete('/lesson-plans/{lesson_plan_id}', status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+@router.delete('/lesson-plans/{lesson_plan_id:int}', status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_lesson_plan(
     lesson_plan_id: int,
     db: AsyncSession = Depends(get_db),

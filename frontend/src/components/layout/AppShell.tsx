@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   Bell,
   BookMarked,
+  BookOpenCheck,
   CalendarDays,
   ClipboardCheck,
   FileUp,
@@ -32,6 +33,7 @@ const navItems: Array<{ to: string; label: string; icon: typeof LayoutDashboard;
   { to: '/calendar', label: 'Calendar', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/attendance', label: 'Attendance', icon: UserCheck, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/planner', label: 'Planner', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+  { to: '/lesson-plans', label: 'Lesson Plans', icon: BookOpenCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/curriculum', label: 'Curriculum', icon: BookMarked, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/resources', label: 'Resources', icon: FileUp, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/assignments', label: 'Assignments', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
@@ -210,7 +212,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
-        <nav className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+        <nav className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-9">
           {items.map((item) => (
             <NavLink
               key={item.to}

@@ -31,6 +31,7 @@ export type AuditAction =
 export type TermType = 'semester' | 'quarter' | 'trimester' | 'custom'
 export type CalendarEventType = 'holiday' | 'closure' | 'custom'
 export type ResourceType = 'file' | 'link' | 'note'
+export type LessonPlanStatus = 'planned' | 'in_progress' | 'completed' | 'skipped' | 'rescheduled'
 
 export interface ApiErrorPayload {
   detail?: string
@@ -774,6 +775,137 @@ export interface CurriculumPackage {
 
 export interface CurriculumPackageDetail extends CurriculumPackage {
   units: CurriculumUnit[]
+}
+
+export interface LessonPlanLessonPackageSummary {
+  id: number
+  name: string
+  subject_id: number
+}
+
+export interface LessonPlanLessonUnitSummary {
+  id: number
+  name: string
+  sequence_order: number
+  package: LessonPlanLessonPackageSummary
+}
+
+export interface LessonPlanLessonSummary {
+  id: number
+  unit_id: number
+  name: string
+  description?: string | null
+  sequence_order: number
+  estimated_duration_minutes?: number | null
+  standards_tags: string[]
+  resources: ResourceSummary[]
+  unit: LessonPlanLessonUnitSummary
+}
+
+export interface LessonPlan {
+  id: number
+  family_id: number
+  curriculum_lesson_id: number
+  student_id: number
+  school_year_id: number
+  target_date: string
+  estimated_duration_minutes?: number | null
+  status: LessonPlanStatus
+  completed_at?: string | null
+  notes?: string | null
+  assignment_ids: number[]
+  curriculum_lesson: LessonPlanLessonSummary
+  student: Student
+  school_year: SchoolYear
+  created_at?: string
+  updated_at?: string
+}
+
+export interface LessonPlanFilters {
+  student_id?: number
+  school_year_id?: number
+  subject_id?: number
+  status?: LessonPlanStatus | 'all'
+  start_date?: string
+  end_date?: string
+}
+
+export interface LessonPlanUpsertPayload {
+  curriculum_lesson_id: number
+  student_id: number
+  school_year_id: number
+  target_date: string
+  estimated_duration_minutes?: number
+  status: LessonPlanStatus
+  notes?: string
+}
+
+export interface LessonPlanGenerationPayload {
+  package_id: number
+  student_id: number
+  school_year_id?: number
+  start_date?: string
+  default_duration_minutes?: number
+  overwrite_existing?: boolean
+}
+
+export interface LessonPlanBulkStatusPayload {
+  lesson_plan_ids: number[]
+  status: LessonPlanStatus
+  target_date?: string
+  notes?: string
+}
+
+export interface PacingTargetUnitSummary {
+  id: number
+  package_id: number
+  name: string
+  sequence_order: number
+  package: LessonPlanLessonPackageSummary
+}
+
+export interface PacingTarget {
+  id: number
+  family_id: number
+  curriculum_unit_id: number
+  student_id: number
+  target_start_date: string
+  target_end_date: string
+  actual_completion_date?: string | null
+  curriculum_unit: PacingTargetUnitSummary
+  student: Student
+  created_at?: string
+  updated_at?: string
+}
+
+export interface PacingTargetUpsertPayload {
+  curriculum_unit_id: number
+  student_id: number
+  target_start_date: string
+  target_end_date: string
+}
+
+export interface PacingStatusItem {
+  pacing_target_id: number
+  curriculum_unit_id: number
+  unit_name: string
+  package_id: number
+  package_name: string
+  subject_id: number
+  target_start_date: string
+  target_end_date: string
+  actual_completion_date?: string | null
+  status: 'ahead' | 'on_track' | 'behind'
+  total_lessons: number
+  planned_lessons: number
+  completed_lessons: number
+  remaining_lessons: number
+}
+
+export interface PacingStatusSummary {
+  student_id: number
+  subject_id?: number | null
+  items: PacingStatusItem[]
 }
 
 export interface Resource {
