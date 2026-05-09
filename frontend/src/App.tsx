@@ -42,7 +42,7 @@ function RoleRoute({ allowedRoles, element }: { allowedRoles: FamilyRole[]; elem
 }
 
 function ProtectedRoutes() {
-  const { loading, isAuthenticated, bootstrapRequired } = useAuth()
+  const { loading, isAuthenticated, bootstrapRequired, role } = useAuth()
 
   if (loading) {
     return <LoadingScreen />
@@ -55,7 +55,7 @@ function ProtectedRoutes() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<Navigate to={defaultRouteForRole(role)} replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/students" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<StudentsPage />} />} />
         <Route path="/subjects" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<SubjectsPage />} />} />

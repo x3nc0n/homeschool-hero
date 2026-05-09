@@ -15,3 +15,5 @@ class Subject(TimestampMixin, Base):
 
     assignments = relationship('Assignment', back_populates='subject', cascade='all, delete-orphan')
     quizzes = relationship('Quiz', back_populates='subject', cascade='all, delete-orphan')
+    schedule_blocks = relationship('ScheduleBlock', back_populates='subject')
+    schedule_overrides = relationship('ScheduleOverride', back_populates='subject')

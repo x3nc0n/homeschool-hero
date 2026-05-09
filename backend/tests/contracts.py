@@ -84,6 +84,33 @@ CALENDAR = {
     'days': f'{API_PREFIX}/calendar/{{school_year_id}}/days',
 }
 
+SCHEDULE = {
+    'collection': f'{API_PREFIX}/schedule',
+    'detail': f'{API_PREFIX}/schedule/{{schedule_id}}',
+    'blocks': f'{API_PREFIX}/schedule/{{schedule_id}}/blocks',
+    'block_detail': f'{API_PREFIX}/schedule/blocks/{{block_id}}',
+    'override_create': f'{API_PREFIX}/schedule/override',
+    'override_detail': f'{API_PREFIX}/schedule/override/{{override_id}}',
+    'agenda': f'{API_PREFIX}/schedule/{{student_id}}/agenda',
+    'week': f'{API_PREFIX}/schedule/{{student_id}}/week',
+}
+
+CURRICULUM = {
+    'packages': f'{API_PREFIX}/curriculum/packages',
+    'package_detail': f'{API_PREFIX}/curriculum/packages/{{package_id}}',
+    'package_clone': f'{API_PREFIX}/curriculum/packages/{{package_id}}/clone',
+    'units': f'{API_PREFIX}/curriculum/units',
+    'unit_detail': f'{API_PREFIX}/curriculum/units/{{unit_id}}',
+    'lessons': f'{API_PREFIX}/curriculum/lessons',
+    'lesson_detail': f'{API_PREFIX}/curriculum/lessons/{{lesson_id}}',
+    'lesson_resource_detail': f'{API_PREFIX}/curriculum/lessons/{{lesson_id}}/resources/{{resource_id}}',
+}
+
+RESOURCES = {
+    'collection': f'{API_PREFIX}/resources',
+    'detail': f'{API_PREFIX}/resources/{{resource_id}}',
+}
+
 SERVICE_CANDIDATES = {
     'ocr': ('extract_text_from_image', 'extract_text', 'perform_ocr'),
     'ai_grade': ('grade_submission_text', 'grade_text', 'grade_submission', 'grade_ocr_text'),
@@ -234,4 +261,210 @@ def calendar_event_payload(
     }
     if notes is not None:
         payload['notes'] = notes
+    return payload
+
+
+def schedule_payload(
+    student_id: int | str,
+    school_year_id: int | str,
+    *,
+    name: str = 'Default Schedule',
+) -> dict[str, Any]:
+    return {
+        'student_id': student_id,
+        'school_year_id': school_year_id,
+        'name': name,
+    }
+
+
+def schedule_block_payload(
+    subject_id: int | str,
+    *,
+    day_of_week: int = 0,
+    start_time: str = '09:00',
+    end_time: str = '10:00',
+    location: str | None = 'Dining Room',
+    notes: str | None = 'Warm-up and lesson',
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        'subject_id': subject_id,
+        'day_of_week': day_of_week,
+        'start_time': start_time,
+        'end_time': end_time,
+    }
+    if location is not None:
+        payload['location'] = location
+    if notes is not None:
+        payload['notes'] = notes
+    return payload
+
+
+def schedule_override_payload(
+    schedule_id: int | str,
+    *,
+    date: str = '2025-09-15',
+    override_type: str = 'add',
+    original_block_id: int | str | None = None,
+    subject_id: int | str | None = None,
+    start_time: str | None = '13:00',
+    end_time: str | None = '14:00',
+    reason: str = 'Field trip',
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        'schedule_id': schedule_id,
+        'date': date,
+        'override_type': override_type,
+        'reason': reason,
+    }
+    if original_block_id is not None:
+        payload['original_block_id'] = original_block_id
+    if subject_id is not None:
+        payload['subject_id'] = subject_id
+    if start_time is not None:
+        payload['start_time'] = start_time
+    if end_time is not None:
+        payload['end_time'] = end_time
+    return payload
+
+
+def curriculum_package_payload(
+    school_year_id: int | str,
+    subject_id: int | str,
+    *,
+    name: str = 'Core Math 2025',
+    description: str | None = 'Daily spiral review and mastery lessons.',
+) -> dict[str, Any]:
+    payload = {
+        'school_year_id': school_year_id,
+        'subject_id': subject_id,
+        'name': name,
+    }
+    if description is not None:
+        payload['description'] = description
+    return payload
+
+
+def curriculum_unit_payload(
+    package_id: int | str,
+    *,
+    name: str = 'Unit 1: Number Sense',
+    description: str | None = 'Build number fluency.',
+    sequence_order: int = 1,
+    standards_tags: list[str] | None = None,
+) -> dict[str, Any]:
+    payload = {
+        'package_id': package_id,
+        'name': name,
+        'sequence_order': sequence_order,
+        'standards_tags': standards_tags or ['MATH-NS.1'],
+    }
+    if description is not None:
+        payload['description'] = description
+    return payload
+
+
+def curriculum_lesson_payload(
+    unit_id: int | str,
+    *,
+    name: str = 'Lesson 1: Place value warm-up',
+    description: str | None = 'Use base-ten blocks and quick checks.',
+    sequence_order: int = 1,
+    estimated_duration_minutes: int | None = 45,
+    standards_tags: list[str] | None = None,
+) -> dict[str, Any]:
+    payload = {
+        'unit_id': unit_id,
+        'name': name,
+        'sequence_order': sequence_order,
+        'standards_tags': standards_tags or ['MATH-NS.1'],
+    }
+    if description is not None:
+        payload['description'] = description
+    if estimated_duration_minutes is not None:
+        payload['estimated_duration_minutes'] = estimated_duration_minutes
+    return payload
+
+
+def resource_payload(
+    *,
+    name: str = 'Base ten blocks',
+    description: str | None = 'Hands-on manipulative guide.',
+    resource_type: str = 'link',
+    url: str | None = 'https://example.com/base-ten',
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = {
+        'name': name,
+        'resource_type': resource_type,
+        'tags': tags or ['manipulative', 'math'],
+        'metadata': metadata or {'format': 'pdf'},
+    }
+    if description is not None:
+        payload['description'] = description
+    if url is not None:
+        payload['url'] = url
+    return payload
+
+
+def schedule_payload(
+    student_id: int | str,
+    school_year_id: int | str,
+    *,
+    name: str = 'Default Schedule',
+) -> dict[str, Any]:
+    return {
+        'student_id': student_id,
+        'school_year_id': school_year_id,
+        'name': name,
+    }
+
+
+def schedule_block_payload(
+    subject_id: int | str,
+    *,
+    day_of_week: int = 0,
+    start_time: str = '09:00',
+    end_time: str = '10:00',
+    location: str | None = 'Dining Room',
+    notes: str | None = 'Warm-up and lesson',
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        'subject_id': subject_id,
+        'day_of_week': day_of_week,
+        'start_time': start_time,
+        'end_time': end_time,
+    }
+    if location is not None:
+        payload['location'] = location
+    if notes is not None:
+        payload['notes'] = notes
+    return payload
+
+
+def schedule_override_payload(
+    schedule_id: int | str,
+    *,
+    date: str = '2025-09-15',
+    override_type: str = 'add',
+    original_block_id: int | str | None = None,
+    subject_id: int | str | None = None,
+    start_time: str | None = '13:00',
+    end_time: str | None = '14:00',
+    reason: str = 'Field trip',
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        'schedule_id': schedule_id,
+        'date': date,
+        'override_type': override_type,
+        'reason': reason,
+    }
+    if original_block_id is not None:
+        payload['original_block_id'] = original_block_id
+    if subject_id is not None:
+        payload['subject_id'] = subject_id
+    if start_time is not None:
+        payload['start_time'] = start_time
+    if end_time is not None:
+        payload['end_time'] = end_time
     return payload
