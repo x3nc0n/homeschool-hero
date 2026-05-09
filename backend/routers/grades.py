@@ -3,7 +3,7 @@ from sqlalchemy import Float, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
-from backend.models import Assignment, AuditAction, Grade, Student, Subject, Submission
+from backend.models import Assignment, AssignmentTarget, AssignmentTargetStatus, AuditAction, Grade, Student, Subject, Submission
 from backend.schemas.grades import (
     GradeAverageByStudent,
     GradeAverageBySubject,
@@ -86,6 +86,16 @@ async def create_grade(
     grade = Grade(family_id=auth.family_id, **payload.model_dump())
     db.add(grade)
     await db.flush()
+    assignment_target = (
+        await db.execute(
+            select(AssignmentTarget).where(
+                AssignmentTarget.assignment_id == submission.assignment_id,
+                AssignmentTarget.student_id == payload.student_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if assignment_target:
+        assignment_target.status = AssignmentTargetStatus.graded
     await log_event(
         db,
         action=AuditAction.grade_create,
@@ -294,7 +304,7 @@ async def update_grade(
     return grade
 
 
-@router.delete('/{grade_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.delete('/{grade_id}', status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_grade(
     grade_id: int,
     db: AsyncSession = Depends(get_db),

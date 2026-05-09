@@ -1,4 +1,7 @@
 export type AssignmentStatus = 'pending' | 'complete' | 'graded'
+export type AssignmentCategory = 'homework' | 'quiz' | 'test' | 'project' | 'other'
+export type AssignmentRecurrence = 'none' | 'daily' | 'weekly'
+export type AssignmentTargetStatus = 'assigned' | 'submitted' | 'graded' | 'excused'
 export type ReviewAction = 'approve' | 'modify' | 'reject'
 export type FamilyRole = 'parent' | 'co-parent' | 'tutor' | 'student_viewer'
 export type CapabilityName = 'ai_grading' | 'email' | 'backup' | 'ocr'
@@ -18,6 +21,7 @@ export type AuditAction =
   | 'invitation_accept'
 export type TermType = 'semester' | 'quarter' | 'trimester' | 'custom'
 export type CalendarEventType = 'holiday' | 'closure' | 'custom'
+export type ResourceType = 'file' | 'link' | 'note'
 
 export interface ApiErrorPayload {
   detail?: string
@@ -45,6 +49,37 @@ export interface CapabilitiesResponse {
     oidc_enabled: boolean
     saml_enabled: boolean
   }
+}
+
+export interface HealthResponse {
+  status: 'ok' | 'degraded' | 'required_failure'
+  required: Record<string, string>
+  optional_unavailable: CapabilityName[]
+  capabilities: Record<CapabilityName, CapabilityStatus>
+  auth: CapabilitiesResponse['auth']
+  required_failures?: Record<string, string>
+}
+
+export interface MetricsResponse {
+  enabled: boolean
+  requests_total: number
+  request_duration_ms: {
+    count: number
+    total: number
+    average: number
+    max: number
+  }
+  slow_requests_total: number
+  responses_by_status: Record<string, number>
+  grading_jobs_total: number
+  grading_jobs_by_status: Record<string, number>
+  active_users: number
+  backup_last_success?: {
+    timestamp: string
+    age_seconds: number
+    size_bytes?: number | null
+    artifact?: string | null
+  } | null
 }
 
 export interface User {
@@ -107,15 +142,92 @@ export interface Subject {
   created_at?: string
 }
 
+export interface AssignmentHistoryEntry {
+  timestamp: string
+  change_type: string
+  field: string
+  before?: unknown
+  after?: unknown
+  student_id?: number | null
+}
+
+export interface AssignmentTarget {
+  id: number
+  assignment_id: number
+  student_id: number
+  due_date?: string | null
+  status: AssignmentTargetStatus
+  completed_at?: string | null
+  student?: Student
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AssignmentTargetInput {
+  student_id: number
+  due_date?: string
+  status: AssignmentTargetStatus
+}
+
 export interface Assignment {
   id: number
   title: string
   description?: string
   due_date?: string
   status: AssignmentStatus
+  category: AssignmentCategory
+  grading_period_id?: number | null
+  grading_period?: GradingPeriod | null
+  weight: number
+  max_score: number
+  recurrence: AssignmentRecurrence
+  recurrence_end_date?: string | null
+  rubric_description?: string | null
+  attachments: string[]
+  lesson_plan_id?: number | null
+  status_history: AssignmentHistoryEntry[]
+  targets: AssignmentTarget[]
   subject_id?: number
   subject?: Subject
   created_at?: string
+  updated_at?: string
+}
+
+export interface AssignmentListResponse {
+  items: Assignment[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface AssignmentFilters {
+  category?: AssignmentCategory | 'all'
+  grading_period_id?: number
+  student_id?: number
+  status?: AssignmentStatus | AssignmentTargetStatus | 'all'
+  due_from?: string
+  due_to?: string
+  page?: number
+  page_size?: number
+}
+
+export interface AssignmentUpsertPayload {
+  title: string
+  description?: string
+  due_date?: string
+  status: AssignmentStatus
+  subject_id?: number
+  category: AssignmentCategory
+  grading_period_id?: number
+  weight: number
+  max_score: number
+  recurrence: AssignmentRecurrence
+  recurrence_end_date?: string
+  rubric_description?: string
+  attachments?: string[]
+  lesson_plan_id?: number
+  targets?: AssignmentTargetInput[]
 }
 
 export interface Submission {
@@ -254,6 +366,30 @@ export interface AuditEventFilters {
   entity_id?: string
 }
 
+export interface DashboardActivityItem {
+  id: string
+  type: 'audit' | 'grading_job'
+  timestamp: string
+  title: string
+  subtitle: string
+  status: string
+  details: Record<string, unknown>
+}
+
+export interface DashboardSummary {
+  recent_activity: DashboardActivityItem[]
+  system_health: {
+    status: 'ok' | 'degraded'
+    requests_total: number
+    slow_requests_total: number
+    grading_jobs_by_status: Record<string, number>
+    active_users: number
+    backup_last_success?: MetricsResponse['backup_last_success']
+    metrics_enabled: boolean
+    generated_at: string
+  }
+}
+
 export interface GradingPeriod {
   id: number
   term_id: number
@@ -313,4 +449,71 @@ export interface InstructionalDayCount {
   weekday_days: number
   non_instructional_overrides: number
   instructional_overrides: number
+}
+
+export interface ResourceSummary {
+  id: number
+  name: string
+  resource_type: ResourceType
+  file_url?: string | null
+  url?: string | null
+  tags: string[]
+}
+
+export interface CurriculumLesson {
+  id: number
+  unit_id: number
+  name: string
+  description?: string | null
+  sequence_order: number
+  estimated_duration_minutes?: number | null
+  standards_tags: string[]
+  resources: ResourceSummary[]
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CurriculumUnit {
+  id: number
+  package_id: number
+  name: string
+  description?: string | null
+  sequence_order: number
+  standards_tags: string[]
+  lessons: CurriculumLesson[]
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CurriculumPackage {
+  id: number
+  family_id: number
+  school_year_id: number
+  name: string
+  description?: string | null
+  subject_id: number
+  created_by_user_id: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CurriculumPackageDetail extends CurriculumPackage {
+  units: CurriculumUnit[]
+}
+
+export interface Resource {
+  id: number
+  family_id: number
+  name: string
+  description?: string | null
+  resource_type: ResourceType
+  file_path?: string | null
+  file_url?: string | null
+  url?: string | null
+  tags: string[]
+  metadata: Record<string, unknown>
+  lesson_ids: number[]
+  created_by_user_id: number
+  created_at?: string
+  updated_at?: string
 }

@@ -87,6 +87,8 @@
 - 2026-05-09T05:05:00-05:00 — Verified hardening with `cd backend && python -m pytest` (84 passed, 2 skipped) and `cd frontend && npm run build`; added regression coverage for cookie flags, CSRF enforcement, rate limits, password policy, lockout, and upload validation edge cases.
 - 2026-05-09T06:20:00-05:00 — Completed CP-05 auth provider support: added configurable OIDC + SAML overlays with local auth still default, external user provisioning via invitations/default family, Entra-ready OIDC discovery, SAML metadata/ACS endpoints, and provider-aware login UI/capability reporting.
 - 2026-05-09T06:20:00-05:00 — Verified CP-05 with `cd backend && python -m pytest -q` (84 passed, 2 skipped) plus `cd frontend && npm ci && npm run lint && npm run build`; frontend lint still reports two pre-existing hook-dependency warnings outside the auth changes.
+- 2026-05-08T23:52:13-05:00 — Completed AG-01 assignment domain upgrade: expanded assignments with category/grading period/weight/max score/recurrence/rubric/attachments/history metadata, added per-student AssignmentTarget records with status tracking, and wired submission/grade flows to update target progress.
+- 2026-05-08T23:52:13-05:00 — Verified AG-01 with `cd backend && python -m pytest -q` (94 passed, 2 skipped) and `cd frontend && npm run build`; assignment CRUD/filtering/backward-compat regression coverage now includes multi-student targets, pagination, grading periods, and target status sync.
 
 ### Wave 3 Summary (2026-05-08T22:32:57Z)
 - CP-04: Audit logging with immutable append-only events (commit 5c359f9) ✅ COMPLETE

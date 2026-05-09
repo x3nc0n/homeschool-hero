@@ -1,4 +1,6 @@
+import logging
 import mimetypes
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,13 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import Assignment, GradingJob, GradingJobStatus, Student, Submission
+from backend.models import Assignment, AssignmentTarget, AssignmentTargetStatus, GradingJob, GradingJobStatus, Student, Submission
 from backend.schemas.submissions import SubmissionRead
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.logging_config import log_action
 from backend.validation import sanitize_filename
 
 router = APIRouter(prefix='/submissions', tags=['submissions'])
+logger = logging.getLogger(__name__)
 
 
 @router.get('', response_model=list[SubmissionRead])
@@ -57,6 +61,22 @@ async def upload_submission(
     student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Student not found')
+    target = (
+        await db.execute(
+            select(AssignmentTarget).where(
+                AssignmentTarget.assignment_id == assignment_id,
+                AssignmentTarget.student_id == student_id,
+            )
+        )
+    ).scalar_one_or_none()
+    target_count = (
+        await db.execute(select(AssignmentTarget.id).where(AssignmentTarget.assignment_id == assignment_id))
+    ).scalars().first()
+    if target_count is not None and not target:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Student is not assigned to this assignment',
+        )
     sanitized_name = sanitize_filename(file.filename or '')
     suffix = Path(sanitized_name).suffix.lower()
     expected_mime, _ = mimetypes.guess_type(sanitized_name)
@@ -89,9 +109,27 @@ async def upload_submission(
     )
     db.add(submission)
     await db.flush()
+    if target:
+        target.status = AssignmentTargetStatus.submitted
+        target.completed_at = datetime.now(timezone.utc)
 
     job = GradingJob(family_id=auth.family_id, submission_id=submission.id, status=GradingJobStatus.queued)
     db.add(job)
     await db.commit()
     await db.refresh(submission)
+    await db.refresh(job)
+    log_action(
+        logger,
+        logging.INFO,
+        'Queued grading job',
+        action='grading_job_queued',
+        user_id=auth.user_id,
+        family_id=auth.family_id,
+        details={
+            'job_id': job.id,
+            'submission_id': submission.id,
+            'assignment_id': assignment_id,
+            'student_id': student_id,
+        },
+    )
     return submission

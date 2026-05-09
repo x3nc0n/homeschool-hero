@@ -45,6 +45,7 @@ class SchoolYear(TimestampMixin, Base):
         cascade='all, delete-orphan',
         order_by='CalendarEvent.date',
     )
+    schedules = relationship('Schedule', back_populates='school_year', cascade='all, delete-orphan')
 
 
 class Term(TimestampMixin, Base):
@@ -84,6 +85,7 @@ class GradingPeriod(TimestampMixin, Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     term = relationship('Term', back_populates='grading_periods')
+    assignments = relationship('Assignment', back_populates='grading_period')
 
 
 class CalendarEvent(TimestampMixin, Base):

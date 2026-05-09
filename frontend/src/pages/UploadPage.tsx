@@ -20,9 +20,9 @@ export function UploadPage() {
     setLoading(true)
     setError('')
     try {
-      const [studentData, assignmentData] = await Promise.all([api.listStudents(), api.listAssignments()])
+      const [studentData, assignmentData] = await Promise.all([api.listStudents(), api.listAssignments({ page: 1, page_size: 100 })])
       setStudents(studentData)
-      setAssignments(assignmentData)
+      setAssignments(assignmentData.items)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load upload data')
     } finally {

@@ -1,4 +1,11 @@
-from backend.schemas.assignments import AssignmentCreate, AssignmentRead, AssignmentStatusUpdate, AssignmentUpdate
+from backend.schemas.assignments import (
+    AssignmentCreate,
+    AssignmentListResponse,
+    AssignmentRead,
+    AssignmentStatusUpdate,
+    AssignmentTargetRead,
+    AssignmentUpdate,
+)
 from backend.schemas.auth import LoginRequest, LoginResponse, SessionResponse
 from backend.schemas.calendar import (
     CalendarEventCreate,
@@ -31,8 +38,10 @@ from backend.schemas.submissions import SubmissionRead
 
 __all__ = [
     "AssignmentCreate",
+    "AssignmentListResponse",
     "AssignmentRead",
     "AssignmentStatusUpdate",
+    "AssignmentTargetRead",
     "AssignmentUpdate",
     "CalendarEventCreate",
     "CalendarEventRead",

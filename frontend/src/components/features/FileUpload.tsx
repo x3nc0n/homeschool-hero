@@ -38,6 +38,15 @@ export function FileUpload({
   const [error, setError] = useState('')
 
   const isImage = useMemo(() => file?.type.startsWith('image/'), [file])
+  const visibleAssignments = useMemo(
+    () =>
+      assignments.filter((assignment) => {
+        if (!selectedStudent) return true
+        if (!assignment.targets.length) return true
+        return assignment.targets.some((target) => String(target.student_id) === selectedStudent)
+      }),
+    [assignments, selectedStudent],
+  )
 
   const onFileChange = (picked?: File) => {
     if (!picked) return
@@ -113,7 +122,7 @@ export function FileUpload({
                 <SelectValue placeholder="Choose assignment" />
               </SelectTrigger>
               <SelectContent>
-                {assignments.map((assignment) => (
+                {visibleAssignments.map((assignment) => (
                   <SelectItem key={assignment.id} value={String(assignment.id)}>
                     {assignment.title}
                   </SelectItem>

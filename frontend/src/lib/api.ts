@@ -4,18 +4,30 @@ import type {
   AuditEventListResponse,
   ApiErrorPayload,
   Assignment,
+  AssignmentFilters,
+  AssignmentListResponse,
+  AssignmentUpsertPayload,
   CalendarEvent,
+  CurriculumLesson,
+  CurriculumPackage,
+  CurriculumPackageDetail,
+  CurriculumUnit,
   AuthSession,
   BootstrapStatus,
+  DashboardSummary,
   CapabilitiesResponse,
   CreateInvitationPayload,
   Grade,
+  HealthResponse,
   GradingPeriod,
   InstructionalDayCount,
   Invitation,
+  MetricsResponse,
   Quiz,
   QuizAttempt,
   RegisterPayload,
+  Resource,
+  ResourceType,
   ReviewDecisionPayload,
   ReviewQueueItem,
   SchoolYear,
@@ -38,6 +50,16 @@ export class ApiError extends Error {
   }
 }
 
+function getCookie(name: string) {
+  const value = document.cookie
+    .split('; ')
+    .find((cookie) => cookie.startsWith(`${name}=`))
+    ?.split('=')
+    .slice(1)
+    .join('=')
+  return value ? decodeURIComponent(value) : ''
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
     return undefined as T
@@ -52,12 +74,20 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers || {})
+  const isFormData = init?.body instanceof FormData
+  if (!isFormData && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+  if (!headers.has('x-csrf-token')) {
+    const csrfToken = getCookie('homeschool_csrf')
+    if (csrfToken) {
+      headers.set('x-csrf-token', csrfToken)
+    }
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
+    headers,
     ...init,
   })
 
@@ -82,6 +112,18 @@ export const api = {
 
   getCapabilities() {
     return request<CapabilitiesResponse>('/capabilities')
+  },
+
+  getHealth() {
+    return request<HealthResponse>('/health')
+  },
+
+  getMetrics() {
+    return request<MetricsResponse>('/metrics')
+  },
+
+  getDashboardSummary() {
+    return request<DashboardSummary>('/dashboard/summary')
   },
 
   getExternalAuthUrl(provider: 'oidc' | 'saml') {
@@ -242,15 +284,116 @@ export const api = {
     return request<void>(`/calendar/events/${id}`, { method: 'DELETE' })
   },
 
-  listAssignments() {
-    return request<Assignment[]>('/assignments')
+  listCurriculumPackages(schoolYearId?: number) {
+    const query = schoolYearId ? `?school_year_id=${schoolYearId}` : ''
+    return request<CurriculumPackageDetail[]>(`/curriculum/packages${query}`)
   },
 
-  createAssignment(payload: Partial<Assignment>) {
+  createCurriculumPackage(payload: Pick<CurriculumPackage, 'school_year_id' | 'name' | 'description' | 'subject_id'>) {
+    return request<CurriculumPackage>('/curriculum/packages', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateCurriculumPackage(
+    id: number,
+    payload: Pick<CurriculumPackage, 'school_year_id' | 'name' | 'description' | 'subject_id'>,
+  ) {
+    return request<CurriculumPackage>(`/curriculum/packages/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteCurriculumPackage(id: number) {
+    return request<void>(`/curriculum/packages/${id}`, { method: 'DELETE' })
+  },
+
+  cloneCurriculumPackage(id: number, payload: { target_school_year_id: number; name?: string }) {
+    return request<CurriculumPackageDetail>(`/curriculum/packages/${id}/clone`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  createCurriculumUnit(
+    payload: Pick<CurriculumUnit, 'package_id' | 'name' | 'description' | 'sequence_order' | 'standards_tags'>,
+  ) {
+    return request<CurriculumUnit>('/curriculum/units', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateCurriculumUnit(id: number, payload: Pick<CurriculumUnit, 'name' | 'description' | 'sequence_order' | 'standards_tags'>) {
+    return request<CurriculumUnit>(`/curriculum/units/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteCurriculumUnit(id: number) {
+    return request<void>(`/curriculum/units/${id}`, { method: 'DELETE' })
+  },
+
+  createCurriculumLesson(
+    payload: Pick<
+      CurriculumLesson,
+      'unit_id' | 'name' | 'description' | 'sequence_order' | 'estimated_duration_minutes' | 'standards_tags'
+    >,
+  ) {
+    return request<CurriculumLesson>('/curriculum/lessons', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateCurriculumLesson(
+    id: number,
+    payload: Pick<CurriculumLesson, 'name' | 'description' | 'sequence_order' | 'estimated_duration_minutes' | 'standards_tags'>,
+  ) {
+    return request<CurriculumLesson>(`/curriculum/lessons/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteCurriculumLesson(id: number) {
+    return request<void>(`/curriculum/lessons/${id}`, { method: 'DELETE' })
+  },
+
+  listResources(filters: { search?: string; resource_type?: ResourceType | 'all'; tag?: string } = {}) {
+    const params = new URLSearchParams()
+    if (filters.search?.trim()) params.set('search', filters.search.trim())
+    if (filters.tag?.trim()) params.set('tag', filters.tag.trim())
+    if (filters.resource_type && filters.resource_type !== 'all') params.set('resource_type', filters.resource_type)
+    const query = params.toString()
+    return request<Resource[]>(`/resources${query ? `?${query}` : ''}`)
+  },
+
+  createResource(formData: FormData) {
+    return request<Resource>('/resources', { method: 'POST', body: formData })
+  },
+
+  updateResource(
+    id: number,
+    payload: Pick<Resource, 'name' | 'description' | 'resource_type' | 'url' | 'tags' | 'metadata'>,
+  ) {
+    return request<Resource>(`/resources/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteResource(id: number) {
+    return request<void>(`/resources/${id}`, { method: 'DELETE' })
+  },
+
+  linkResourceToLesson(lessonId: number, resourceId: number) {
+    return request<void>(`/curriculum/lessons/${lessonId}/resources/${resourceId}`, { method: 'POST' })
+  },
+
+  unlinkResourceFromLesson(lessonId: number, resourceId: number) {
+    return request<void>(`/curriculum/lessons/${lessonId}/resources/${resourceId}`, { method: 'DELETE' })
+  },
+
+  listAssignments(filters: AssignmentFilters = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '' || value === 'all') {
+        return
+      }
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<AssignmentListResponse>(`/assignments${query ? `?${query}` : ''}`)
+  },
+
+  createAssignment(payload: AssignmentUpsertPayload) {
     return request<Assignment>('/assignments', { method: 'POST', body: JSON.stringify(payload) })
   },
 
-  updateAssignment(id: number, payload: Partial<Assignment>) {
+  updateAssignment(id: number, payload: AssignmentUpsertPayload) {
     return request<Assignment>(`/assignments/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
   },
 
@@ -331,6 +474,10 @@ export const api = {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${API_BASE_URL}/submissions`)
       xhr.withCredentials = true
+      const csrfToken = getCookie('homeschool_csrf')
+      if (csrfToken) {
+        xhr.setRequestHeader('x-csrf-token', csrfToken)
+      }
 
       xhr.upload.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
