@@ -114,6 +114,12 @@ jobs:
               { name: 'suppressed', color: '6E7781', description: 'Finding is intentionally suppressed with a documented reason' }
             ];
 
+            const SECURITY_AUTOMATION_LABELS = [
+              { name: 'auto-patch-eligible', color: '0E8A16', description: 'Security finding is eligible for guarded auto-patching' },
+              { name: 'needs-human-review', color: 'B60205', description: 'Security finding requires explicit human triage or remediation' },
+              { name: 'auto-patch', color: '1D76DB', description: 'Auto-generated security patch pull request' }
+            ];
+
             function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
             // Ensure the base "squad" triage label exists
@@ -146,6 +152,7 @@ jobs:
             labels.push(...PRIORITY_LABELS);
             labels.push(...SIGNAL_LABELS);
             labels.push(...SECURITY_FINDING_LABELS);
+            labels.push(...SECURITY_AUTOMATION_LABELS);
 
             // Sync labels (create or update)
             for (const label of labels) {

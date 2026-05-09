@@ -58,6 +58,60 @@ CVE-2026-12345
 - Repeated detections add a comment instead of creating a duplicate issue
 - Resolved findings close automatically on the next completed security run unless the issue is intentionally kept open with `suppressed`
 
+## Auto-triage workflow
+
+- Workflow: `.github/workflows/squad-security-triage.yml`
+- Trigger: security issue `opened`, `edited`, `reopened`, or newly `labeled`
+- Output labels:
+  - `auto-patch-eligible` for direct dependency bumps with a safe fixed version in a tracked manifest
+  - `needs-human-review` for CodeQL findings, container/base-image updates, transitive dependency issues, architecture changes, and anything ambiguous
+- Audit trail: the workflow upserts a `<!-- squad-security-triage -->` comment that records severity, affected file, finding type, routing decision, and the safety gates that were applied
+
+### Current auto-patch eligibility rules
+
+1. The finding must come from Trivy and include an explicit fixed version.
+2. The vulnerable package must be a direct dependency in one managed manifest:
+   - `requirements.txt`
+   - `requirements-prod.txt`
+   - `backend/requirements-test.txt`
+   - `frontend/package.json`
+3. The required version change must be a manifest-only bump that preserves the existing safe specifier pattern (`==`, `>=...`, `^`, or `~`).
+4. Everything else defaults to `needs-human-review`.
+
+## Auto-patch workflow
+
+- Workflow: `.github/workflows/squad-auto-patch.yml`
+- Trigger: issue labeled `auto-patch-eligible`
+- Guardrails:
+  - Respects repository variable `SQUAD_AUTO_PATCH_ENABLED`; set it to `false` to disable patch generation without turning off triage
+  - Applies only direct dependency version bumps
+  - Uses ecosystem tooling for the targeted package (`pip install --upgrade` for Python or `npm update` for frontend packages)
+  - Runs the local mirror of the required CI gates before it opens a PR:
+    - backend pytest + coverage gate
+    - migration lint + upgrade/downgrade verification
+    - frontend lint + build
+    - Docker build
+    - Trivy HIGH/CRITICAL image policy
+    - Gitleaks secret scan
+- Output:
+  - creates a branch named `squad/auto-patch-issue-{issue}-{package}`
+  - opens an auto-generated PR only after every gate above passes
+  - labels the PR with `auto-patch` for visibility
+  - comments back on the originating issue with the PR link
+
+### PR review and approval policy
+
+- **Never auto-merge high-risk findings.** Critical severity findings, CodeQL findings, design-level issues, and any patch that is not a direct manifest bump require explicit human review before merge.
+- Low-risk dependency-only auto-patch PRs are the only class eligible for optional GitHub auto-merge, but this workflow does **not** enable auto-merge on its own.
+- Reviewers should confirm the generated PR still references the original issue, limits the diff to dependency files, and keeps all CI checks green on the PR itself.
+
+### How to disable auto-patching
+
+1. Open repository **Settings → Secrets and variables → Actions → Variables**.
+2. Create or update `SQUAD_AUTO_PATCH_ENABLED=false`.
+3. Leave the triage workflow enabled so issues still receive `needs-human-review` or `auto-patch-eligible` analysis comments.
+4. Re-enable by deleting the variable or setting it back to `true`.
+
 ## Gitleaks secret detection
 
 - Workflow: `.github/workflows/ci.yml` (`Secret scan`)

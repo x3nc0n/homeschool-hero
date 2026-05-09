@@ -1,0 +1,256 @@
+name: Squad Auto Patch
+
+on:
+  issues:
+    types:
+      - labeled
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  security-events: read
+
+concurrency:
+  group: squad-auto-patch-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+env:
+  COVERAGE_FAIL_UNDER: '76'
+  CI_IMAGE_NAME: homeschool-hero:auto-patch
+
+jobs:
+  auto-patch-disabled:
+    if: github.event.label.name == 'auto-patch-eligible' && vars.SQUAD_AUTO_PATCH_ENABLED == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment when auto-patching is disabled
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: [
+                '### ⏸️ Auto-patching is disabled',
+                '',
+                'Repository variable `SQUAD_AUTO_PATCH_ENABLED` is set to `false`, so no branch or PR was created.',
+                'Remove that override to re-enable guarded dependency auto-patching.',
+              ].join('\n'),
+            });
+
+  auto-patch:
+    if: github.event.label.name == 'auto-patch-eligible' && vars.SQUAD_AUTO_PATCH_ENABLED != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: homeschool_hero_ci
+          POSTGRES_USER: homeschool
+          POSTGRES_PASSWORD: changeme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U homeschool -d homeschool_hero_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            backend/requirements-test.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr
+
+      - name: Apply guarded dependency patch
+        id: patch
+        shell: bash
+        run: |
+          python scripts/apply-security-auto-patch.py \
+            --event "$GITHUB_EVENT_PATH" \
+            --repo-root . \
+            --output auto-patch.json
+          python <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path('auto-patch.json').read_text(encoding='utf-8'))
+          plan = payload['patch_plan']
+          output_path = Path(os.environ['GITHUB_OUTPUT'])
+          with output_path.open('a', encoding='utf-8') as handle:
+              def write(name: str, value: str) -> None:
+                  handle.write(f'{name}={value}\n')
+
+              write('ecosystem', plan['ecosystem'])
+              write('package_name', plan['package_name'])
+              write('fixed_version', plan['fixed_version'])
+              write('branch_name', plan['branch_name'])
+              write('commit_message', plan['commit_message'])
+              write('pr_title', plan['pr_title'])
+              write('issue_number', str(payload['issue']['number']))
+              write('changed_files', ','.join(payload['changed_files']))
+          PY
+
+      - name: Upgrade Python package in runner
+        if: steps.patch.outputs.ecosystem == 'pip'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade "${{ steps.patch.outputs.package_name }}==${{ steps.patch.outputs.fixed_version }}"
+
+      - name: Update npm package lockfile
+        if: steps.patch.outputs.ecosystem == 'npm'
+        working-directory: frontend
+        run: |
+          npm update "${{ steps.patch.outputs.package_name }}"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          if [ -f backend/requirements-test.txt ]; then
+            python -m pip install -r backend/requirements-test.txt
+          fi
+
+      - name: Run backend quality gate
+        env:
+          TESTING: '1'
+        working-directory: backend
+        run: |
+          rm -rf .pytest-state
+          python -m pytest -vv --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=${COVERAGE_FAIL_UNDER}
+
+      - name: Run migration checks
+        env:
+          APP_ENV: test
+          TESTING: '1'
+          DATABASE_URL: postgresql+asyncpg://homeschool:changeme@127.0.0.1:5432/homeschool_hero_ci
+        run: |
+          bash scripts/migrate.sh lint
+          bash scripts/migrate.sh verify
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Run frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run frontend build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build Docker image
+        run: docker build --pull -t "${CI_IMAGE_NAME}" .
+
+      - name: Scan patched image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.CI_IMAGE_NAME }}
+          scan-type: image
+          scanners: vuln
+          vuln-type: os,library
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignorefile: .trivyignore
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_SUMMARY: 'true'
+
+      - name: Render auto-patch PR body
+        id: pr-body
+        shell: bash
+        run: |
+          python <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path('auto-patch.json').read_text(encoding='utf-8'))
+          template = Path('.github/PULL_REQUEST_TEMPLATE/auto-patch.md').read_text(encoding='utf-8')
+          body = (
+              template
+              .replace('{{ISSUE_NUMBER}}', str(payload['issue']['number']))
+              .replace('{{ISSUE_TITLE}}', payload['issue']['title'])
+              .replace('{{PACKAGE_NAME}}', payload['patch_plan']['package_name'])
+              .replace('{{FIXED_VERSION}}', payload['patch_plan']['fixed_version'])
+              .replace('{{ECOSYSTEM}}', payload['patch_plan']['ecosystem'])
+              .replace('{{MANIFESTS}}', ', '.join(payload['patch_plan']['manifests']))
+              .replace('{{TEST_RESULTS}}', '\n'.join([
+                  '- ✅ Backend quality gate',
+                  '- ✅ Migration checks',
+                  '- ✅ Frontend lint',
+                  '- ✅ Frontend build',
+                  '- ✅ Docker build',
+                  '- ✅ Trivy HIGH/CRITICAL policy gate',
+                  '- ✅ Gitleaks secret scan',
+              ]))
+          )
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          with output.open('a', encoding='utf-8') as handle:
+              handle.write('body<<EOF\n')
+              handle.write(body)
+              handle.write('\nEOF\n')
+          PY
+
+      - name: Create auto-generated PR
+        id: create-pr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: ${{ steps.patch.outputs.branch_name }}
+          commit-message: ${{ steps.patch.outputs.commit_message }}
+          title: ${{ steps.patch.outputs.pr_title }}
+          body: ${{ steps.pr-body.outputs.body }}
+          labels: auto-patch,security,dependencies
+          add-paths: |
+            requirements.txt
+            requirements-prod.txt
+            backend/requirements-test.txt
+            frontend/package.json
+            frontend/package-lock.json
+          delete-branch: true
+
+      - name: Comment with PR link
+        if: steps.create-pr.outputs.pull-request-number
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: [
+                '### ✅ Auto-patch PR created',
+                '',
+                `Opened PR #${{ steps.create-pr.outputs.pull-request-number }} after the guarded dependency patch passed the local CI gate mirror.`,
+                `Branch: \`${{ steps.patch.outputs.branch_name }}\``,
+              ].join('\n'),
+            });
