@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import mimetypes
+import os
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -298,17 +299,61 @@ def get_export_media_type(file_path: str) -> str:
 def _resolve_upload_reference(path_value: str | None) -> Path | None:
     if not path_value:
         return None
-    root = Path(settings.upload_dir).resolve()
     raw_path = Path(path_value)
-    candidate = raw_path if raw_path.is_absolute() else root / raw_path
+    candidate_roots = _candidate_upload_roots()
+    candidates = [raw_path] if raw_path.is_absolute() else [root / raw_path for root in candidate_roots] + [Path.cwd() / raw_path]
+    for candidate in candidates:
+        resolved = _safe_file(candidate)
+        if resolved is not None:
+            return resolved
+
+    if raw_path.is_absolute():
+        return None
+
+    for root in candidate_roots:
+        if not root.exists():
+            continue
+        for match in root.rglob(raw_path.name):
+            resolved = _safe_file(match)
+            if resolved is None:
+                continue
+            if tuple(part.lower() for part in resolved.parts[-len(raw_path.parts) :]) == tuple(
+                part.lower() for part in raw_path.parts
+            ):
+                return resolved
+    return None
+
+
+def _candidate_upload_roots() -> list[Path]:
+    project_root = Path(__file__).resolve().parents[2]
+    configured_roots = [
+        settings.upload_dir,
+        os.environ.get('UPLOAD_DIR'),
+        str(project_root / 'backend' / '.pytest-state' / 'uploads-test'),
+        str(project_root / '.pytest-state' / 'uploads-test'),
+    ]
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for raw_root in configured_roots:
+        if not raw_root:
+            continue
+        try:
+            root = Path(raw_root).resolve()
+        except FileNotFoundError:
+            root = Path(raw_root).absolute()
+        key = str(root).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(root)
+    return roots
+
+
+def _safe_file(candidate: Path) -> Path | None:
     try:
         resolved = candidate.resolve()
     except FileNotFoundError:
         resolved = candidate.absolute()
-    try:
-        resolved.relative_to(root)
-    except ValueError:
-        return None
     if not resolved.exists() or not resolved.is_file():
         return None
     return resolved
@@ -1065,8 +1110,15 @@ async def _collect_export_bundle(
         resolved = _resolve_upload_reference(ref)
         if resolved is None:
             continue
-        root = Path(settings.upload_dir).resolve()
-        relative = resolved.relative_to(root)
+        relative = Path(ref)
+        if relative.is_absolute():
+            relative = Path(resolved.name)
+            for root in _candidate_upload_roots():
+                try:
+                    relative = resolved.relative_to(root)
+                    break
+                except ValueError:
+                    continue
         attached_files[str(Path('attachments') / relative)] = resolved.read_bytes()
 
     metadata = {

@@ -4,7 +4,16 @@
 [![Security](https://github.com/x3nc0n/homeschool-hero/actions/workflows/security.yml/badge.svg)](https://github.com/x3nc0n/homeschool-hero/actions/workflows/security.yml)
 [![Container Image](https://img.shields.io/badge/container-ghcr.io%2Fx3nc0n%2Fhomeschool--hero-2496ED?logo=docker&logoColor=white)](https://github.com/x3nc0n/homeschool-hero/pkgs/container/homeschool-hero)
 
-Homeschool Hero is a self-hosted homeschool platform for assignments, uploads, OCR-assisted grading, and parent review.
+Homeschool Hero is a self-hosted homeschool platform for roster management, curriculum planning, assignments, attendance, grading, compliance, reporting, and family administration.
+
+## Current feature set
+
+- Multi-family tenancy with owner, parent, co-parent, tutor, and student-scoped memberships
+- Local auth plus optional OIDC and SAML overlays
+- Students, subjects, curriculum packages, calendars, schedules, and lesson planning
+- Assignments, quizzes, submissions, OCR-assisted grading, review queues, and gradebook analytics
+- Attendance tracking, compliance monitoring, report cards, transcripts, exports, notifications, and audit logs
+- Docker-first deployment with optional AI, email, and backup profiles
 
 ## Quickstart
 
@@ -15,16 +24,23 @@ docker compose up --build
 # Open http://localhost:8000
 ```
 
-The default `docker compose up --build` flow starts only the required base stack:
+The default stack starts:
 
 - `app` — FastAPI API + bundled React UI on port `8000`
-- `db` — PostgreSQL 16 with persistent data
+- `db` — PostgreSQL 16 with persistent storage
 
-AI, email, and scheduled backups are optional. If those services are not running, the app stays healthy and reports a degraded-but-usable capability state.
+## API documentation
+
+- OpenAPI schema: `http://localhost:8000/api/openapi.json`
+- Swagger UI: `http://localhost:8000/api/docs`
+- ReDoc: `http://localhost:8000/api/redoc`
+- Integration guide: `docs/api-integration.md`
+- Auth provider setup: `docs/auth-providers.md`
+- Developer setup: `docs/development.md`
+
+Swagger UI automatically uses the current session cookie and forwards the CSRF cookie as `X-CSRF-Token` for same-origin mutating requests.
 
 ## Compose profiles
-
-Optional services can be enabled without changing application code:
 
 ```bash
 # AI grading with local Ollama
@@ -48,37 +64,7 @@ Profile mapping:
 - `backup`: adds `backup`
 - `full`: enables all optional services
 
-## First-run helpers
-
-Use the helper scripts if you want `.env` bootstrapped automatically with a generated `SECRET_KEY`:
-
-```bash
-./scripts/start.sh
-./scripts/start.sh --profile full
-```
-
-```powershell
-.\scripts\start.ps1
-.\scripts\start.ps1 --profile email
-```
-
-Manual backup trigger:
-
-```bash
-./scripts/backup.sh
-```
-
-## Production deployment
-
-The shipped Compose topology is designed for single-host, self-hosted deployments:
-
-- All services use `restart: unless-stopped`
-- Persistent named volumes store database state, uploads, Ollama models, and backups
-- Every service defines a health check
-- API request logs include correlation IDs, user/family context, slow-request warnings, grading lifecycle events, and backup lifecycle events
-- Containers use memory limits
-- Security hardening is enabled with dropped Linux capabilities, `no-new-privileges`, and read-only root filesystems where practical
-- The app image runs as a non-root user and uses `tini` for signal handling
+## Docker deployment
 
 Recommended production steps:
 
@@ -86,183 +72,164 @@ Recommended production steps:
 2. Replace `SECRET_KEY`, database credentials, and bootstrap defaults
 3. Set `SESSION_COOKIE_SECURE=true` behind HTTPS
 4. Set `INVITATION_BASE_URL` to your external URL
-5. For production email, replace the default SMTP settings with your real relay
-6. For scheduled backups, keep `BACKUP_TARGET=/data/backups` and enable the `backup` profile
-7. Enable the `ai` profile only if the host has enough RAM for Ollama
+5. Configure SMTP if you want invitation or alert emails
+6. Enable `ai` only on hosts that can run Ollama comfortably
+7. Point `BACKUP_MOUNT_SOURCE` at a writable local directory or mounted NAS share, then enable `backup` for scheduled NAS backups
 
-Example:
+Examples:
 
 ```bash
+# Base stack
+docker compose up -d --build
+
+# Full stack
 docker compose --profile full up -d --build
+
+# Review health
 docker compose ps
 docker compose logs -f app
+curl http://localhost:8000/health
 ```
 
-## Common operations
+Useful helpers:
 
 ```bash
-# Validate the rendered Compose config
-docker compose config
-
-# Validate the fully enabled stack
-docker compose --profile full config
-
-# Stop services but keep data
-docker compose down
-
-# Stop services and remove volumes
-docker compose down -v
-
-# Review app health
-curl http://localhost:8000/health
-
-# Review capabilities
-curl http://localhost:8000/api/capabilities
+./scripts/start.sh
+./scripts/start.sh --profile full
+./scripts/backup.sh
 ```
+
+```powershell
+.\scripts\start.ps1
+.\scripts\start.ps1 --profile email
+```
+
+## Local development
+
+### Backend
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+cd backend
+python -m pytest -q
+uvicorn backend.main:app --reload
+```
+
+### Frontend
+
+```powershell
+cd frontend
+npm ci
+npm run build
+```
+
+See `docs/development.md` for the full development workflow.
 
 ## Authentication and tenancy
 
-- First run shows a one-time owner setup flow that creates the first family and owner account.
-- Existing single-family installs are migrated into one default family plus one owner user automatically.
-- The migrated owner uses `BOOTSTRAP_OWNER_EMAIL` for login and reuses the previous `FAMILY_PASSWORD` or `FAMILY_PASSWORD_HASH` as the new password.
-- All family data is tenant-scoped in the API and database using `family_id` foreign keys.
-- Local email/password auth remains the default; optional OIDC and SAML overlays can be enabled with `AUTH_PROVIDER`.
-- See `docs/auth-providers.md` for Microsoft Entra ID, generic OIDC, and SAML setup details.
+- First run exposes a one-time owner bootstrap flow
+- All family data is filtered by `family_id`
+- Local email/password auth is the default
+- Set `AUTH_PROVIDER=oidc` or `AUTH_PROVIDER=saml` to enable external sign-in
+- Incoming external users are matched by email and can be auto-provisioned into `AUTH_DEFAULT_FAMILY_NAME`
 
-## Environment variables
+## Configuration reference
 
 | Variable | Required | Description |
 | --- | --- | --- |
 | `APP_PORT` | No | Host port published for the web app. |
-| `POSTGRES_USER` | Yes | Postgres username for the `db` container. |
-| `POSTGRES_PASSWORD` | Yes | Postgres password for the `db` container. |
-| `POSTGRES_DB` | Yes | Postgres database name. |
-| `DATABASE_URL` | Yes | Async SQLAlchemy connection string used by FastAPI and Alembic. |
-| `SECRET_KEY` | Yes | Signing key for session cookies. Change this for any real deployment. |
-| `SESSION_COOKIE_NAME` | No | Cookie name for the authenticated user session. |
-| `CSRF_COOKIE_NAME` | No | Cookie name for the CSRF token used by authenticated browser requests. |
+| `POSTGRES_USER` | Yes | PostgreSQL username for the `db` container. |
+| `POSTGRES_PASSWORD` | Yes | PostgreSQL password for the `db` container. |
+| `POSTGRES_DB` | Yes | PostgreSQL database name. |
+| `DATABASE_URL` | Yes | Async SQLAlchemy connection string for FastAPI and Alembic. |
+| `SECRET_KEY` | Yes | Signing key for session cookies. |
+| `SESSION_COOKIE_NAME` | No | Session cookie name. |
+| `CSRF_COOKIE_NAME` | No | CSRF cookie name. |
 | `SESSION_MAX_AGE_SECONDS` | No | Session lifetime in seconds. |
-| `SESSION_COOKIE_SECURE` | No | Set to `true` when serving over HTTPS. |
-| `AUTH_PROVIDER` | No | `local`, `oidc`, or `saml`. Local remains the default. |
-| `AUTH_AUTO_PROVISION_MODE` | No | `default_family` to auto-place SSO users, or `reject` to require an invitation or existing membership. |
-| `AUTH_DEFAULT_FAMILY_NAME` | No | Family name used when SSO users are auto-provisioned. |
-| `OIDC_CLIENT_ID` | No | Required when `AUTH_PROVIDER=oidc`. |
-| `OIDC_CLIENT_SECRET` | No | Required when `AUTH_PROVIDER=oidc`. |
-| `OIDC_DISCOVERY_URL` | No | Required when `AUTH_PROVIDER=oidc`; OpenID discovery document URL. |
-| `SAML_METADATA_URL` | No | Required when `AUTH_PROVIDER=saml`; IdP metadata XML URL. |
-| `SAML_ENTITY_ID` | No | Required when `AUTH_PROVIDER=saml`; service provider entity ID. |
-| `SAML_ACS_URL` | No | Required when `AUTH_PROVIDER=saml`; Assertion Consumer Service callback URL. |
-| `BOOTSTRAP_OWNER_EMAIL` | No | Email used by the initial owner account and migration-created owner user. |
-| `BOOTSTRAP_OWNER_DISPLAY_NAME` | No | Display name for the bootstrap owner account. |
-| `BOOTSTRAP_FAMILY_NAME` | No | Default family name used during bootstrap and legacy migration. |
-| `BOOTSTRAP_TIMEZONE` | No | Default family timezone for bootstrap and legacy migration. |
-| `BOOTSTRAP_GRADING_SCALE` | No | Default family grading scale for bootstrap and legacy migration. |
-| `FAMILY_PASSWORD` | Yes* | Legacy password source reused when migrating an existing single-family install. |
-| `FAMILY_PASSWORD_HASH` | No | Legacy bcrypt hash source reused when migrating an existing single-family install. |
-| `INVITATION_BASE_URL` | No | External base URL used when building invitation links. |
-| `AI_PROVIDER` | No | `ollama` or `openai`. Leave as `ollama` when the `ai` profile is enabled. |
-| `OLLAMA_HOST` | No | Base URL for the Ollama service. |
-| `OLLAMA_MODEL` | No | Ollama model name to pre-pull and use for grading. |
-| `OPENAI_API_KEY` | No | Required only when `AI_PROVIDER=openai`. |
-| `SMTP_HOST` | No | SMTP relay host. Defaults to the optional `smtp` service for local profile-based installs. |
+| `SESSION_COOKIE_SECURE` | No | Set to `true` behind HTTPS. |
+| `SESSION_ROTATION_SECONDS` | No | Interval after which active sessions are rotated. |
+| `PASSWORD_MIN_LENGTH` | No | Minimum password length for local users. |
+| `AUTH_LOCKOUT_THRESHOLD` | No | Failed login attempts before temporary lockout. |
+| `AUTH_LOCKOUT_MINUTES` | No | Temporary lockout duration in minutes. |
+| `AUTH_PROVIDER` | No | `local`, `oidc`, or `saml`. |
+| `AUTH_AUTO_PROVISION_MODE` | No | `default_family` or `reject` for external identities. |
+| `AUTH_DEFAULT_FAMILY_NAME` | No | Family name used when auto-provisioning SSO users. |
+| `OIDC_CLIENT_ID` | No | OIDC client/application ID. |
+| `OIDC_CLIENT_SECRET` | No | OIDC client secret. |
+| `OIDC_DISCOVERY_URL` | No | OIDC discovery URL. |
+| `SAML_METADATA_URL` | No | SAML IdP metadata URL. |
+| `SAML_ENTITY_ID` | No | Service provider entity ID. |
+| `SAML_ACS_URL` | No | SAML assertion consumer service URL. |
+| `BOOTSTRAP_OWNER_EMAIL` | No | Initial owner email and legacy migration owner email. |
+| `BOOTSTRAP_OWNER_DISPLAY_NAME` | No | Initial owner display name. |
+| `BOOTSTRAP_FAMILY_NAME` | No | Initial family name. |
+| `BOOTSTRAP_TIMEZONE` | No | Initial family timezone. |
+| `BOOTSTRAP_GRADING_SCALE` | No | Initial family grading scale. |
+| `FAMILY_PASSWORD` | Yes* | Legacy password source for single-family upgrades. |
+| `FAMILY_PASSWORD_HASH` | No | Legacy bcrypt hash source for upgrades. |
+| `INVITATION_BASE_URL` | No | External base URL for invitation links. |
+| `AI_PROVIDER` | No | `ollama` or `openai`. |
+| `OLLAMA_HOST` | No | Ollama base URL. |
+| `OLLAMA_MODEL` | No | Ollama model name. |
+| `OPENAI_API_KEY` | No | Required when `AI_PROVIDER=openai`. |
+| `GRADING_REQUEST_TIMEOUT_SECONDS` | No | Timeout for AI grading requests. |
+| `OCR_REQUEST_TIMEOUT_SECONDS` | No | Timeout for OCR requests. |
+| `GRADING_RETRY_ATTEMPTS` | No | AI retry attempts before fallback. |
+| `GRADING_RETRY_BACKOFF_SECONDS` | No | Backoff between AI retry attempts. |
+| `AI_CIRCUIT_BREAKER_THRESHOLD` | No | Consecutive AI failures before circuit opens. |
+| `AI_CIRCUIT_BREAKER_RESET_SECONDS` | No | Seconds before AI circuit breaker resets. |
+| `CONFIDENCE_THRESHOLD` | No | Auto-approval threshold between `0` and `1`. |
+| `GRADING_POLL_INTERVAL` | No | Background grading worker poll interval. |
+| `UPLOAD_DIR` | No | Upload storage path inside the app container. |
+| `UPLOAD_MAX_BYTES` | No | Maximum upload size in bytes. |
+| `UPLOAD_ALLOWED_MIME_TYPES` | No | Comma-separated allowed upload MIME types. |
+| `ENABLE_METRICS_ENDPOINT` | No | Enables authenticated `/api/metrics`. |
+| `LOG_LEVEL` | No | Root backend log level. |
+| `LOG_JSON` | No | Force JSON logging on or off. |
+| `MIGRATION_MODE` | No | `apply` or `warn` during startup migration preflight. |
+| `SMTP_HOST` | No | SMTP relay host. |
 | `SMTP_PORT` | No | SMTP relay port. |
-| `SMTP_USERNAME` | No | SMTP username for authenticated relays. |
-| `SMTP_PASSWORD` | No | SMTP password for authenticated relays. |
-| `SMTP_FROM_EMAIL` | No | Sender address for invitation emails. |
-| `SMTP_USE_TLS` | No | Enable STARTTLS for SMTP connections. |
-| `SMTP_DEV_PORT` | No | Host port published for the optional local SMTP listener. |
-| `SMTP_WEB_PORT` | No | Host port published for the optional Mailpit web UI. |
-| `BACKUP_TARGET` | No | Filesystem path used by the app and backup worker for persistent backups. |
-| `BACKUP_SOURCE_HOST` | No | Database hostname used by the backup worker. |
-| `BACKUP_SOURCE_PORT` | No | Database port used by the backup worker. |
-| `BACKUP_INTERVAL_SECONDS` | No | Seconds between scheduled backups in the `backup` profile. |
-| `BACKUP_RETENTION_DAYS` | No | Number of days to keep backup artifacts. |
-| `BACKUP_FILENAME_PREFIX` | No | Filename prefix for generated backup archives. |
-| `CONFIDENCE_THRESHOLD` | No | AI auto-approval threshold between `0` and `1`. |
-| `GRADING_POLL_INTERVAL` | No | Seconds between grading worker polls. |
-| `ENABLE_METRICS_ENDPOINT` | No | Enables the authenticated `/api/metrics` monitoring endpoint. |
-| `LOG_LEVEL` | No | Root backend log level (`INFO`, `WARNING`, etc.). |
-| `LOG_JSON` | No | Force JSON logging on/off. Defaults to JSON outside tests. |
-| `UPLOAD_DIR` | No | Filesystem path for uploaded work inside the app container. |
-| `MIGRATION_MODE` | No | `apply` auto-upgrades pending migrations on startup; `warn` reports pending migrations without changing schema. |
-| `APP_MEMORY_LIMIT` | No | Memory limit for the `app` service. |
-| `DB_MEMORY_LIMIT` | No | Memory limit for the `db` service. |
-| `OLLAMA_MEMORY_LIMIT` | No | Memory limit for the `ollama` service. |
-| `SMTP_MEMORY_LIMIT` | No | Memory limit for the `smtp` service. |
-| `BACKUP_MEMORY_LIMIT` | No | Memory limit for the `backup` service. |
+| `SMTP_USERNAME` | No | SMTP username. |
+| `SMTP_PASSWORD` | No | SMTP password. |
+| `SMTP_FROM_EMAIL` | No | Sender address for notification email. |
+| `SMTP_USE_TLS` | No | Enable STARTTLS for SMTP. |
+| `SMTP_DEV_PORT` | No | Host port for Mailpit SMTP. |
+| `SMTP_WEB_PORT` | No | Host port for Mailpit web UI. |
+| `BACKUP_TARGET` | No | Backup path inside the container. Use `/data/backups` when the host bind mount points at a NAS or local archive path. |
+| `BACKUP_DESTINATION` | No | `local`, `smb`, or `nfs`; used for validation and operator-facing status. |
+| `BACKUP_SCHEDULE` | No | Five-field cron expression for scheduled backups (`0 2 * * *` by default). |
+| `BACKUP_RETENTION_DAYS` | No | Retention period for backups. |
+| `BACKUP_FILENAME_PREFIX` | No | Prefix for generated backup archives. |
+| `BACKUP_SCHEDULER_ENABLED` | No | Enables cron-based backup scheduling in the current process. |
+| `BACKUP_MOUNT_SOURCE` | No | Host path bind-mounted to `/data/backups`. Point this at a mounted SMB/NFS share for NAS backups. |
+| `BACKUP_SMB_HOST` | No | SMB host recorded for NAS configuration and startup validation. |
+| `BACKUP_SMB_SHARE` | No | SMB share name recorded for NAS configuration and startup validation. |
+| `BACKUP_SMB_USER` | No | SMB username recorded for the mounted NAS share. |
+| `BACKUP_SMB_PASSWORD` | No | SMB password recorded for the mounted NAS share. |
+| `BACKUP_NFS_HOST` | No | NFS host recorded for NAS configuration and startup validation. |
+| `BACKUP_NFS_PATH` | No | NFS export path recorded for NAS configuration and startup validation. |
+| `BACKUP_ENCRYPTION_KEY` | No | Restic repository password. When `restic` is available, backups switch to encrypted incremental snapshots automatically. |
+| `APP_MEMORY_LIMIT` | No | Memory limit for `app`. |
+| `DB_MEMORY_LIMIT` | No | Memory limit for `db`. |
+| `OLLAMA_MEMORY_LIMIT` | No | Memory limit for `ollama`. |
+| `SMTP_MEMORY_LIMIT` | No | Memory limit for `smtp`. |
+| `BACKUP_MEMORY_LIMIT` | No | Memory limit for `backup`. |
 
 \* Keep `FAMILY_PASSWORD` or `FAMILY_PASSWORD_HASH` populated when upgrading an existing installation from the legacy single-family auth model.
 
-## What the container does on startup
+## Operational notes
 
-- Runs Alembic migrations automatically
-- Performs migration preflight checks for connectivity, current revision, pending revisions, and operator timing
-- Waits for PostgreSQL
-- Starts the background grading worker
-- Exposes `/api/metrics` when `ENABLE_METRICS_ENDPOINT=true`
-- Ensures the uploads directory exists
-- Serves the React SPA and FastAPI API from the same port
+- Startup waits for PostgreSQL, validates migration state, and applies migrations when `MIGRATION_MODE=apply`
+- `/health` stays green for optional service outages and reports degraded capabilities instead
+- `/api/metrics` is available only when `ENABLE_METRICS_ENDPOINT=true`
+- Scheduled backups include database dumps, uploads, and DM-02 full export bundles; use the UI at `/settings/backups` for trigger/history/status visibility
+- Pull requests are expected to pass backend tests, frontend build/lint, migration checks, container checks, and secret scanning
 
-If the `ai` profile is enabled, the Ollama container also pre-pulls the configured model before becoming healthy.
+Additional references:
 
-## Local URLs
-
-- App + API: `http://localhost:8000`
-- API health check: `http://localhost:8000/health`
-- API docs: `http://localhost:8000/docs`
-- Mailpit UI (when `email` profile is enabled): `http://localhost:8025`
-
-## CI/CD and quality gates
-
-Pull requests into `main` are expected to pass these GitHub Actions quality gates before merge:
-
-- **Backend quality gate** — installs OCR dependencies, runs backend pytest, and enforces backend coverage at `76%` or higher.
-- **Migration checks** — lints migration rollback discipline, upgrades from baseline to head, downgrades one revision, then upgrades back to head against PostgreSQL.
-- **Frontend checks** — runs the existing frontend lint and production build steps.
-- **Container checks** — builds the production image, scans it with Trivy, and fails on `HIGH`/`CRITICAL` vulnerabilities unless they are explicitly listed in `.trivyignore`.
-- **Secret scan** — runs Gitleaks on pull requests to catch committed secrets early.
-
-Additional automation:
-
-- **Security workflow** — runs weekly and on pull requests with CodeQL plus Trivy image analysis, publishing findings to the GitHub Security tab and artifacting reports for issue automation.
-- **Security issue sync** — after each completed security run, opens or refreshes `security` issues for `HIGH`/`CRITICAL` findings, routes them through `squad`, and closes them when the finding disappears.
-- **Dependabot** — opens weekly dependency update PRs for pip, npm, and GitHub Actions.
-- **Release workflow** — pushing a `v*` tag builds and publishes `ghcr.io/x3nc0n/homeschool-hero`, then creates a GitHub Release with generated notes.
-
-See `docs/security-scanning.md` for the full security scanning playbook, severity guidance, suppression rules, and escalation path.
-
-### Contributor recommendations
-
-- Run backend tests from a clean state with `cd backend && python -m pytest -q`.
-- Check migration state with `python -m backend.cli migrations status` or `scripts/migrate.ps1 status`.
-- Follow `docs/migrations.md` for upgrade, downgrade, rollback, and migration-authoring discipline.
-- Run frontend checks with `cd frontend && npm ci && npm run lint && npm run build`.
-- Keep `.trivyignore` limited to reviewed exceptions only, with a reason comment directly above each ignored CVE.
-- Add Gitleaks to your local pre-commit workflow so staged changes are scanned before you push.
-
-### Local pre-commit secret scanning
-
-Create `.pre-commit-config.yaml` in the repository root with:
-
-```yaml
-repos:
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.2
-    hooks:
-      - id: gitleaks
-```
-
-Then run:
-
-```bash
-pip install pre-commit
-pre-commit install
-pre-commit run gitleaks --all-files
-```
-
-### Dependency update process
-
-- Dependabot opens weekly PRs for root pip, backend test pip, frontend npm, and GitHub Actions updates.
-- Dependabot PRs are labeled `dependencies`, `type:chore`, and `squad:copilot` for routing.
-- Review update PRs against CI, Security, and container scan results before merge.
-- If an update cannot merge safely, document the blocker on the PR and suppress only the specific scanner finding that was reviewed.
+- `docs/architecture.md`
+- `docs/migrations.md`
+- `docs/security-scanning.md`
