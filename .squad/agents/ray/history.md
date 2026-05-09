@@ -44,3 +44,10 @@
 - MVP fully containerized and ready for deployment
 - 2026-05-08T21:36:16.718-05:00 — Added GitHub Actions CI for backend pytest + coverage, frontend lint/build checks, and Docker image verification; CI uses the existing SQLite-based backend test harness instead of a Postgres service.
 - 2026-05-08T21:54:22.641-05:00 — Fixed local Docker Compose startup so it no longer requires a handwritten `.env`, made Ollama a standard service with automatic model bootstrap, and tightened health checks to verify database + Ollama readiness before reporting healthy.
+
+### Phase 3 Preparation (2026-05-08T22:18:50Z)
+- Submitted 3 decision records: Ray CI Setup, Ray Docker Local Stack, Winston CI Test Reliability
+- All decisions merged into active registry via Scribe coordination
+- Orchestration log recorded: Docker crash diagnosis + Ollama integration ✅ COMPLETE
+- Production plan finalized by Egon (40 todos, 9 functional areas, explicit dependencies)
+- Team ready for phase 3 parallel workstreams: multi-family tenancy, RBAC, compliance, performance

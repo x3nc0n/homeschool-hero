@@ -29,6 +29,24 @@
 - **Decision:** Use PyMuPDF for PDF-to-image OCR input, implement Ollama/OpenAI grading with strict JSON-oriented prompts plus freeform parsing fallback, and run grading worker as startup-managed daemon thread polling queued jobs.
 - **Impact:** End-to-end upload → OCR → AI grading active by default, auto-completes when confidence meets threshold, gracefully routes low-confidence cases to `needs_review`.
 
+### Ray CI Setup (2026-05-08)
+- **Author:** Ray
+- **Context:** GitHub Actions CI for push and pull request validation on `main`; backend pytest suite already forces SQLite test database.
+- **Decision:** Use SQLite for backend CI test job instead of provisioning PostgreSQL; install `tesseract-ocr` and run verbose pytest with coverage from `backend/`.
+- **Impact:** CI aligned with Winston/Ray backend test strategy, faster execution, avoids unexercised database service.
+
+### Ray Docker Local Stack (2026-05-08)
+- **Author:** Ray
+- **Context:** `docker compose up` failed locally: missing `.env`, exposed conflicting ports, Ollama treated as optional despite grading dependency.
+- **Decision:** Default compose stack self-contained via automatic `.env.example` load with `.env` as optional override; PostgreSQL and Ollama on internal Docker network; pre-pull configured Ollama model before app start.
+- **Impact:** Fresh clones boot with `docker compose up --build`; local AI grading works without manual steps; health checks represent real grading readiness.
+
+### Winston CI Test Reliability (2026-05-08)
+- **Author:** Ray (on behalf of Winston test strategy)
+- **Context:** GitHub Actions test runs need backend suite to pass without PostgreSQL, Tesseract, Ollama, or OpenAI services.
+- **Decision:** Keep backend pytest suite SQLite-first in CI; store upload artifacts under `backend/.pytest-state`; mock OCR/AI service calls in tests; keep static `/grades/history` and average routes ahead of `/{grade_id}`.
+- **Impact:** CI executes `cd backend && python -m pytest -v` without external service containers; review-queue tests safe to skip when no review jobs seeded.
+
 ## Governance
 
 - All meaningful changes require team consensus

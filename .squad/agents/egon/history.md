@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-05-08T21:57:09.039-05:00 — Drafted the next-phase feature plan covering scheduled NAS backups, GitHub security scanning, scan-driven issue automation, guarded Squad auto-remediation, and the self-hosted v1.0 roadmap.
+- 2026-05-08T21:57:09.039-05:00 — Replaced the conservative phased plan with a production-ready functional-area execution plan covering multi-family tenancy, RBAC, academic operations, compliance, data portability, graceful degradation, and self-hosted operations.
 - Project: homeschool-hero — open-source homeschool platform for families
 - User: John — mildly IT-inclined parent audience
 - Core features: assignment tracking, PDF/photo upload, quizzes, tests, grade tracking, auto-grading with human review
@@ -30,3 +32,10 @@
 - Winston: Test infrastructure (async pytest, mocked dependencies) ✓ 33 tests passing
 - Scribe archived decisions.md (4 entries merged, inbox cleared)
 - Next phase: background job queue (tasks 17-19), integration tests (23-24)
+
+### Phase 3 Planning Complete (2026-05-08T22:18:50Z)
+- Comprehensive production plan finalized: 40 structured todos across 9 functional areas
+- Functional areas: multi-family tenancy, RBAC, academic operations, compliance, data portability, graceful degradation, self-hosted operations, performance optimization, security hardening
+- Dependency graph validated; rollout strategy defined per area
+- Orchestration log recorded: Production-ready build plan ✅ COMPLETE
+- Team aligned on post-MVP direction; parallel execution model ready for phase 3
