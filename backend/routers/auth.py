@@ -34,6 +34,7 @@ from backend.services.auth_oidc import OIDCConfigurationError, begin_oidc_login,
 from backend.services.auth_provisioning import ExternalIdentity, provision_external_identity
 from backend.services.auth_saml import SAMLConfigurationError, begin_saml_login, complete_saml_login, get_metadata_xml
 from backend.services.audit import log_event
+from backend.services.gradebook import ensure_default_grade_scale
 from backend.services.notifications import create_security_alert_for_user
 
 router = APIRouter(prefix='/auth', tags=['auth'])
@@ -44,6 +45,7 @@ def _set_session_cookie(response: Response, request: Request | None, *, user_id:
 
 
 def _auth_session_from_record(user: User, membership: FamilyMembership, family: Family) -> AuthSession:
+    family_settings = family.__dict__.get('family_settings')
     return AuthSession(
         user_id=user.id,
         family_id=family.id,
@@ -53,6 +55,7 @@ def _auth_session_from_record(user: User, membership: FamilyMembership, family: 
         role=membership.role.value,
         is_owner=membership.is_owner,
         family_name=family.name,
+        family_state_code=family_settings.state_code if family_settings else 'CUSTOM',
         student_id=membership.student_id,
     )
 
@@ -103,7 +106,7 @@ def _session_response(auth: AuthSession, message: str | None = None) -> SessionR
             'is_active': True,
             'auth_provider': auth.auth_provider,
         },
-        family={'id': auth.family_id, 'name': auth.family_name},
+        family={'id': auth.family_id, 'name': auth.family_name, 'state_code': auth.family_state_code},
         membership={'role': auth.role, 'is_owner': auth.is_owner, 'student_id': auth.student_id},
         message=message,
     )
@@ -144,6 +147,8 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
     family_settings = FamilySettings(family=family, timezone=payload.timezone.strip(), grading_scale=payload.grading_scale.strip())
 
     db.add_all([family, user, membership, family_settings])
+    await db.flush()
+    await ensure_default_grade_scale(db, family.id)
     await db.commit()
 
     auth = AuthSession(
@@ -155,6 +160,7 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
         role=membership.role.value,
         is_owner=membership.is_owner,
         family_name=family.name,
+        family_state_code=family_settings.state_code,
         student_id=membership.student_id,
     )
     _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
@@ -172,7 +178,7 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
             await _register_failed_login(db, user)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid email or password')
 
-    user, membership, family = membership_row
+    user, membership, family, state_code = membership_row
     if _is_locked(user):
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail='Account temporarily locked. Try again later.')
     if not verify_password(payload.password, user.password_hash):
@@ -181,7 +187,18 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
 
     await _reset_failed_login(db, user)
     _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
-    auth = _auth_session_from_record(user, membership, family)
+    auth = AuthSession(
+        user_id=user.id,
+        family_id=family.id,
+        email=user.email,
+        display_name=user.display_name,
+        auth_provider=user.auth_provider,
+        role=membership.role.value,
+        is_owner=membership.is_owner,
+        family_name=family.name,
+        family_state_code=(state_code or 'CUSTOM').upper(),
+        student_id=membership.student_id,
+    )
     await log_event(
         db,
         action=AuditAction.login,

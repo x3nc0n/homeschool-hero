@@ -54,6 +54,7 @@ class SessionUser(BaseModel):
 class SessionFamily(BaseModel):
     id: int
     name: str
+    state_code: str = 'CUSTOM'
 
 
 class SessionMembership(BaseModel):

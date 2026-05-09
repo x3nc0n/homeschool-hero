@@ -24,3 +24,4 @@ class Student(TimestampMixin, Base):
     attendance_records = relationship('AttendanceRecord', back_populates='student', cascade='all, delete-orphan')
     portfolio_entries = relationship('PortfolioEntry', back_populates='student', cascade='all, delete-orphan')
     portfolio_collections = relationship('PortfolioCollection', back_populates='student', cascade='all, delete-orphan')
+    compliance_statuses = relationship('ComplianceStatus', back_populates='student', cascade='all, delete-orphan')

@@ -15,6 +15,11 @@ import type {
   AnswerKeyUpsertPayload,
   AssignmentUpsertPayload,
   CalendarEvent,
+  ComplianceCustomRulePayload,
+  ComplianceDashboard,
+  ComplianceRule,
+  ComplianceRuleListResponse,
+  ComplianceStudentStatus,
   Schedule,
   ScheduleBlock,
   ScheduleDetail,
@@ -35,11 +40,20 @@ import type {
   CapabilitiesResponse,
   CreateInvitationPayload,
   Grade,
+  GradeCategory,
+  GradebookSummary,
+  GradebookTrends,
+  GradebookView,
+  GradeScale,
+  GradeScaleInput,
+  GradingJob,
   GradeHistoryFilters,
   GradeHistoryItem,
   HealthResponse,
   GradingPeriod,
   InstructionalDayCount,
+  ImportEntityType,
+  ImportJob,
   Invitation,
   Notification,
   NotificationListResponse,
@@ -60,8 +74,16 @@ import type {
   RegisterPayload,
   Resource,
   ResourceType,
-  ReviewDecisionPayload,
+  ReviewApprovePayload,
+  ReviewAssignPayload,
+  ReviewBulkResponse,
+  ReviewBulkPayload,
+  ReviewComment,
+  ReviewCommentPayload,
   ReviewQueueItem,
+  ReviewRejectPayload,
+  ReviewRegradePayload,
+  ReviewReviewer,
   SchoolYear,
   SchoolYearDetail,
   Student,
@@ -160,6 +182,39 @@ export const api = {
 
   getDashboardSummary() {
     return request<DashboardSummary>('/dashboard/summary')
+  },
+
+  getComplianceDashboard(schoolYearId?: number) {
+    const query = schoolYearId ? `?school_year_id=${schoolYearId}` : ''
+    return request<ComplianceDashboard>(`/compliance/dashboard${query}`)
+  },
+
+  getComplianceRules(stateCode?: string) {
+    const query = stateCode ? `?state=${encodeURIComponent(stateCode)}` : ''
+    return request<ComplianceRuleListResponse>(`/compliance/rules${query}`)
+  },
+
+  getComplianceStatus(studentId: number, schoolYearId?: number) {
+    const query = schoolYearId ? `?school_year_id=${schoolYearId}` : ''
+    return request<ComplianceStudentStatus>(`/compliance/${studentId}/status${query}`)
+  },
+
+  getFamilyComplianceState() {
+    return request<{ state_code: string }>('/compliance/family/state')
+  },
+
+  updateFamilyComplianceState(stateCode: string) {
+    return request<{ state_code: string }>('/compliance/family/state', {
+      method: 'PUT',
+      body: JSON.stringify({ state_code: stateCode }),
+    })
+  },
+
+  createCustomComplianceRule(payload: ComplianceCustomRulePayload) {
+    return request<ComplianceRule>('/compliance/rules/custom', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   },
 
   getExternalAuthUrl(provider: 'oidc' | 'saml') {
@@ -285,16 +340,41 @@ export const api = {
     return request<Subject[]>('/subjects')
   },
 
-  createSubject(payload: Pick<Subject, 'name' | 'color'>) {
+  createSubject(payload: Pick<Subject, 'name' | 'color' | 'grading_mode' | 'grade_scale_id'>) {
     return request<Subject>('/subjects', { method: 'POST', body: JSON.stringify(payload) })
   },
 
-  updateSubject(id: number, payload: Partial<Pick<Subject, 'name' | 'color'>>) {
+  updateSubject(id: number, payload: Partial<Pick<Subject, 'name' | 'color' | 'grading_mode' | 'grade_scale_id'>>) {
     return request<Subject>(`/subjects/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
   },
 
   deleteSubject(id: number) {
     return request<void>(`/subjects/${id}`, { method: 'DELETE' })
+  },
+
+  listImportJobs() {
+    return request<ImportJob[]>('/imports')
+  },
+
+  uploadImportFile(entityType: ImportEntityType, file: File) {
+    const formData = new FormData()
+    formData.set('file', file)
+    return request<ImportJob>(`/imports/upload?entity_type=${encodeURIComponent(entityType)}`, {
+      method: 'POST',
+      body: formData,
+    })
+  },
+
+  getImportJobStatus(jobId: number) {
+    return request<ImportJob>(`/imports/${jobId}/status`)
+  },
+
+  validateImportJob(jobId: number) {
+    return request<ImportJob>(`/imports/${jobId}/validate`, { method: 'POST' })
+  },
+
+  executeImportJob(jobId: number) {
+    return request<ImportJob>(`/imports/${jobId}/execute`, { method: 'POST' })
   },
 
   listAttendance(filters: { student_id?: number; date?: string; date_from?: string; date_to?: string } = {}) {
@@ -704,6 +784,59 @@ export const api = {
     return request<void>(`/grades/${id}`, { method: 'DELETE' })
   },
 
+  getGradebook(studentId: number, filters: { subject_id?: number; grading_period_id?: number } = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null) return
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<GradebookView>(`/gradebook/${studentId}${query ? `?${query}` : ''}`)
+  },
+
+  getGradebookSummary(studentId: number) {
+    return request<GradebookSummary>(`/gradebook/${studentId}/summary`)
+  },
+
+  getGradeTrends(studentId: number, filters: { subject_id?: number; grading_period_id?: number } = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null) return
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<GradebookTrends>(`/gradebook/${studentId}/trends${query ? `?${query}` : ''}`)
+  },
+
+  getGradeCategories(subjectId: number) {
+    return request<GradeCategory[]>(`/gradebook/categories?subject_id=${subjectId}`)
+  },
+
+  upsertGradeCategories(subjectId: number, categories: GradeCategory[]) {
+    return request<GradeCategory[]>('/gradebook/categories', {
+      method: 'PUT',
+      body: JSON.stringify({ subject_id: subjectId, categories }),
+    })
+  },
+
+  listGradeScales() {
+    return request<GradeScale[]>('/gradebook/scales')
+  },
+
+  upsertGradeScales(scales: GradeScaleInput[]) {
+    return request<GradeScale[]>('/gradebook/scales', {
+      method: 'PUT',
+      body: JSON.stringify({ scales }),
+    })
+  },
+
+  recalculateGradebook(payload: { student_id: number; subject_id?: number; grading_period_id?: number }) {
+    return request<GradebookView>('/gradebook/calculate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
   listQuizzes() {
     return request<Quiz[]>('/quizzes')
   },
@@ -737,19 +870,75 @@ export const api = {
     }
   },
 
-  listReviewQueue() {
-    return request<ReviewQueueItem[]>('/grading/review-queue')
+  listReviewQueue(filters?: { status?: string; priority?: string; student_id?: number; subject_id?: number }) {
+    const params = new URLSearchParams()
+    if (filters?.status) params.set('status', filters.status)
+    if (filters?.priority) params.set('priority', filters.priority)
+    if (filters?.student_id) params.set('student_id', String(filters.student_id))
+    if (filters?.subject_id) params.set('subject_id', String(filters.subject_id))
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    return request<ReviewQueueItem[]>(`/reviews${suffix}`)
+  },
+
+  getReview(id: number) {
+    return request<ReviewQueueItem>(`/reviews/${id}`)
+  },
+
+  listReviewers() {
+    return request<ReviewReviewer[]>('/reviews/reviewers')
   },
 
   listGradingJobs(status?: string) {
     const params = new URLSearchParams()
     if (status) params.set('status', status)
     const suffix = params.toString() ? `?${params.toString()}` : ''
-    return request<ReviewQueueItem[]>(`/grading/jobs${suffix}`)
+    return request<GradingJob[]>(`/grading/jobs${suffix}`)
   },
 
-  submitReviewDecision(reviewId: number, payload: ReviewDecisionPayload) {
-    return request<ReviewQueueItem>(`/grading/review/${reviewId}`, {
+  approveReview(reviewId: number, payload: ReviewApprovePayload) {
+    return request<ReviewQueueItem>(`/reviews/${reviewId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  rejectReview(reviewId: number, payload: ReviewRejectPayload) {
+    return request<ReviewQueueItem>(`/reviews/${reviewId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  regradeReview(reviewId: number, payload: ReviewRegradePayload) {
+    return request<ReviewQueueItem>(`/reviews/${reviewId}/regrade`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  assignReview(reviewId: number, payload: ReviewAssignPayload) {
+    return request<ReviewQueueItem>(`/reviews/${reviewId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  bulkApproveReviews(payload: ReviewBulkPayload & { notes?: string; override_reason?: string }) {
+    return request<ReviewBulkResponse>('/reviews/bulk/approve', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  bulkAssignReviews(payload: ReviewBulkPayload & ReviewAssignPayload) {
+    return request<ReviewBulkResponse>('/reviews/bulk/assign', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  addReviewComment(reviewId: number, payload: ReviewCommentPayload) {
+    return request<ReviewComment>(`/reviews/${reviewId}/comments`, {
       method: 'POST',
       body: JSON.stringify(payload),
     })

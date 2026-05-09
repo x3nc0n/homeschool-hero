@@ -47,6 +47,7 @@ class SchoolYear(TimestampMixin, Base):
     )
     schedules = relationship('Schedule', back_populates='school_year', cascade='all, delete-orphan')
     lesson_plans = relationship('LessonPlan', back_populates='school_year', cascade='all, delete-orphan')
+    compliance_statuses = relationship('ComplianceStatus', back_populates='school_year', cascade='all, delete-orphan')
 
 
 class Term(TimestampMixin, Base):

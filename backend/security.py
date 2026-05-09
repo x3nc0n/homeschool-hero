@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import Family, FamilyMembership, User
+from backend.models import Family, FamilyMembership, FamilySettings, User
 
 serializer = URLSafeTimedSerializer(settings.secret_key, salt='homeschool-session')
 ModelT = TypeVar('ModelT')
@@ -38,6 +38,7 @@ class AuthSession:
     role: str
     is_owner: bool
     family_name: str
+    family_state_code: str = 'CUSTOM'
     student_id: int | None = None
 
 
@@ -177,9 +178,10 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
 
     stmt = (
-        select(User, FamilyMembership, Family)
+        select(User, FamilyMembership, Family, FamilySettings.state_code)
         .join(FamilyMembership, FamilyMembership.user_id == User.id)
         .join(Family, Family.id == FamilyMembership.family_id)
+        .outerjoin(FamilySettings, FamilySettings.family_id == Family.id)
         .where(
             User.id == claims['user_id'],
             User.is_active.is_(True),
@@ -191,7 +193,7 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
     row = result.one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
-    user, membership, family = row
+    user, membership, family, state_code = row
     return AuthSession(
         user_id=user.id,
         family_id=family.id,
@@ -201,6 +203,7 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
         role=membership.role.value,
         is_owner=membership.is_owner,
         family_name=family.name,
+        family_state_code=(state_code or 'CUSTOM').upper(),
         student_id=membership.student_id,
     )
 
@@ -231,11 +234,12 @@ async def get_login_membership(
     *,
     email: str,
     family_id: int | None = None,
-) -> tuple[User, FamilyMembership, Family] | None:
+) -> tuple[User, FamilyMembership, Family, str | None] | None:
     stmt = (
-        select(User, FamilyMembership, Family)
+        select(User, FamilyMembership, Family, FamilySettings.state_code)
         .join(FamilyMembership, FamilyMembership.user_id == User.id)
         .join(Family, Family.id == FamilyMembership.family_id)
+        .outerjoin(FamilySettings, FamilySettings.family_id == Family.id)
         .where(
             User.email == normalize_email(email),
             User.is_active.is_(True),

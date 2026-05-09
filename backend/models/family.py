@@ -31,9 +31,12 @@ class Family(TimestampMixin, Base):
     memberships = relationship('FamilyMembership', back_populates='family', cascade='all, delete-orphan')
     invitations = relationship('Invitation', back_populates='family', cascade='all, delete-orphan')
     audit_events = relationship('AuditEvent', back_populates='family', cascade='all, delete-orphan')
+    grade_scales = relationship('GradeScale', back_populates='family', cascade='all, delete-orphan')
     notifications = relationship('Notification', back_populates='family', cascade='all, delete-orphan')
     portfolio_entries = relationship('PortfolioEntry', back_populates='family', cascade='all, delete-orphan')
     portfolio_collections = relationship('PortfolioCollection', back_populates='family', cascade='all, delete-orphan')
+    compliance_rules = relationship('ComplianceRule', back_populates='family', cascade='all, delete-orphan')
+    compliance_statuses = relationship('ComplianceStatus', back_populates='family', cascade='all, delete-orphan')
 
 
 class FamilySettings(TimestampMixin, Base):
@@ -42,6 +45,7 @@ class FamilySettings(TimestampMixin, Base):
     family_id: Mapped[int] = mapped_column(ForeignKey('families.id', ondelete='CASCADE'), primary_key=True)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default='UTC', server_default='UTC')
     grading_scale: Mapped[str] = mapped_column(String(64), nullable=False, default='letter', server_default='letter')
+    state_code: Mapped[str] = mapped_column(String(8), nullable=False, default='CUSTOM', server_default='CUSTOM')
 
     family = relationship('Family', back_populates='family_settings')
 

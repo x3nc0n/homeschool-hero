@@ -253,6 +253,7 @@ async def accept_invitation(
     )
     await db.commit()
 
+    family_settings = family.__dict__.get('family_settings')
     auth = AuthSession(
         user_id=user.id,
         family_id=family.id,
@@ -262,6 +263,7 @@ async def accept_invitation(
         role=membership.role.value,
         is_owner=membership.is_owner,
         family_name=family.name,
+        family_state_code=family_settings.state_code if family_settings else 'CUSTOM',
         student_id=membership.student_id,
     )
     _set_session_cookie(response, request, user_id=user.id, family_id=family.id)

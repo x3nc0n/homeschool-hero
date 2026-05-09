@@ -1,9 +1,12 @@
 export type AssignmentStatus = 'pending' | 'complete' | 'graded'
-export type AssignmentCategory = 'homework' | 'quiz' | 'test' | 'project' | 'other'
+export type AssignmentCategory = 'homework' | 'quiz' | 'test' | 'project' | 'participation' | 'extra_credit' | 'other'
 export type AssignmentRecurrence = 'none' | 'daily' | 'weekly'
 export type AssignmentTargetStatus = 'assigned' | 'submitted' | 'graded' | 'excused'
+export type SubjectGradingMode = 'points' | 'percentage'
 export type PortfolioEntryType = 'work_sample' | 'journal' | 'milestone' | 'photo' | 'note'
 export type ReviewAction = 'approve' | 'modify' | 'reject'
+export type ReviewStatus = 'pending_review' | 'in_review' | 'approved' | 'rejected' | 'needs_regrade'
+export type ReviewPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type GradingJobStatus =
   | 'pending'
   | 'ocr_processing'
@@ -18,6 +21,14 @@ export type CapabilityName = 'ai_grading' | 'email' | 'backup' | 'ocr'
 export type AuthProvider = 'local' | 'oidc' | 'saml'
 export type ScheduleOverrideType = 'cancel' | 'reschedule' | 'add'
 export type AttendanceStatus = 'present' | 'absent' | 'tardy' | 'excused'
+export type ComplianceRuleType =
+  | 'attendance_hours'
+  | 'attendance_days'
+  | 'subjects_required'
+  | 'assessment_required'
+  | 'notification_required'
+  | 'portfolio_required'
+export type ComplianceState = 'compliant' | 'warning' | 'non_compliant'
 export type NotificationType =
   | 'due_date'
   | 'grading_complete'
@@ -49,6 +60,8 @@ export type TermType = 'semester' | 'quarter' | 'trimester' | 'custom'
 export type CalendarEventType = 'holiday' | 'closure' | 'custom'
 export type ResourceType = 'file' | 'link' | 'note'
 export type LessonPlanStatus = 'planned' | 'in_progress' | 'completed' | 'skipped' | 'rescheduled'
+export type ImportEntityType = 'students' | 'subjects' | 'assignments' | 'grades' | 'attendance' | 'curriculum_packages'
+export type ImportJobStatus = 'pending' | 'validating' | 'importing' | 'complete' | 'failed'
 
 export interface ApiErrorPayload {
   detail?: string
@@ -132,6 +145,7 @@ export interface User {
 export interface Family {
   id: number
   name: string
+  state_code?: string
 }
 
 export interface FamilyMembership {
@@ -178,7 +192,10 @@ export interface Subject {
   id: number
   name: string
   color?: string
+   grading_mode?: SubjectGradingMode
+   grade_scale_id?: number | null
   created_at?: string
+   updated_at?: string
 }
 
 export interface AssignmentHistoryEntry {
@@ -471,24 +488,48 @@ export interface QuizAttempt {
   completed_at?: string
 }
 
-export interface ReviewQueueItem {
+export interface ReviewComment {
   id: number
   family_id: number
-  created_by_user_id: number
-  submission_id?: number
-  assignment_id?: number
-  assignment_title?: string
-  student_id?: number
-  student_name?: string
-  file_url?: string
-  file_path?: string
-  file_type?: string
-  status: GradingJobStatus
-  ocr_result?: string
-  ai_grade?: number
+  review_item_id: number
+  author_user_id: number
+  author_name: string
+  body: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ReviewItem {
+  id: number
+  family_id: number
+  submission_id: number
+  grading_job_id: number
+  assignment_id?: number | null
+  assignment_title?: string | null
+  subject_id?: number | null
+  subject_name?: string | null
+  student_id?: number | null
+  student_name?: string | null
+  assigned_to_user_id?: number | null
+  assigned_to_name?: string | null
+  reviewed_by_user_id?: number | null
+  reviewed_by_name?: string | null
+  status: ReviewStatus
+  priority: ReviewPriority
+  ai_suggested_grade?: number | null
   ai_feedback?: string
   ai_confidence?: number
   ai_response?: string
+  reviewer_notes?: string | null
+  reviewed_at?: string | null
+  created_at: string
+  updated_at: string
+  submission_file_url?: string | null
+  submission_file_path?: string | null
+  submission_file_type?: string | null
+  submission_image_url?: string | null
+  ocr_text?: string | null
+  manual_review_reason?: string | null
   answer_key_result?: {
     score: number
     max_score: number
@@ -512,6 +553,31 @@ export interface ReviewQueueItem {
     detail?: string | null
     payload?: Record<string, unknown>
   }>
+  comments: ReviewComment[]
+}
+
+export type ReviewQueueItem = ReviewItem
+
+export interface GradingJob {
+  id: number
+  family_id: number
+  created_by_user_id: number
+  submission_id?: number
+  assignment_id?: number
+  assignment_title?: string
+  student_id?: number
+  student_name?: string
+  file_url?: string
+  file_path?: string
+  file_type?: string
+  status: GradingJobStatus
+  ocr_result?: string
+  ai_grade?: number
+  ai_feedback?: string
+  ai_confidence?: number
+  ai_response?: string
+  answer_key_result?: ReviewItem['answer_key_result']
+  status_history?: ReviewItem['status_history']
   human_override_details?: {
     reviewed_at?: string
     reviewed_by_user_id?: number
@@ -530,14 +596,44 @@ export interface ReviewQueueItem {
   completed_at?: string | null
 }
 
-export type GradingJob = ReviewQueueItem
-
-export interface ReviewDecisionPayload {
-  action: ReviewAction
+export interface ReviewApprovePayload {
   score?: number
   feedback?: string
   notes?: string
   override_reason?: string
+}
+
+export interface ReviewRejectPayload {
+  reason?: string
+  notes?: string
+}
+
+export interface ReviewRegradePayload {
+  reason?: string
+}
+
+export interface ReviewAssignPayload {
+  assigned_to_user_id: number
+}
+
+export interface ReviewCommentPayload {
+  body: string
+}
+
+export interface ReviewBulkPayload {
+  review_ids: number[]
+}
+
+export interface ReviewBulkResponse {
+  updated: number
+  items: ReviewItem[]
+}
+
+export interface ReviewReviewer {
+  user_id: number
+  display_name: string
+  email: string
+  role: FamilyRole
 }
 
 export interface Invitation {
@@ -561,6 +657,28 @@ export interface CreateInvitationPayload {
   role: FamilyRole
   student_id?: number
   expires_in_days?: number
+}
+
+export interface ImportJobError {
+  row?: number | null
+  field?: string | null
+  message: string
+  suggestion?: string | null
+}
+
+export interface ImportJob {
+  id: number
+  family_id: number
+  user_id: number
+  file_path: string
+  entity_type: ImportEntityType
+  status: ImportJobStatus
+  total_rows: number
+  processed_rows: number
+  error_count: number
+  errors: ImportJobError[]
+  created_at: string
+  completed_at?: string | null
 }
 
 export interface AuditEvent {
@@ -666,6 +784,132 @@ export interface GradeHistoryItem {
   notes?: string | null
 }
 
+export interface GradeScaleRange {
+  letter: string
+  min: number
+  max: number
+  gpa_points: number
+}
+
+export interface GradeScale {
+  id: number
+  name: string
+  ranges: GradeScaleRange[]
+  is_default: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export interface GradeScaleInput {
+  id?: number
+  name: string
+  ranges: GradeScaleRange[]
+  is_default: boolean
+}
+
+export interface GradeCategory {
+  id?: number | null
+  name: string
+  weight: number
+  drop_lowest: number
+}
+
+export interface GradebookAssignmentItem {
+  assignment_id: number
+  assignment_title: string
+  category: string
+  grading_period_id?: number | null
+  due_date?: string | null
+  status: string
+  score?: number | null
+  max_score: number
+  percent?: number | null
+  letter_grade?: string | null
+  submission_id?: number | null
+  grade_id?: number | null
+  graded_at?: string | null
+  running_overall_percent?: number | null
+  is_dropped: boolean
+}
+
+export interface GradebookCategorySummary {
+  id?: number | null
+  name: string
+  weight: number
+  drop_lowest: number
+  average_percent?: number | null
+  weighted_percent?: number | null
+  assignment_count: number
+  graded_count: number
+  items: GradebookAssignmentItem[]
+}
+
+export interface GradebookSubjectSummary {
+  subject_id: number
+  subject_name: string
+  subject_color?: string | null
+  grading_mode: SubjectGradingMode
+  grade_scale_id: number
+  overall_percent?: number | null
+  letter_grade?: string | null
+  gpa_points?: number | null
+  assignments: number
+  graded_assignments: number
+  scale: GradeScale
+  categories: GradebookCategorySummary[]
+}
+
+export interface GradebookView {
+  student_id: number
+  student_name: string
+  subject_id?: number | null
+  grading_period_id?: number | null
+  generated_at: string
+  subjects: GradebookSubjectSummary[]
+  gpa?: number | null
+}
+
+export interface GradebookSummarySubject {
+  subject_id: number
+  subject_name: string
+  subject_color?: string | null
+  overall_percent?: number | null
+  letter_grade?: string | null
+  gpa_points?: number | null
+  assignments: number
+  graded_assignments: number
+}
+
+export interface GradebookSummary {
+  student_id: number
+  student_name: string
+  gpa?: number | null
+  subjects: GradebookSummarySubject[]
+}
+
+export interface GradeTrendPoint {
+  assignment_id: number
+  assignment_title: string
+  date: string
+  overall_percent: number
+  letter_grade?: string | null
+}
+
+export interface GradeTrendSeries {
+  subject_id: number
+  subject_name: string
+  subject_color?: string | null
+  points: GradeTrendPoint[]
+}
+
+export interface GradebookTrends {
+  student_id: number
+  student_name: string
+  subject_id?: number | null
+  grading_period_id?: number | null
+  series: GradeTrendSeries[]
+}
+
 export interface DashboardActivityItem {
   id: string
   type: 'audit' | 'grading_job'
@@ -688,6 +932,28 @@ export interface DashboardSummary {
     metrics_enabled: boolean
     generated_at: string
   }
+}
+
+export interface ImportJobError {
+  row?: number | null
+  field?: string | null
+  message: string
+  suggestion?: string | null
+}
+
+export interface ImportJob {
+  id: number
+  family_id: number
+  user_id: number
+  file_path: string
+  entity_type: ImportEntityType
+  status: ImportJobStatus
+  total_rows: number
+  processed_rows: number
+  error_count: number
+  errors: ImportJobError[]
+  created_at: string
+  completed_at?: string | null
 }
 
 export interface Notification {
@@ -779,6 +1045,82 @@ export interface AttendanceHoursSummary {
   total_hours: string
   recorded_days: number
   average_hours_per_day: number
+}
+
+export interface ComplianceRule {
+  id: number
+  family_id?: number | null
+  state_code: string
+  rule_type: ComplianceRuleType
+  rule_name: string
+  description: string
+  threshold_value: string
+  threshold_unit: string
+  subjects_list?: string[] | null
+  is_active: boolean
+  is_custom: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ComplianceStatus {
+  id: number
+  family_id: number
+  student_id: number
+  school_year_id: number
+  rule_id: number
+  status: ComplianceState
+  current_value: string
+  required_value: string
+  last_checked_at: string
+  notes?: string | null
+  rule: ComplianceRule
+}
+
+export interface ComplianceStudentStatus {
+  student_id: number
+  school_year_id?: number | null
+  state_code: string
+  checked_at: string
+  statuses: ComplianceStatus[]
+  summary_counts: Record<ComplianceState, number>
+}
+
+export interface ComplianceDashboardStudent {
+  student: Student
+  statuses: ComplianceStatus[]
+  summary_counts: Record<ComplianceState, number>
+}
+
+export interface ComplianceDashboard {
+  state_code: string
+  school_year_id?: number | null
+  checked_at: string
+  students: ComplianceDashboardStudent[]
+}
+
+export interface ComplianceRuleListResponse {
+  state_code: string
+  summary: {
+    total_rules: number
+    active_rules: number
+  }
+  rules: ComplianceRule[]
+}
+
+export interface FamilyComplianceState {
+  state_code: string
+}
+
+export interface ComplianceCustomRulePayload {
+  state_code?: string
+  rule_type: ComplianceRuleType
+  rule_name: string
+  description: string
+  threshold_value: string
+  threshold_unit: string
+  subjects_list?: string[] | null
+  is_active?: boolean
 }
 
 export interface GradingPeriod {

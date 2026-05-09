@@ -5,11 +5,13 @@ import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { CapabilitiesProvider } from '@/context/CapabilitiesContext'
 import { NotificationsProvider } from '@/context/NotificationsContext'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { FamilySettingsPage } from '@/pages/FamilySettingsPage'
 import { AcceptInvitationPage } from '@/pages/AcceptInvitationPage'
 import { AssignmentsPage } from '@/pages/AssignmentsPage'
 import { AttendancePage } from '@/pages/AttendancePage'
 import { AuditLogPage } from '@/pages/AuditLogPage'
 import { CalendarPage } from '@/pages/CalendarPage'
+import { CompliancePage } from '@/pages/CompliancePage'
 import { CurriculumPage } from '@/pages/CurriculumPage'
 import { GradesPage } from '@/pages/GradesPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
@@ -24,6 +26,7 @@ import { PortfolioPage } from '@/pages/PortfolioPage'
 import { PortfolioSharePage } from '@/pages/PortfolioSharePage'
 import { QuizzesPage } from '@/pages/QuizzesPage'
 import { ReviewQueuePage } from '@/pages/ReviewQueuePage'
+import { ReviewDetailPage } from '@/pages/ReviewDetailPage'
 import { ResourceLibraryPage } from '@/pages/ResourceLibraryPage'
 import { SearchPage } from '@/pages/SearchPage'
 import { SetupPage } from '@/pages/SetupPage'
@@ -70,6 +73,7 @@ function ProtectedRoutes() {
         <Route path="/subjects" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<SubjectsPage />} />} />
         <Route path="/calendar" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CalendarPage />} />} />
         <Route path="/attendance" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<AttendancePage />} />} />
+        <Route path="/compliance" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<CompliancePage />} />} />
         <Route path="/planner" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PlannerPage />} />} />
         <Route path="/lesson-plans" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<LessonPlansPage />} />} />
         <Route path="/curriculum" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CurriculumPage />} />} />
@@ -82,9 +86,11 @@ function ProtectedRoutes() {
         <Route path="/grades" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<GradesPage />} />} />
         <Route path="/quizzes" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<QuizzesPage />} />} />
         <Route path="/review" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewQueuePage />} />} />
+        <Route path="/review/:reviewId" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewDetailPage />} />} />
         <Route path="/invitations" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<InvitationsPage />} />} />
         <Route path="/audit" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<AuditLogPage />} />} />
         <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/settings/family" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<FamilySettingsPage />} />} />
         <Route path="/settings/notifications" element={<NotificationPreferencesPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

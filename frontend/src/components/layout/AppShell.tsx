@@ -14,6 +14,7 @@ import {
   Search,
   Settings,
   Sheet,
+  ShieldCheck,
   UserCheck,
   Users,
 } from 'lucide-react'
@@ -33,6 +34,7 @@ const navItems: Array<{ to: string; label: string; icon: typeof LayoutDashboard;
   { to: '/subjects', label: 'Subjects', icon: BookMarked, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/attendance', label: 'Attendance', icon: UserCheck, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/compliance', label: 'Compliance', icon: ShieldCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/planner', label: 'Planner', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/lesson-plans', label: 'Lesson Plans', icon: BookOpenCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/curriculum', label: 'Curriculum', icon: BookMarked, roles: ['parent', 'co-parent', 'tutor'] },
@@ -47,6 +49,12 @@ const navItems: Array<{ to: string; label: string; icon: typeof LayoutDashboard;
   { to: '/invitations', label: 'Invitations', icon: MailPlus, roles: ['parent', 'co-parent'] },
   { to: '/audit', label: 'Audit Log', icon: ScrollText, roles: ['parent', 'co-parent'] },
   { to: '/notifications', label: 'Notifications', icon: Bell, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+  {
+    to: '/settings/family',
+    label: 'Family Settings',
+    icon: Settings,
+    roles: ['parent', 'co-parent'],
+  },
   {
     to: '/settings/notifications',
     label: 'Notification Settings',

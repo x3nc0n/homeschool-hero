@@ -11,6 +11,7 @@ from backend.models.attendance import AttendanceExcuse, AttendanceRecord, Attend
 from backend.models.audit_event import AuditAction, AuditEvent
 from backend.models.lesson_plan import LessonPlan, LessonPlanStatus, PacingTarget
 from backend.models.calendar import CalendarEvent, CalendarEventType, GradingPeriod, SchoolYear, Term, TermType
+from backend.models.compliance import ComplianceRule, ComplianceRuleType, ComplianceState, ComplianceStatus
 from backend.models.curriculum import (
     CurriculumLesson,
     CurriculumPackage,
@@ -22,10 +23,12 @@ from backend.models.curriculum import (
 from backend.models.base import Base
 from backend.models.family import Family, FamilyMembership, FamilyRole, FamilySettings, Invitation
 from backend.models.grade import Grade, GradedBy
+from backend.models.gradebook import GradeCategory, GradeScale, SubjectGradingMode
 from backend.models.grading_job import GradingJob, GradingJobStatus
 from backend.models.notification import Notification, NotificationPreference, NotificationType
 from backend.models.portfolio import PortfolioCollection, PortfolioEntry, PortfolioEntryType
 from backend.models.quiz import Quiz, QuizAttempt
+from backend.models.review import ReviewComment, ReviewItem, ReviewItemStatus, ReviewPriority
 from backend.models.schedule import Schedule, ScheduleBlock, ScheduleOverride, ScheduleOverrideType
 from backend.models.student import Student
 from backend.models.subject import Subject
@@ -48,6 +51,10 @@ __all__ = [
     'Base',
     'CalendarEvent',
     'CalendarEventType',
+    'ComplianceRule',
+    'ComplianceRuleType',
+    'ComplianceState',
+    'ComplianceStatus',
     'CurriculumLesson',
     'CurriculumPackage',
     'CurriculumUnit',
@@ -57,6 +64,8 @@ __all__ = [
     'FamilySettings',
     'GradingPeriod',
     'Grade',
+    'GradeCategory',
+    'GradeScale',
     'GradedBy',
     'GradingJob',
     'GradingJobStatus',
@@ -73,6 +82,10 @@ __all__ = [
     'PacingTarget',
     'Quiz',
     'QuizAttempt',
+    'ReviewComment',
+    'ReviewItem',
+    'ReviewItemStatus',
+    'ReviewPriority',
     'Resource',
     'ResourceType',
     'Schedule',
@@ -81,6 +94,7 @@ __all__ = [
     'ScheduleOverrideType',
     'SchoolYear',
     'Student',
+    'SubjectGradingMode',
     'Subject',
     'Submission',
     'Term',

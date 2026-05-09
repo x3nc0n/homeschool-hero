@@ -21,14 +21,17 @@ from backend.routers import (
     attendance_router,
     audit_router,
     auth_router,
+    compliance_router,
     curriculum_router,
     dashboard_router,
+    gradebook_router,
     grades_router,
     invitations_router,
     lesson_plans_router,
     notifications_router,
     portfolio_router,
     quizzes_router,
+    reviews_router,
     schedule_router,
     search_router,
     students_router,
@@ -399,10 +402,12 @@ def create_app() -> FastAPI:
     app.include_router(audit_router, prefix=API_PREFIX)
     app.include_router(curriculum_router, prefix=API_PREFIX)
     app.include_router(dashboard_router, prefix=API_PREFIX)
+    app.include_router(gradebook_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)
     app.include_router(subjects_router, prefix=API_PREFIX)
     app.include_router(calendar_router, prefix=API_PREFIX)
     app.include_router(attendance_router, prefix=API_PREFIX)
+    app.include_router(compliance_router, prefix=API_PREFIX)
     app.include_router(assignments_router, prefix=API_PREFIX)
     app.include_router(lesson_plans_router, prefix=API_PREFIX)
     app.include_router(submissions_router, prefix=API_PREFIX)
@@ -411,6 +416,7 @@ def create_app() -> FastAPI:
     app.include_router(quizzes_router, prefix=API_PREFIX)
     app.include_router(schedule_router, prefix=API_PREFIX)
     app.include_router(grading_router, prefix=API_PREFIX)
+    app.include_router(reviews_router, prefix=API_PREFIX)
     app.include_router(search_router, prefix=API_PREFIX)
 
     @app.get('/', include_in_schema=False)
