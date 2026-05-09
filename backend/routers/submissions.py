@@ -27,6 +27,7 @@ async def _load_version_history(db: AsyncSession, family_id: int, submission: Su
     root_id = _version_root_id(submission)
     result = await db.execute(
         select(Submission)
+        .options(selectinload(Submission.grading_job))
         .where(
             Submission.family_id == family_id,
             or_(Submission.id == root_id, Submission.parent_submission_id == root_id),
@@ -95,11 +96,25 @@ async def _mark_superseded_versions(
         prior.is_current = False
         job = prior.grading_job
         if job and job.status in {
-            GradingJobStatus.queued,
-            GradingJobStatus.processing,
-            GradingJobStatus.needs_review,
+            GradingJobStatus.pending,
+            GradingJobStatus.ocr_processing,
+            GradingJobStatus.ocr_complete,
+            GradingJobStatus.ai_grading,
+            GradingJobStatus.ai_complete,
+            GradingJobStatus.review_needed,
         }:
-            job.status = GradingJobStatus.failed
+            job.status = GradingJobStatus.final
+            history = list(job.status_history or [])
+            history.append(
+                {
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'status': GradingJobStatus.final.value,
+                    'detail': 'Submission superseded by newer version',
+                    'payload': {'submission_version': current_submission.submission_version},
+                }
+            )
+            job.status_history = history
+            job.manual_review_reason = f'Superseded by submission version {current_submission.submission_version}.'
             job.error_message = f'Superseded by submission version {current_submission.submission_version}.'
             job.completed_at = datetime.now(timezone.utc)
 
@@ -109,7 +124,11 @@ async def list_submissions(
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.read_submissions, action='view submissions')),
 ) -> list[Submission]:
-    stmt = select(Submission).where(Submission.family_id == auth.family_id, Submission.is_current.is_(True))
+    stmt = (
+        select(Submission)
+        .options(selectinload(Submission.grading_job))
+        .where(Submission.family_id == auth.family_id, Submission.is_current.is_(True))
+    )
     if auth.role == 'student_viewer':
         stmt = stmt.where(Submission.student_id == get_student_scope_id(auth))
     stmt = stmt.order_by(Submission.uploaded_at.desc())
@@ -123,7 +142,13 @@ async def get_submission(
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.read_submissions, action='view submissions')),
 ) -> SubmissionDetail:
-    submission = await get_family_record(db, Submission, submission_id, auth.family_id)
+    submission = (
+        await db.execute(
+            select(Submission)
+            .options(selectinload(Submission.grading_job))
+            .where(Submission.id == submission_id, Submission.family_id == auth.family_id)
+        )
+    ).scalar_one_or_none()
     if not submission:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Submission not found')
     ensure_student_scope(auth, submission.student_id, action='view submissions')
@@ -219,7 +244,13 @@ async def upload_submission(
         target.status = AssignmentTargetStatus.submitted
         target.completed_at = datetime.now(timezone.utc)
 
-    job = GradingJob(family_id=auth.family_id, submission_id=submission.id, status=GradingJobStatus.queued)
+    job = GradingJob(
+        family_id=auth.family_id,
+        created_by_user_id=auth.user_id,
+        submission_id=submission.id,
+        status=GradingJobStatus.pending,
+        status_history=[{'timestamp': datetime.now(timezone.utc).isoformat(), 'status': GradingJobStatus.pending.value, 'detail': 'Job created', 'payload': {}}],
+    )
     db.add(job)
     await db.commit()
     await db.refresh(submission)

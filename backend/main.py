@@ -27,6 +27,7 @@ from backend.routers import (
     invitations_router,
     lesson_plans_router,
     notifications_router,
+    portfolio_router,
     quizzes_router,
     schedule_router,
     search_router,
@@ -36,6 +37,7 @@ from backend.routers import (
 )
 from backend.routers.calendar import router as calendar_router
 from backend.routers.grading import router as grading_router
+from backend.routers.imports import router as imports_router
 from backend.services.capabilities import get_auth_providers, get_capability_registry
 from backend.services.grading_worker import create_worker
 from backend.services.logging_config import bind_context, configure_logging, log_action, reset_context, update_context
@@ -104,6 +106,8 @@ def _is_api_path(path: str) -> bool:
 
 def _is_public_api_path(path: str) -> bool:
     if path in PUBLIC_API_PATHS:
+        return True
+    if path.startswith(f'{API_PREFIX}/portfolio/public/'):
         return True
     return path.startswith(f'{API_PREFIX}/invitations/') and path.endswith('/accept')
 
@@ -391,6 +395,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix=API_PREFIX)
     app.include_router(invitations_router, prefix=API_PREFIX)
     app.include_router(notifications_router, prefix=API_PREFIX)
+    app.include_router(portfolio_router, prefix=API_PREFIX)
     app.include_router(audit_router, prefix=API_PREFIX)
     app.include_router(curriculum_router, prefix=API_PREFIX)
     app.include_router(dashboard_router, prefix=API_PREFIX)
@@ -402,6 +407,7 @@ def create_app() -> FastAPI:
     app.include_router(lesson_plans_router, prefix=API_PREFIX)
     app.include_router(submissions_router, prefix=API_PREFIX)
     app.include_router(grades_router, prefix=API_PREFIX)
+    app.include_router(imports_router, prefix=API_PREFIX)
     app.include_router(quizzes_router, prefix=API_PREFIX)
     app.include_router(schedule_router, prefix=API_PREFIX)
     app.include_router(grading_router, prefix=API_PREFIX)

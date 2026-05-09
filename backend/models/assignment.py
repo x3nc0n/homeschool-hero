@@ -71,6 +71,7 @@ class Assignment(TimestampMixin, Base):
 
     subject = relationship('Subject', back_populates='assignments', lazy='selectin')
     grading_period = relationship('GradingPeriod', back_populates='assignments', lazy='selectin')
+    answer_key = relationship('AnswerKey', back_populates='assignment', cascade='all, delete-orphan', uselist=False, lazy='selectin')
     targets = relationship(
         'AssignmentTarget',
         back_populates='assignment',
@@ -79,6 +80,7 @@ class Assignment(TimestampMixin, Base):
         lazy='selectin',
     )
     submissions = relationship('Submission', back_populates='assignment', cascade='all, delete-orphan')
+    portfolio_entries = relationship('PortfolioEntry', back_populates='assignment')
 
 
 class AssignmentTarget(TimestampMixin, Base):

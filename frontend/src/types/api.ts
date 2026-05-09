@@ -2,7 +2,17 @@ export type AssignmentStatus = 'pending' | 'complete' | 'graded'
 export type AssignmentCategory = 'homework' | 'quiz' | 'test' | 'project' | 'other'
 export type AssignmentRecurrence = 'none' | 'daily' | 'weekly'
 export type AssignmentTargetStatus = 'assigned' | 'submitted' | 'graded' | 'excused'
+export type PortfolioEntryType = 'work_sample' | 'journal' | 'milestone' | 'photo' | 'note'
 export type ReviewAction = 'approve' | 'modify' | 'reject'
+export type GradingJobStatus =
+  | 'pending'
+  | 'ocr_processing'
+  | 'ocr_complete'
+  | 'ai_grading'
+  | 'ai_complete'
+  | 'review_needed'
+  | 'reviewed'
+  | 'final'
 export type FamilyRole = 'parent' | 'co-parent' | 'tutor' | 'student_viewer'
 export type CapabilityName = 'ai_grading' | 'email' | 'backup' | 'ocr'
 export type AuthProvider = 'local' | 'oidc' | 'saml'
@@ -28,10 +38,19 @@ export type AuditAction =
   | 'config_change'
   | 'invitation_create'
   | 'invitation_accept'
+  | 'portfolio_entry_create'
+  | 'portfolio_entry_update'
+  | 'portfolio_entry_delete'
+  | 'portfolio_collection_create'
+  | 'portfolio_collection_update'
+  | 'portfolio_collection_delete'
+  | 'portfolio_share'
 export type TermType = 'semester' | 'quarter' | 'trimester' | 'custom'
 export type CalendarEventType = 'holiday' | 'closure' | 'custom'
 export type ResourceType = 'file' | 'link' | 'note'
 export type LessonPlanStatus = 'planned' | 'in_progress' | 'completed' | 'skipped' | 'rescheduled'
+export type ImportEntityType = 'students' | 'subjects' | 'assignments' | 'grades' | 'attendance' | 'curriculum_packages'
+export type ImportJobStatus = 'pending' | 'validating' | 'importing' | 'complete' | 'failed'
 
 export interface ApiErrorPayload {
   detail?: string
@@ -191,6 +210,26 @@ export interface AssignmentTargetInput {
   status: AssignmentTargetStatus
 }
 
+export interface AnswerKeyQuestion {
+  question_number: string
+  correct_answer: string
+  points: number
+  partial_credit_rules?: string | null
+}
+
+export interface AnswerKey {
+  id: number
+  assignment_id: number
+  family_id: number
+  questions: AnswerKeyQuestion[]
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AnswerKeyUpsertPayload {
+  questions: AnswerKeyQuestion[]
+}
+
 export interface Assignment {
   id: number
   title: string
@@ -208,6 +247,7 @@ export interface Assignment {
   attachments: string[]
   lesson_plan_id?: number | null
   status_history: AssignmentHistoryEntry[]
+  answer_key?: AnswerKey | null
   targets: AssignmentTarget[]
   subject_id?: number
   subject?: Subject
@@ -271,13 +311,143 @@ export interface SubmissionVersion {
   parent_submission_id?: number | null
   is_current?: boolean
   ocr_text?: string
+  grading_job?: GradingJob | null
   uploaded_at?: string
 }
 
 export type Submission = SubmissionVersion
 
+export interface ImportJobError {
+  row?: number | null
+  field?: string | null
+  message: string
+  suggestion?: string | null
+}
+
+export interface ImportJob {
+  id: number
+  family_id: number
+  user_id: number
+  file_path: string
+  entity_type: ImportEntityType
+  status: ImportJobStatus
+  total_rows: number
+  processed_rows: number
+  error_count: number
+  errors: ImportJobError[]
+  created_at: string
+  completed_at?: string | null
+}
+
 export interface SubmissionDetail extends SubmissionVersion {
   version_history: SubmissionVersion[]
+}
+
+export interface PortfolioAssignmentSummary {
+  id: number
+  title: string
+  due_date?: string | null
+}
+
+export interface PortfolioEntry {
+  id: number
+  family_id: number
+  student_id: number
+  entry_type: PortfolioEntryType
+  title: string
+  description?: string | null
+  date: string
+  subject_id?: number | null
+  assignment_id?: number | null
+  submission_id?: number | null
+  attachments: string[]
+  attachment_urls: string[]
+  tags: string[]
+  created_by_user_id: number
+  created_at: string
+  updated_at: string
+  student?: Student | null
+  subject?: Subject | null
+  assignment?: PortfolioAssignmentSummary | null
+  submission?: SubmissionVersion | null
+}
+
+export interface PublicPortfolioEntry {
+  id: number
+  student_id: number
+  entry_type: PortfolioEntryType
+  title: string
+  description?: string | null
+  date: string
+  subject_id?: number | null
+  assignment_id?: number | null
+  submission_id?: number | null
+  attachments: string[]
+  attachment_urls: string[]
+  tags: string[]
+  created_at: string
+  updated_at: string
+  subject?: Subject | null
+  assignment?: PortfolioAssignmentSummary | null
+  submission?: SubmissionVersion | null
+}
+
+export interface PortfolioEntryPayload {
+  student_id: number
+  entry_type: PortfolioEntryType
+  title: string
+  description?: string
+  date: string
+  subject_id?: number
+  assignment_id?: number
+  submission_id?: number
+  tags?: string[]
+}
+
+export interface PortfolioEntryFilters {
+  type?: PortfolioEntryType | 'all'
+  subject_id?: number
+  date_from?: string
+  date_to?: string
+  tags?: string
+}
+
+export interface PortfolioCollection {
+  id: number
+  family_id: number
+  student_id: number
+  name: string
+  description?: string | null
+  entry_ids: number[]
+  is_public: boolean
+  share_token?: string | null
+  created_at: string
+  entries: PortfolioEntry[]
+}
+
+export interface PublicPortfolioCollection {
+  id: number
+  student_id: number
+  name: string
+  description?: string | null
+  is_public: boolean
+  share_token: string
+  created_at: string
+  entries: PublicPortfolioEntry[]
+}
+
+export interface PortfolioCollectionPayload {
+  student_id: number
+  name: string
+  description?: string
+  entry_ids: number[]
+  is_public: boolean
+}
+
+export interface PortfolioShareLink {
+  collection_id: number
+  share_token: string
+  url: string
 }
 
 export interface Grade {
@@ -327,6 +497,8 @@ export interface QuizAttempt {
 
 export interface ReviewQueueItem {
   id: number
+  family_id: number
+  created_by_user_id: number
   submission_id?: number
   assignment_id?: number
   assignment_title?: string
@@ -334,17 +506,62 @@ export interface ReviewQueueItem {
   student_name?: string
   file_url?: string
   file_path?: string
-  ocr_text?: string
+  file_type?: string
+  status: GradingJobStatus
+  ocr_result?: string
   ai_grade?: number
   ai_feedback?: string
   ai_confidence?: number
+  ai_response?: string
+  answer_key_result?: {
+    score: number
+    max_score: number
+    confidence: number
+    answered_questions: number
+    total_questions: number
+    questions: Array<{
+      question_number: string
+      correct_answer: string
+      student_answer?: string | null
+      points: number
+      awarded_points: number
+      is_correct: boolean
+      partial_credit_rules?: string | null
+      similarity?: number
+    }>
+  } | null
+  status_history?: Array<{
+    timestamp: string
+    status: GradingJobStatus | string
+    detail?: string | null
+    payload?: Record<string, unknown>
+  }>
+  human_override_details?: {
+    reviewed_at?: string
+    reviewed_by_user_id?: number
+    action?: ReviewAction
+    override_reason?: string | null
+    notes?: string | null
+    feedback?: string | null
+    final_score?: number
+    ai_score?: number | null
+  } | null
+  manual_review_reason?: string | null
+  ocr_retry_count?: number
+  ai_retry_count?: number
+  error_message?: string | null
+  created_at?: string
+  completed_at?: string | null
 }
+
+export type GradingJob = ReviewQueueItem
 
 export interface ReviewDecisionPayload {
   action: ReviewAction
   score?: number
   feedback?: string
   notes?: string
+  override_reason?: string
 }
 
 export interface Invitation {

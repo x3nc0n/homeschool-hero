@@ -22,5 +22,7 @@ class User(TimestampMixin, Base):
 
     memberships = relationship('FamilyMembership', back_populates='user', cascade='all, delete-orphan')
     audit_events = relationship('AuditEvent', back_populates='actor')
+    grading_jobs = relationship('GradingJob')
     notifications = relationship('Notification', back_populates='user', cascade='all, delete-orphan')
     notification_preferences = relationship('NotificationPreference', back_populates='user', cascade='all, delete-orphan')
+    portfolio_entries = relationship('PortfolioEntry', back_populates='creator')

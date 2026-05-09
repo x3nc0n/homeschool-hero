@@ -33,6 +33,37 @@ class AssignmentTargetWrite(BaseModel):
     status: AssignmentTargetStatus = AssignmentTargetStatus.assigned
 
 
+class AnswerKeyQuestion(BaseModel):
+    question_number: str = Field(min_length=1, max_length=64)
+    correct_answer: str = Field(min_length=1, max_length=2000)
+    points: float = Field(default=1.0, ge=0)
+    partial_credit_rules: str | None = Field(default=None, max_length=2000)
+
+    @field_validator('question_number', 'correct_answer')
+    @classmethod
+    def validate_answer_key_text(cls, value: str) -> str:
+        return normalize_text(value, field_name='Answer key value')
+
+    @field_validator('partial_credit_rules')
+    @classmethod
+    def validate_partial_credit_rules(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, field_name='Answer key partial credit rules', max_length=2000)
+
+
+class AnswerKeyUpsert(BaseModel):
+    questions: list[AnswerKeyQuestion] = Field(default_factory=list)
+
+
+class AnswerKeyRead(AnswerKeyUpsert):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    assignment_id: int
+    family_id: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class AssignmentBase(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     subject_id: int = Field(gt=0)
@@ -128,6 +159,7 @@ class AssignmentRead(BaseModel):
     attachments: list[str] = Field(default_factory=list)
     lesson_plan_id: int | None
     status_history: list[dict[str, Any]] = Field(default_factory=list)
+    answer_key: AnswerKeyRead | None = None
     subject: SubjectRead | None = None
     grading_period: GradingPeriodRead | None = None
     targets: list[AssignmentTargetRead] = Field(default_factory=list)

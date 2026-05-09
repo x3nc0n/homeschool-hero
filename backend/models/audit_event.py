@@ -26,6 +26,13 @@ class AuditAction(str, enum.Enum):
     config_change = 'config_change'
     invitation_create = 'invitation_create'
     invitation_accept = 'invitation_accept'
+    portfolio_entry_create = 'portfolio_entry_create'
+    portfolio_entry_update = 'portfolio_entry_update'
+    portfolio_entry_delete = 'portfolio_entry_delete'
+    portfolio_collection_create = 'portfolio_collection_create'
+    portfolio_collection_update = 'portfolio_collection_update'
+    portfolio_collection_delete = 'portfolio_collection_delete'
+    portfolio_share = 'portfolio_share'
 
 
 class AuditEvent(Base):

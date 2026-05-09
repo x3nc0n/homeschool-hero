@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,11 +16,15 @@ from backend.models import (
     AssignmentStatus,
     AssignmentTarget,
     AssignmentTargetStatus,
+    AnswerKey,
+    AuditAction,
     GradingPeriod,
     Student,
     Subject,
 )
 from backend.schemas.assignments import (
+    AnswerKeyRead,
+    AnswerKeyUpsert,
     AssignmentCreate,
     AssignmentListResponse,
     AssignmentRead,
@@ -28,6 +32,7 @@ from backend.schemas.assignments import (
     AssignmentUpdate,
 )
 from backend.security import AuthSession, get_family_record
+from backend.services.audit import log_event
 from backend.services.authorization import Capability, get_student_scope_id, require_capabilities
 
 router = APIRouter(prefix='/assignments', tags=['assignments'])
@@ -53,6 +58,7 @@ def _assignment_options():
     return (
         selectinload(Assignment.subject),
         selectinload(Assignment.grading_period),
+        selectinload(Assignment.answer_key),
         selectinload(Assignment.targets).selectinload(AssignmentTarget.student),
     )
 
@@ -447,6 +453,49 @@ async def update_assignment_status(
     assignment.status = payload.status
     await db.commit()
     return await _get_assignment_or_404(db, auth, assignment_id)
+
+
+@router.get('/{assignment_id}/answer-key', response_model=AnswerKeyRead | None)
+async def get_answer_key(
+    assignment_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view answer keys')),
+) -> AnswerKey | None:
+    assignment = await _get_assignment_or_404(db, auth, assignment_id)
+    return assignment.answer_key
+
+
+@router.put('/{assignment_id}/answer-key', response_model=AnswerKeyRead)
+async def upsert_answer_key(
+    assignment_id: int,
+    payload: AnswerKeyUpsert,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage answer keys')),
+) -> AnswerKey:
+    assignment = await _get_assignment_or_404(db, auth, assignment_id)
+    answer_key = assignment.answer_key
+    before_snapshot = answer_key.questions if answer_key else None
+    if answer_key is None:
+        answer_key = AnswerKey(assignment_id=assignment.id, family_id=auth.family_id, questions=[])
+        db.add(answer_key)
+        assignment.answer_key = answer_key
+    answer_key.questions = [question.model_dump() for question in payload.questions]
+    await db.flush()
+    await log_event(
+        db,
+        action=AuditAction.config_change,
+        actor=auth,
+        family_id=auth.family_id,
+        target_type='answer_key',
+        target_id=answer_key.id,
+        before={'questions': before_snapshot} if before_snapshot is not None else None,
+        after={'questions': answer_key.questions, 'assignment_id': assignment.id},
+        request=request,
+    )
+    await db.commit()
+    await db.refresh(answer_key)
+    return answer_key
 
 
 @router.delete('/{assignment_id}', status_code=status.HTTP_204_NO_CONTENT, response_model=None)

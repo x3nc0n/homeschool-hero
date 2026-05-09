@@ -1,7 +1,7 @@
 """lesson plans and pacing
 
-Revision ID: 20260510_001500
-Revises: 20260510_001600
+Revision ID: 20260510_001540
+Revises: 20260510_001500
 Create Date: 2026-05-10
 """
 
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '20260510_001500'
-down_revision: Union[str, Sequence[str], None] = '20260510_001600'
+revision: str = '20260510_001540'
+down_revision: Union[str, Sequence[str], None] = '20260510_001500'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

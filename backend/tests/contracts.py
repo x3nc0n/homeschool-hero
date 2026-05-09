@@ -54,6 +54,17 @@ SUBMISSIONS = {
     'detail': f'{API_PREFIX}/submissions/{{submission_id}}',
 }
 
+PORTFOLIO = {
+    'entries': f'{API_PREFIX}/portfolio/{{student_id}}/entries',
+    'entry_collection': f'{API_PREFIX}/portfolio/entries',
+    'entry_detail': f'{API_PREFIX}/portfolio/entries/{{entry_id}}',
+    'entry_attach': f'{API_PREFIX}/portfolio/entries/{{entry_id}}/attach',
+    'collections': f'{API_PREFIX}/portfolio/collections',
+    'collection_detail': f'{API_PREFIX}/portfolio/collections/{{collection_id}}',
+    'collection_share': f'{API_PREFIX}/portfolio/collections/{{collection_id}}/share',
+    'public_collection': f'{API_PREFIX}/portfolio/public/{{share_token}}',
+}
+
 GRADES = {
     'collection': f'{API_PREFIX}/grades',
     'detail': f'{API_PREFIX}/grades/{{grade_id}}',
@@ -142,6 +153,15 @@ RESOURCES = {
     'detail': f'{API_PREFIX}/resources/{{resource_id}}',
 }
 
+IMPORTS = {
+    'collection': f'{API_PREFIX}/imports',
+    'upload': f'{API_PREFIX}/imports/upload',
+    'detail': f'{API_PREFIX}/imports/{{job_id}}/status',
+    'validate': f'{API_PREFIX}/imports/{{job_id}}/validate',
+    'execute': f'{API_PREFIX}/imports/{{job_id}}/execute',
+    'template': f'{API_PREFIX}/imports/templates/{{entity_type}}',
+}
+
 SERVICE_CANDIDATES = {
     'ocr': ('extract_text_from_image', 'extract_text', 'perform_ocr'),
     'ai_grade': ('grade_submission_text', 'grade_text', 'grade_submission', 'grade_ocr_text'),
@@ -198,6 +218,31 @@ def grade_payload(submission_id: int | str, student_id: int | str) -> dict[str, 
         'notes': 'Strong work with one arithmetic mistake.',
         'graded_by': 'human',
     }
+
+
+def portfolio_entry_payload(student_id: int | str, **overrides: Any) -> dict[str, Any]:
+    payload = {
+        'student_id': student_id,
+        'entry_type': 'journal',
+        'title': 'Field trip reflection',
+        'description': '## Highlights\nWe visited the science museum and wrote observations.',
+        'date': '2026-05-08',
+        'tags': ['science', 'museum'],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def portfolio_collection_payload(student_id: int | str, entry_ids: list[int | str], **overrides: Any) -> dict[str, Any]:
+    payload = {
+        'student_id': student_id,
+        'name': 'Spring showcase',
+        'description': 'A curated set of work for extended family.',
+        'entry_ids': entry_ids,
+        'is_public': False,
+    }
+    payload.update(overrides)
+    return payload
 
 
 def quiz_payload(subject_id: int | str) -> dict[str, Any]:

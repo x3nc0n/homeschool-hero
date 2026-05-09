@@ -38,6 +38,7 @@ class Submission(TimestampMixin, Base):
     version_history = relationship('Submission', back_populates='parent_submission')
     grade = relationship('Grade', back_populates='submission', uselist=False, cascade='all, delete-orphan')
     grading_job = relationship('GradingJob', back_populates='submission', uselist=False, cascade='all, delete-orphan')
+    portfolio_entries = relationship('PortfolioEntry', back_populates='submission')
 
     @property
     def file_url(self) -> str:

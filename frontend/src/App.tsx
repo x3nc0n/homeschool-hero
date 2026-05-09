@@ -13,12 +13,15 @@ import { CalendarPage } from '@/pages/CalendarPage'
 import { CurriculumPage } from '@/pages/CurriculumPage'
 import { GradesPage } from '@/pages/GradesPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
+import { ImportsPage } from '@/pages/ImportsPage'
 import { LessonPlansPage } from '@/pages/LessonPlansPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotificationPreferencesPage } from '@/pages/NotificationPreferencesPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { PlannerPage } from '@/pages/PlannerPage'
+import { PortfolioPage } from '@/pages/PortfolioPage'
+import { PortfolioSharePage } from '@/pages/PortfolioSharePage'
 import { QuizzesPage } from '@/pages/QuizzesPage'
 import { ReviewQueuePage } from '@/pages/ReviewQueuePage'
 import { ResourceLibraryPage } from '@/pages/ResourceLibraryPage'
@@ -70,7 +73,9 @@ function ProtectedRoutes() {
         <Route path="/planner" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PlannerPage />} />} />
         <Route path="/lesson-plans" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<LessonPlansPage />} />} />
         <Route path="/curriculum" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CurriculumPage />} />} />
+        <Route path="/imports" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ImportsPage />} />} />
         <Route path="/resources" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ResourceLibraryPage />} />} />
+        <Route path="/portfolio" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PortfolioPage />} />} />
         <Route path="/search" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<SearchPage />} />} />
         <Route path="/assignments" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<AssignmentsPage />} />} />
         <Route path="/upload" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<UploadPage />} />} />
@@ -146,6 +151,7 @@ export default function App() {
             <Route path="/login" element={<LoginRoute />} />
             <Route path="/setup" element={<SetupRoute />} />
             <Route path="/accept-invite/:invitationId" element={<AcceptInvitationRoute />} />
+            <Route path="/portfolio/share/:shareToken" element={<PortfolioSharePage />} />
             <Route path="*" element={<ProtectedRoutes />} />
           </Routes>
         </NotificationsProvider>

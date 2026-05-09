@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     ollama_host: str = Field('http://ollama:11434', alias='OLLAMA_HOST')
     ollama_model: str = Field('llama3.2', alias='OLLAMA_MODEL')
     openai_api_key: str | None = Field(default=None, alias='OPENAI_API_KEY')
+    grading_request_timeout_seconds: float = Field(120.0, alias='GRADING_REQUEST_TIMEOUT_SECONDS')
+    ocr_request_timeout_seconds: float = Field(120.0, alias='OCR_REQUEST_TIMEOUT_SECONDS')
+    grading_retry_attempts: int = Field(3, alias='GRADING_RETRY_ATTEMPTS')
+    grading_retry_backoff_seconds: float = Field(1.0, alias='GRADING_RETRY_BACKOFF_SECONDS')
+    ai_circuit_breaker_threshold: int = Field(3, alias='AI_CIRCUIT_BREAKER_THRESHOLD')
+    ai_circuit_breaker_reset_seconds: float = Field(300.0, alias='AI_CIRCUIT_BREAKER_RESET_SECONDS')
 
     confidence_threshold: float = Field(0.8, alias='CONFIDENCE_THRESHOLD')
     grading_poll_interval: float = Field(5.0, alias='GRADING_POLL_INTERVAL')

@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.schemas.grading import GradingJobRead
+
 
 class SubmissionVersionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -22,6 +24,7 @@ class SubmissionVersionRead(BaseModel):
     parent_submission_id: int | None = None
     is_current: bool
     ocr_text: str | None
+    grading_job: GradingJobRead | None = None
     uploaded_at: datetime
 
 

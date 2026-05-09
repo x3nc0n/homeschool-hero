@@ -89,5 +89,5 @@ async def test_metrics_endpoint_reports_request_grading_and_backup_state(
     assert payload['enabled'] is True
     assert payload['requests_total'] >= 1
     assert payload['grading_jobs_total'] >= 1
-    assert payload['grading_jobs_by_status']['queued'] >= 1
+    assert payload['grading_jobs_by_status']['pending'] >= 1
     assert payload['backup_last_success']['size_bytes'] == 2048

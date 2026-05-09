@@ -18,6 +18,7 @@ export function ReviewQueuePage() {
   const [score, setScore] = useState('')
   const [feedback, setFeedback] = useState('')
   const [notes, setNotes] = useState('')
+  const [overrideReason, setOverrideReason] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const { capabilities } = useCapabilities()
@@ -49,6 +50,7 @@ export function ReviewQueuePage() {
       setScore(activeItem.ai_grade != null ? String(activeItem.ai_grade) : '')
       setFeedback(activeItem.ai_feedback || '')
       setNotes('')
+      setOverrideReason(activeItem.manual_review_reason || '')
     }
   }, [activeItem])
 
@@ -60,6 +62,7 @@ export function ReviewQueuePage() {
       score: score ? Number(score) : undefined,
       feedback,
       notes,
+      override_reason: overrideReason || undefined,
     })
 
     const next = queue.filter((item) => item.id !== activeItem.id)
@@ -91,6 +94,7 @@ export function ReviewQueuePage() {
               <Badge variant="secondary" className="mt-2">
                 AI confidence {(item.ai_confidence ?? 0).toFixed(2)}
               </Badge>
+              <p className="mt-2 text-xs text-muted-foreground">{item.status.replace(/_/g, ' ')}</p>
             </button>
           ))}
         </CardContent>
@@ -120,7 +124,7 @@ export function ReviewQueuePage() {
               </div>
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold">OCR text</h3>
-                <Textarea value={activeItem.ocr_text || ''} readOnly className="min-h-[380px]" />
+                <Textarea value={activeItem.ocr_result || ''} readOnly className="min-h-[380px]" />
               </div>
             </div>
 
@@ -135,9 +139,36 @@ export function ReviewQueuePage() {
               </div>
             </div>
 
+            {activeItem.answer_key_result ? (
+              <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                <p className="font-medium">
+                  Answer key suggestion: {activeItem.answer_key_result.score}/{activeItem.answer_key_result.max_score}
+                </p>
+                <p className="text-muted-foreground">
+                  Answered {activeItem.answer_key_result.answered_questions} of {activeItem.answer_key_result.total_questions} question(s)
+                </p>
+                <div className="mt-3 space-y-2">
+                  {activeItem.answer_key_result.questions.map((question) => (
+                    <div key={question.question_number} className="rounded-md bg-background p-2">
+                      <p className="font-medium">Question {question.question_number}</p>
+                      <p className="text-xs text-muted-foreground">Expected: {question.correct_answer}</p>
+                      <p className="text-xs text-muted-foreground">Student: {question.student_answer || 'No answer detected'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Awarded {question.awarded_points}/{question.points} point(s)
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <div className="space-y-2">
               <Label>Feedback</Label>
               <Textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Override reason</Label>
+              <Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Why are you approving, adjusting, or re-queuing this grade?" />
             </div>
             <div className="space-y-2">
               <Label>Review notes</Label>

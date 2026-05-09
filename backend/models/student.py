@@ -22,3 +22,5 @@ class Student(TimestampMixin, Base):
     lesson_plans = relationship('LessonPlan', back_populates='student', cascade='all, delete-orphan')
     pacing_targets = relationship('PacingTarget', back_populates='student', cascade='all, delete-orphan')
     attendance_records = relationship('AttendanceRecord', back_populates='student', cascade='all, delete-orphan')
+    portfolio_entries = relationship('PortfolioEntry', back_populates='student', cascade='all, delete-orphan')
+    portfolio_collections = relationship('PortfolioCollection', back_populates='student', cascade='all, delete-orphan')

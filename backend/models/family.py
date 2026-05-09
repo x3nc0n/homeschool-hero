@@ -32,6 +32,8 @@ class Family(TimestampMixin, Base):
     invitations = relationship('Invitation', back_populates='family', cascade='all, delete-orphan')
     audit_events = relationship('AuditEvent', back_populates='family', cascade='all, delete-orphan')
     notifications = relationship('Notification', back_populates='family', cascade='all, delete-orphan')
+    portfolio_entries = relationship('PortfolioEntry', back_populates='family', cascade='all, delete-orphan')
+    portfolio_collections = relationship('PortfolioCollection', back_populates='family', cascade='all, delete-orphan')
 
 
 class FamilySettings(TimestampMixin, Base):

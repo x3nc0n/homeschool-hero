@@ -13,6 +13,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  Sheet,
   UserCheck,
   Users,
 } from 'lucide-react'
@@ -35,7 +36,9 @@ const navItems: Array<{ to: string; label: string; icon: typeof LayoutDashboard;
   { to: '/planner', label: 'Planner', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/lesson-plans', label: 'Lesson Plans', icon: BookOpenCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/curriculum', label: 'Curriculum', icon: BookMarked, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/imports', label: 'Imports', icon: Sheet, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/resources', label: 'Resources', icon: FileUp, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/portfolio', label: 'Portfolio', icon: BookOpenCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/assignments', label: 'Assignments', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/upload', label: 'Uploads', icon: FileUp, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/grades', label: 'Grade Book', icon: GraduationCap, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },

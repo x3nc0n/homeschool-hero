@@ -7,6 +7,7 @@ import type {
   AssignmentCategory,
   AssignmentStatus,
   AssignmentTargetStatus,
+  AnswerKeyQuestion,
   GradingPeriod,
   Student,
   Subject,
@@ -27,6 +28,12 @@ const assignmentStatuses: AssignmentStatus[] = ['pending', 'complete', 'graded']
 const targetStatuses: AssignmentTargetStatus[] = ['assigned', 'submitted', 'graded', 'excused']
 const categories: AssignmentCategory[] = ['homework', 'quiz', 'test', 'project', 'other']
 const recurrences = ['none', 'daily', 'weekly'] as const
+const emptyAnswerKeyQuestion = (): AnswerKeyQuestion => ({
+  question_number: '',
+  correct_answer: '',
+  points: 1,
+  partial_credit_rules: '',
+})
 
 type TargetDraft = {
   due_date: string
@@ -96,6 +103,7 @@ export function AssignmentsPage() {
   const [total, setTotal] = useState(0)
   const [form, setForm] = useState<AssignmentForm>(emptyForm())
   const [targets, setTargets] = useState<Record<string, TargetDraft>>({})
+  const [answerKeyQuestions, setAnswerKeyQuestions] = useState<AnswerKeyQuestion[]>([])
   const [filters, setFilters] = useState({
     q: searchParams.get('q') || searchParams.get('search') || '',
     category: 'all',
@@ -164,6 +172,7 @@ export function AssignmentsPage() {
     setEditing(null)
     setForm(emptyForm())
     setTargets({})
+    setAnswerKeyQuestions([])
   }
 
   const toggleStudent = (studentId: number) => {
@@ -212,10 +221,18 @@ export function AssignmentsPage() {
       targets: targetEntries.length ? targetEntries : undefined,
     }
 
-    if (editing) {
-      await api.updateAssignment(editing.id, payload)
-    } else {
-      await api.createAssignment(payload)
+    const savedAssignment = editing
+      ? await api.updateAssignment(editing.id, payload)
+      : await api.createAssignment(payload)
+    if (answerKeyQuestions.length || editing?.answer_key) {
+      await api.upsertAnswerKey(savedAssignment.id, {
+        questions: answerKeyQuestions
+          .filter((question) => question.question_number.trim() && question.correct_answer.trim())
+          .map((question) => ({
+            ...question,
+            partial_credit_rules: question.partial_credit_rules?.trim() || undefined,
+          })),
+      })
     }
 
     resetForm()
@@ -447,6 +464,91 @@ export function AssignmentsPage() {
                 </div>
               ) : null}
             </div>
+            <div className="space-y-3 rounded-lg border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="font-medium">Answer key</p>
+                  <p className="text-sm text-muted-foreground">Add question-by-question scoring rules for semi-automatic grading.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAnswerKeyQuestions((current) => [...current, emptyAnswerKeyQuestion()])}
+                >
+                  <Plus className="mr-2 h-3.5 w-3.5" />
+                  Add question
+                </Button>
+              </div>
+              {answerKeyQuestions.length ? (
+                <div className="space-y-3">
+                  {answerKeyQuestions.map((question, index) => (
+                    <div key={`${question.question_number}-${index}`} className="grid gap-3 rounded-md bg-muted/40 p-3 md:grid-cols-[120px_1fr_120px]">
+                      <Input
+                        placeholder="Q#"
+                        value={question.question_number}
+                        onChange={(event) =>
+                          setAnswerKeyQuestions((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, question_number: event.target.value } : item,
+                            ),
+                          )
+                        }
+                      />
+                      <Input
+                        placeholder="Correct answer"
+                        value={question.correct_answer}
+                        onChange={(event) =>
+                          setAnswerKeyQuestions((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, correct_answer: event.target.value } : item,
+                            ),
+                          )
+                        }
+                      />
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={question.points}
+                        onChange={(event) =>
+                          setAnswerKeyQuestions((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, points: Number(event.target.value || 0) } : item,
+                            ),
+                          )
+                        }
+                      />
+                      <Textarea
+                        className="md:col-span-2"
+                        placeholder="Optional partial credit rule (for example: 50% for equivalent fraction)"
+                        value={question.partial_credit_rules || ''}
+                        onChange={(event) =>
+                          setAnswerKeyQuestions((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, partial_credit_rules: event.target.value } : item,
+                            ),
+                          )
+                        }
+                      />
+                      <div className="flex items-start justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setAnswerKeyQuestions((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        >
+                          <Trash2 className="mr-2 h-3.5 w-3.5" />
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No answer key yet. Add one to enable confidence-based auto-grading.</p>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void save()}>
                 <Plus className="mr-2 h-4 w-4" />
@@ -594,6 +696,11 @@ export function AssignmentsPage() {
                         <p className="mt-1 text-xs text-muted-foreground">
                           {assignment.category} • Weight {assignment.weight} • Max {assignment.max_score}
                         </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {assignment.answer_key?.questions?.length
+                            ? `${assignment.answer_key.questions.length} answer key question(s)`
+                            : 'No answer key'}
+                        </p>
                       </div>
                       <Badge variant="secondary">{assignment.status}</Badge>
                     </div>
@@ -637,6 +744,7 @@ export function AssignmentsPage() {
                               attachments: assignment.attachments.join('\n'),
                             })
                             setTargets(normalizeTargetMap(assignment))
+                            setAnswerKeyQuestions(assignment.answer_key?.questions || [])
                           }}
                         >
                           <Pencil className="mr-2 h-3.5 w-3.5" />

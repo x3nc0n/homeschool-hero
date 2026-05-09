@@ -4,6 +4,7 @@ import importlib
 import os
 import shutil
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -83,10 +84,17 @@ def _clear_uploads_dir() -> None:
     if not UPLOADS_DIR.exists():
         return
     for child in UPLOADS_DIR.iterdir():
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
+        for attempt in range(5):
+            try:
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.1 * (attempt + 1))
 
 
 def _import_optional_module(*names: str):

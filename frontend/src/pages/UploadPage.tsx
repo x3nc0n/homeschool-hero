@@ -9,6 +9,7 @@ import type { Assignment, Student, Submission, SubmissionDetail, SubmissionVersi
 import { LoadingState } from '@/components/common/LoadingState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { EmptyState } from '@/components/common/EmptyState'
+import { Progress } from '@/components/ui/progress'
 
 function formatBytes(bytes?: number) {
   if (!bytes) return 'Unknown size'
@@ -22,6 +23,34 @@ function formatVersionMeta(version: SubmissionVersion) {
   if (version.page_count) details.push(`${version.page_count} page${version.page_count === 1 ? '' : 's'}`)
   if (version.image_width && version.image_height) details.push(`${version.image_width}×${version.image_height}`)
   return details.join(' • ')
+}
+
+function formatGradingStatus(status?: string | null) {
+  if (!status) return 'Pending'
+  return status.replace(/_/g, ' ')
+}
+
+function gradingProgress(status?: string | null) {
+  switch (status) {
+    case 'pending':
+      return 5
+    case 'ocr_processing':
+      return 20
+    case 'ocr_complete':
+      return 40
+    case 'ai_grading':
+      return 65
+    case 'ai_complete':
+      return 80
+    case 'review_needed':
+      return 90
+    case 'reviewed':
+      return 95
+    case 'final':
+      return 100
+    default:
+      return 0
+  }
 }
 
 export function UploadPage() {
@@ -158,7 +187,10 @@ export function UploadPage() {
                       <p className="font-medium">{assignmentLabelById[submission.assignment_id] || `Assignment #${submission.assignment_id}`}</p>
                       <p className="text-sm text-muted-foreground">{studentLabelById[submission.student_id] || `Student #${submission.student_id}`}</p>
                     </div>
-                    <Badge variant="secondary">v{submission.submission_version || 1}</Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant="secondary">v{submission.submission_version || 1}</Badge>
+                      <Badge variant="outline">{formatGradingStatus(submission.grading_job?.status)}</Badge>
+                    </div>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">{submission.file_name || submission.original_filename || 'Uploaded file'}</p>
                 </button>
@@ -203,6 +235,30 @@ export function UploadPage() {
                     <Button type="button" onClick={() => setResubmitTarget(selectedSubmission)}>
                       Resubmit new version
                     </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-4 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-semibold">Grading progress</h3>
+                    <Badge variant={selectedSubmission.grading_job?.status === 'final' ? 'default' : 'secondary'}>
+                      {formatGradingStatus(selectedSubmission.grading_job?.status)}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <Progress value={gradingProgress(selectedSubmission.grading_job?.status)} />
+                    <p className="text-xs text-muted-foreground">
+                      {selectedSubmission.grading_job?.status_history?.[Math.max((selectedSubmission.grading_job?.status_history?.length || 1) - 1, 0)]?.detail ||
+                        'Waiting for the grading worker.'}
+                    </p>
+                    {selectedSubmission.grading_job?.ai_confidence != null ? (
+                      <p className="text-xs text-muted-foreground">
+                        Confidence {(selectedSubmission.grading_job.ai_confidence ?? 0).toFixed(2)}
+                      </p>
+                    ) : null}
+                    {selectedSubmission.grading_job?.manual_review_reason ? (
+                      <p className="text-xs text-amber-700">{selectedSubmission.grading_job.manual_review_reason}</p>
+                    ) : null}
                   </div>
                 </div>
 

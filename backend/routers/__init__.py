@@ -10,6 +10,7 @@ from backend.routers.grading import router as grading_router
 from backend.routers.invitations import router as invitations_router
 from backend.routers.lesson_plans import router as lesson_plans_router
 from backend.routers.notifications import router as notifications_router
+from backend.routers.portfolio import router as portfolio_router
 from backend.routers.quizzes import router as quizzes_router
 from backend.routers.schedule import router as schedule_router
 from backend.routers.search import router as search_router
@@ -30,6 +31,7 @@ __all__ = [
     'invitations_router',
     'lesson_plans_router',
     'notifications_router',
+    'portfolio_router',
     'quizzes_router',
     'schedule_router',
     'search_router',

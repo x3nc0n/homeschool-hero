@@ -100,14 +100,16 @@ def _call_ollama(prompt: str) -> dict[str, Any]:
     url = f"{settings.ollama_host.rstrip('/')}/api/generate"
     payload = {"model": settings.ollama_model, "prompt": prompt, "stream": False}
     try:
-        with httpx.Client(timeout=45.0) as client:
+        with httpx.Client(timeout=settings.grading_request_timeout_seconds) as client:
             response = client.post(url, json=payload)
             response.raise_for_status()
         body = response.json()
         text = str(body.get("response", "")).strip()
         if not text:
             raise AIServiceUnavailable("Ollama returned an empty response")
-        return _parse_model_response_text(text)
+        result = _parse_model_response_text(text)
+        result['raw_response'] = text
+        return result
     except (httpx.HTTPError, ValueError) as exc:
         raise AIServiceUnavailable(f"Ollama unavailable: {exc}") from exc
 
@@ -125,14 +127,16 @@ def _call_openai(prompt: str) -> dict[str, Any]:
     }
     headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
     try:
-        with httpx.Client(timeout=45.0) as client:
+        with httpx.Client(timeout=settings.grading_request_timeout_seconds) as client:
             response = client.post(OPENAI_CHAT_URL, headers=headers, json=payload)
             response.raise_for_status()
         body = response.json()
         text = str(body["choices"][0]["message"]["content"]).strip()
         if not text:
             raise AIServiceUnavailable("OpenAI returned an empty response")
-        return _parse_model_response_text(text)
+        result = _parse_model_response_text(text)
+        result['raw_response'] = text
+        return result
     except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
         raise AIServiceUnavailable(f"OpenAI unavailable: {exc}") from exc
 
@@ -157,6 +161,7 @@ def grade_submission_text(assignment_description: str, answer_key: str | None, s
             submission_text=submission_text,
         )
         normalized = _normalize_result(payload)
+        normalized["raw_response"] = str(payload.get("raw_response") or "")
         normalized["unavailable"] = False
         return normalized
     except AIServiceUnavailable as exc:

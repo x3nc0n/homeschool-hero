@@ -176,7 +176,7 @@ async def test_submissions_resubmission_preserves_version_history_and_current_fl
 
     async with AsyncSessionLocal() as session:
         jobs = (await session.execute(select(GradingJob).order_by(GradingJob.submission_id))).scalars().all()
-    assert [job.status for job in jobs] == [GradingJobStatus.failed, GradingJobStatus.queued]
+    assert [job.status for job in jobs] == [GradingJobStatus.final, GradingJobStatus.pending]
 
 
 @pytest.mark.asyncio

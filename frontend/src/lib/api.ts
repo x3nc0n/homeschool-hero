@@ -11,6 +11,8 @@ import type {
   Assignment,
   AssignmentFilters,
   AssignmentListResponse,
+  AnswerKey,
+  AnswerKeyUpsertPayload,
   AssignmentUpsertPayload,
   CalendarEvent,
   Schedule,
@@ -36,6 +38,8 @@ import type {
   GradeHistoryFilters,
   GradeHistoryItem,
   HealthResponse,
+  ImportEntityType,
+  ImportJob,
   GradingPeriod,
   InstructionalDayCount,
   Invitation,
@@ -44,6 +48,13 @@ import type {
   NotificationPreference,
   MetricsResponse,
   PacingStatusSummary,
+  PortfolioCollection,
+  PortfolioCollectionPayload,
+  PortfolioEntry,
+  PortfolioEntryFilters,
+  PortfolioEntryPayload,
+  PortfolioShareLink,
+  PublicPortfolioCollection,
   PacingTarget,
   PacingTargetUpsertPayload,
   Quiz,
@@ -632,6 +643,31 @@ export const api = {
     return request<void>(`/curriculum/lessons/${lessonId}/resources/${resourceId}`, { method: 'DELETE' })
   },
 
+  listImportJobs() {
+    return request<ImportJob[]>('/imports')
+  },
+
+  uploadImportFile(entityType: ImportEntityType, file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request<ImportJob>(`/imports/upload?entity_type=${encodeURIComponent(entityType)}`, {
+      method: 'POST',
+      body: formData,
+    })
+  },
+
+  validateImportJob(jobId: number) {
+    return request<ImportJob>(`/imports/${jobId}/validate`, { method: 'POST' })
+  },
+
+  executeImportJob(jobId: number) {
+    return request<ImportJob>(`/imports/${jobId}/execute`, { method: 'POST' })
+  },
+
+  getImportJobStatus(jobId: number) {
+    return request<ImportJob>(`/imports/${jobId}/status`)
+  },
+
   listAssignments(filters: AssignmentFilters = {}) {
     const params = new URLSearchParams()
     Object.entries(filters).forEach(([key, value]) => {
@@ -650,6 +686,17 @@ export const api = {
 
   updateAssignment(id: number, payload: AssignmentUpsertPayload) {
     return request<Assignment>(`/assignments/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  getAnswerKey(assignmentId: number) {
+    return request<AnswerKey | null>(`/assignments/${assignmentId}/answer-key`)
+  },
+
+  upsertAnswerKey(assignmentId: number, payload: AnswerKeyUpsertPayload) {
+    return request<AnswerKey>(`/assignments/${assignmentId}/answer-key`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
   },
 
   deleteAssignment(id: number) {
@@ -721,6 +768,13 @@ export const api = {
     return request<ReviewQueueItem[]>('/grading/review-queue')
   },
 
+  listGradingJobs(status?: string) {
+    const params = new URLSearchParams()
+    if (status) params.set('status', status)
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    return request<ReviewQueueItem[]>(`/grading/jobs${suffix}`)
+  },
+
   submitReviewDecision(reviewId: number, payload: ReviewDecisionPayload) {
     return request<ReviewQueueItem>(`/grading/review/${reviewId}`, {
       method: 'POST',
@@ -780,5 +834,79 @@ export const api = {
 
   getSubmission(id: number) {
     return request<SubmissionDetail>(`/submissions/${id}`)
+  },
+
+  listPortfolioEntries(studentId: number, filters: PortfolioEntryFilters = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '' || value === 'all') {
+        return
+      }
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<PortfolioEntry[]>(`/portfolio/${studentId}/entries${query ? `?${query}` : ''}`)
+  },
+
+  createPortfolioEntry(payload: PortfolioEntryPayload) {
+    return request<PortfolioEntry>('/portfolio/entries', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  getPortfolioEntry(id: number) {
+    return request<PortfolioEntry>(`/portfolio/entries/${id}`)
+  },
+
+  updatePortfolioEntry(id: number, payload: PortfolioEntryPayload) {
+    return request<PortfolioEntry>(`/portfolio/entries/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deletePortfolioEntry(id: number) {
+    return request<void>(`/portfolio/entries/${id}`, { method: 'DELETE' })
+  },
+
+  attachPortfolioEntryFiles(id: number, files: File[]) {
+    const formData = new FormData()
+    files.forEach((file) => formData.append('files', file))
+    return request<PortfolioEntry>(`/portfolio/entries/${id}/attach`, { method: 'POST', body: formData })
+  },
+
+  listPortfolioCollections(studentId?: number) {
+    const query = studentId ? `?student_id=${studentId}` : ''
+    return request<PortfolioCollection[]>(`/portfolio/collections${query}`)
+  },
+
+  createPortfolioCollection(payload: PortfolioCollectionPayload) {
+    return request<PortfolioCollection>('/portfolio/collections', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  getPortfolioCollection(id: number) {
+    return request<PortfolioCollection>(`/portfolio/collections/${id}`)
+  },
+
+  updatePortfolioCollection(id: number, payload: PortfolioCollectionPayload) {
+    return request<PortfolioCollection>(`/portfolio/collections/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deletePortfolioCollection(id: number) {
+    return request<void>(`/portfolio/collections/${id}`, { method: 'DELETE' })
+  },
+
+  sharePortfolioCollection(id: number) {
+    return request<PortfolioShareLink>(`/portfolio/collections/${id}/share`)
+  },
+
+  async getPublicPortfolioCollection(shareToken: string) {
+    const response = await fetch(`${API_BASE_URL}/portfolio/public/${shareToken}`)
+    if (!response.ok) {
+      let message = `Request failed (${response.status})`
+      try {
+        const payload = (await response.json()) as ApiErrorPayload
+        message = payload.detail || payload.message || message
+      } catch {
+        // ignore parse issues
+      }
+      throw new ApiError(response.status, message)
+    }
+    return (await response.json()) as PublicPortfolioCollection
   },
 }
