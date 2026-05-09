@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,7 +26,7 @@ ROLLBACK_NOTES = """
 - Recreating transcripts after downgrade will require regenerating weighted flags and credit edits.
 """
 
-transcript_status = sa.Enum('draft', 'final', 'archived', name='transcript_status')
+transcript_status = postgresql.ENUM('draft', 'final', 'archived', name='transcript_status', create_type=False)
 
 
 def upgrade() -> None:

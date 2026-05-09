@@ -2,6 +2,7 @@
 
 ## Learnings
 
+- 2026-05-09T08:17:16.263-05:00 — For hardened Docker services that inherit `cap_drop: ALL`, restore PostgreSQL startup with targeted `cap_add` on `db`, and validate clean Postgres boot against the full migration chain because Postgres-specific enum/index issues can hide behind the initial container failure.
 - 2026-05-08 — Added capability-based RBAC with student-linked memberships/invitations so student viewers are scoped to one student, and invitation delivery now falls back to copyable links when SMTP is unavailable.
 - Project: homeschool-hero — open-source homeschool platform for families
 - User: John

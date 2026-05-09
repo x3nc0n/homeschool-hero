@@ -13,6 +13,7 @@ from typing import Union
 
 import bcrypt
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 from backend.config import settings
@@ -31,7 +32,7 @@ ROLLBACK_NOTES = """
 - Owner bootstrap accounts and invitation records created during upgrade are deleted on rollback.
 """
 
-family_role = sa.Enum('parent', 'co-parent', 'tutor', 'student_viewer', name='family_role')
+family_role = postgresql.ENUM('parent', 'co-parent', 'tutor', 'student_viewer', name='family_role', create_type=False)
 
 
 def _hash_legacy_password() -> str:

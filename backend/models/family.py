@@ -20,6 +20,13 @@ class FamilyRole(str, enum.Enum):
     student_viewer = 'student_viewer'
 
 
+family_role_enum = Enum(
+    FamilyRole,
+    name='family_role',
+    values_callable=lambda enum_cls: [member.value for member in enum_cls],
+)
+
+
 class Family(TimestampMixin, Base):
     __tablename__ = 'families'
 
@@ -58,7 +65,7 @@ class FamilyMembership(Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
     family_id: Mapped[int] = mapped_column(ForeignKey('families.id', ondelete='CASCADE'), primary_key=True)
-    role: Mapped[FamilyRole] = mapped_column(Enum(FamilyRole, name='family_role'), nullable=False, default=FamilyRole.parent)
+    role: Mapped[FamilyRole] = mapped_column(family_role_enum, nullable=False, default=FamilyRole.parent)
     is_owner: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))
     student_id: Mapped[int | None] = mapped_column(ForeignKey('students.id', ondelete='SET NULL'), nullable=True, index=True)
     invited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -75,7 +82,7 @@ class Invitation(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     family_id: Mapped[int] = mapped_column(ForeignKey('families.id', ondelete='CASCADE'), nullable=False, index=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    role: Mapped[FamilyRole] = mapped_column(Enum(FamilyRole, name='family_role'), nullable=False)
+    role: Mapped[FamilyRole] = mapped_column(family_role_enum, nullable=False)
     student_id: Mapped[int | None] = mapped_column(ForeignKey('students.id', ondelete='SET NULL'), nullable=True, index=True)
     token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

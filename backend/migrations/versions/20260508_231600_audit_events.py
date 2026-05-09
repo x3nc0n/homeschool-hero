@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -27,7 +28,7 @@ ROLLBACK_NOTES = """
 
 
 def upgrade() -> None:
-    audit_action = sa.Enum(
+    audit_action = postgresql.ENUM(
         'login',
         'logout',
         'role_change',
@@ -41,7 +42,8 @@ def upgrade() -> None:
         'invitation_create',
         'invitation_accept',
         name='audit_action',
-    )
+    create_type=False,
+)
     bind = op.get_bind()
     audit_action.create(bind, checkfirst=True)
     op.create_table(

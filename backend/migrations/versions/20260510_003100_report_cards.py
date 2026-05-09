@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,7 +26,7 @@ ROLLBACK_NOTES = """
 - Finalized report cards should be archived externally before running downgrade in production.
 """
 
-report_card_status = sa.Enum('draft', 'final', 'archived', name='report_card_status')
+report_card_status = postgresql.ENUM('draft', 'final', 'archived', name='report_card_status', create_type=False)
 
 
 def upgrade() -> None:

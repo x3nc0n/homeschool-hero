@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -24,15 +25,16 @@ ROLLBACK_NOTES = """
 - Export or resolve any active review items before rollback because reviewer comments and assignments are deleted.
 """
 
-review_item_status = sa.Enum(
+review_item_status = postgresql.ENUM(
     'pending_review',
     'in_review',
     'approved',
     'rejected',
     'needs_regrade',
     name='review_item_status',
+create_type=False,
 )
-review_priority = sa.Enum('low', 'medium', 'high', 'urgent', name='review_priority')
+review_priority = postgresql.ENUM('low', 'medium', 'high', 'urgent', name='review_priority', create_type=False)
 
 
 def upgrade() -> None:

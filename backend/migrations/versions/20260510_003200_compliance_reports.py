@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,15 +26,16 @@ ROLLBACK_NOTES = """
 - Composite indexes are dropped before the table to avoid constraint conflicts.
 """
 
-compliance_report_type = sa.Enum(
+compliance_report_type = postgresql.ENUM(
     'annual_assessment',
     'quarterly_report',
     'notice_of_intent',
     'attendance_log',
     'portfolio_review',
     name='compliance_report_type',
+create_type=False,
 )
-compliance_report_status = sa.Enum('draft', 'final', 'submitted', name='compliance_report_status')
+compliance_report_status = postgresql.ENUM('draft', 'final', 'submitted', name='compliance_report_status', create_type=False)
 
 
 def upgrade() -> None:

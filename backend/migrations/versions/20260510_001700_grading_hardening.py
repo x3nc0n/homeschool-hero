@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -27,7 +28,7 @@ ROLLBACK_NOTES = """
 - Export answer keys and grading audit data before rolling back.
 """
 
-new_grading_status = sa.Enum(
+new_grading_status = postgresql.ENUM(
     'pending',
     'ocr_processing',
     'ocr_complete',
@@ -37,13 +38,14 @@ new_grading_status = sa.Enum(
     'reviewed',
     'final',
     name='grading_job_status',
+create_type=False,
 )
 
 
 def _upgrade_status_column() -> None:
     bind = op.get_bind()
     if bind.dialect.name == 'postgresql':
-        replacement = sa.Enum(
+        replacement = postgresql.ENUM(
             'pending',
             'ocr_processing',
             'ocr_complete',
@@ -53,7 +55,8 @@ def _upgrade_status_column() -> None:
             'reviewed',
             'final',
             name='grading_job_status_new',
-        )
+        create_type=False,
+)
         replacement.create(bind, checkfirst=True)
         op.execute(
             """
@@ -98,7 +101,7 @@ def _upgrade_status_column() -> None:
 def _downgrade_status_column() -> None:
     bind = op.get_bind()
     if bind.dialect.name == 'postgresql':
-        replacement = sa.Enum('queued', 'processing', 'needs_review', 'complete', 'failed', name='grading_job_status_old')
+        replacement = postgresql.ENUM('queued', 'processing', 'needs_review', 'complete', 'failed', name='grading_job_status_old', create_type=False)
         replacement.create(bind, checkfirst=True)
         op.execute(
             """

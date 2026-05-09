@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,9 +26,9 @@ ROLLBACK_NOTES = """
 - Record any in-progress or pending backup job details before rolling back.
 """
 
-backup_type = sa.Enum('full', 'incremental', 'manual', name='backup_type')
-backup_job_status = sa.Enum('pending', 'running', 'complete', 'failed', name='backup_job_status')
-backup_destination = sa.Enum('local', 'smb', 'nfs', name='backup_destination')
+backup_type = postgresql.ENUM('full', 'incremental', 'manual', name='backup_type', create_type=False)
+backup_job_status = postgresql.ENUM('pending', 'running', 'complete', 'failed', name='backup_job_status', create_type=False)
+backup_destination = postgresql.ENUM('local', 'smb', 'nfs', name='backup_destination', create_type=False)
 
 
 def upgrade() -> None:

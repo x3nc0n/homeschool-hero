@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,7 +26,7 @@ ROLLBACK_NOTES = """
 - Export pending/failed import records before rolling back if recovery is needed.
 """
 
-import_entity_type = sa.Enum(
+import_entity_type = postgresql.ENUM(
     'students',
     'subjects',
     'assignments',
@@ -33,8 +34,9 @@ import_entity_type = sa.Enum(
     'attendance',
     'curriculum_packages',
     name='import_entity_type',
+create_type=False,
 )
-import_job_status = sa.Enum('pending', 'validating', 'importing', 'complete', 'failed', name='import_job_status')
+import_job_status = postgresql.ENUM('pending', 'validating', 'importing', 'complete', 'failed', name='import_job_status', create_type=False)
 
 
 def upgrade() -> None:

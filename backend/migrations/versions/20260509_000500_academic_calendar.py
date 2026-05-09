@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -26,8 +27,8 @@ ROLLBACK_NOTES = """
 - Tables are removed in reverse dependency order to satisfy foreign-key constraints.
 """
 
-term_type = sa.Enum('semester', 'quarter', 'trimester', 'custom', name='term_type')
-calendar_event_type = sa.Enum('holiday', 'closure', 'custom', name='calendar_event_type')
+term_type = postgresql.ENUM('semester', 'quarter', 'trimester', 'custom', name='term_type', create_type=False)
+calendar_event_type = postgresql.ENUM('holiday', 'closure', 'custom', name='calendar_event_type', create_type=False)
 
 
 def upgrade() -> None:

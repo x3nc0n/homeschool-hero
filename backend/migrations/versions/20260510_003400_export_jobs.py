@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,9 +26,9 @@ ROLLBACK_NOTES = """
 - Export job metadata should be archived before rolling back if audit trails are required.
 """
 
-export_type = sa.Enum('full', 'incremental', 'entity', name='export_type')
-export_format = sa.Enum('json', 'csv', 'zip', name='export_format')
-export_job_status = sa.Enum('pending', 'processing', 'complete', 'failed', name='export_job_status')
+export_type = postgresql.ENUM('full', 'incremental', 'entity', name='export_type', create_type=False)
+export_format = postgresql.ENUM('json', 'csv', 'zip', name='export_format', create_type=False)
+export_job_status = postgresql.ENUM('pending', 'processing', 'complete', 'failed', name='export_job_status', create_type=False)
 
 
 def upgrade() -> None:

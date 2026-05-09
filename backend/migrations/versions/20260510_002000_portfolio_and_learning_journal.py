@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -45,14 +46,15 @@ def _add_postgres_enum_values() -> None:
 def upgrade() -> None:
     _add_postgres_enum_values()
 
-    portfolio_entry_type = sa.Enum(
+    portfolio_entry_type = postgresql.ENUM(
         'work_sample',
         'journal',
         'milestone',
         'photo',
         'note',
         name='portfolio_entry_type',
-    )
+    create_type=False,
+)
     portfolio_entry_type.create(op.get_bind(), checkfirst=True)
 
     op.create_table(

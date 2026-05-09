@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,7 +26,7 @@ ROLLBACK_NOTES = """
 - Export any family-specific compliance rules or dashboard snapshots before downgrade if that history must be preserved.
 """
 
-compliance_rule_type = sa.Enum(
+compliance_rule_type = postgresql.ENUM(
     'attendance_hours',
     'attendance_days',
     'subjects_required',
@@ -33,8 +34,9 @@ compliance_rule_type = sa.Enum(
     'notification_required',
     'portfolio_required',
     name='compliance_rule_type',
+create_type=False,
 )
-compliance_state = sa.Enum('compliant', 'warning', 'non_compliant', name='compliance_state')
+compliance_state = postgresql.ENUM('compliant', 'warning', 'non_compliant', name='compliance_state', create_type=False)
 
 
 def upgrade() -> None:
@@ -106,7 +108,7 @@ def upgrade() -> None:
         'compliance_rules',
         sa.column('family_id', sa.Integer()),
         sa.column('state_code', sa.String()),
-        sa.column('rule_type', sa.String()),
+        sa.column('rule_type', compliance_rule_type),
         sa.column('rule_name', sa.String()),
         sa.column('description', sa.Text()),
         sa.column('threshold_value', sa.Numeric(8, 2)),

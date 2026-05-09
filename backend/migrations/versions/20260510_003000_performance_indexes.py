@@ -105,12 +105,7 @@ def upgrade() -> None:
             USING GIN (
               to_tsvector(
                 'simple',
-                concat_ws(
-                  ' ',
-                  coalesce(title, ''),
-                  coalesce(description, ''),
-                  coalesce(rubric_description, '')
-                )
+                coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(rubric_description, '')
               )
             )
             """
@@ -122,13 +117,10 @@ def upgrade() -> None:
             USING GIN (
               to_tsvector(
                 'simple',
-                concat_ws(
-                  ' ',
-                  coalesce(target_entity_type, ''),
-                  coalesce(target_entity_id, ''),
-                  coalesce(cast(before_snapshot as text), ''),
-                  coalesce(cast(after_snapshot as text), '')
-                )
+                coalesce(target_entity_type, '')
+                || ' ' || coalesce(target_entity_id, '')
+                || ' ' || coalesce(cast(before_snapshot as text), '')
+                || ' ' || coalesce(cast(after_snapshot as text), '')
               )
             )
             """

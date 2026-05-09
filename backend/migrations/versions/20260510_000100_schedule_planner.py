@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,7 +26,7 @@ ROLLBACK_NOTES = """
 - Tables are removed in reverse dependency order.
 """
 
-schedule_override_type = sa.Enum('cancel', 'reschedule', 'add', name='schedule_override_type')
+schedule_override_type = postgresql.ENUM('cancel', 'reschedule', 'add', name='schedule_override_type', create_type=False)
 
 
 def upgrade() -> None:

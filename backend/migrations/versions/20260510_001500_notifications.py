@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -24,7 +25,7 @@ ROLLBACK_NOTES = """
 - Export the notifications and notification_preferences tables first if operators need to preserve read state or delivery preferences.
 """
 
-notification_type = sa.Enum(
+notification_type = postgresql.ENUM(
     'due_date',
     'grading_complete',
     'backup_status',
@@ -32,6 +33,7 @@ notification_type = sa.Enum(
     'invitation',
     'compliance_reminder',
     name='notification_type',
+create_type=False,
 )
 
 

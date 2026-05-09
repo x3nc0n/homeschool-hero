@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,7 +26,7 @@ ROLLBACK_NOTES = """
 - attendance_excuses is removed before attendance_records to satisfy the foreign-key dependency.
 """
 
-attendance_status = sa.Enum('present', 'absent', 'tardy', 'excused', name='attendance_status')
+attendance_status = postgresql.ENUM('present', 'absent', 'tardy', 'excused', name='attendance_status', create_type=False)
 
 
 def upgrade() -> None:

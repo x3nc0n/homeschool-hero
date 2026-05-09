@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,9 +26,9 @@ ROLLBACK_NOTES = """
 - lesson_plan_id is a reserved nullable link for future AM-04 work and will be dropped on downgrade.
 """
 
-assignment_category = sa.Enum('homework', 'quiz', 'test', 'project', 'other', name='assignment_category')
-assignment_recurrence = sa.Enum('none', 'daily', 'weekly', name='assignment_recurrence')
-assignment_target_status = sa.Enum('assigned', 'submitted', 'graded', 'excused', name='assignment_target_status')
+assignment_category = postgresql.ENUM('homework', 'quiz', 'test', 'project', 'other', name='assignment_category', create_type=False)
+assignment_recurrence = postgresql.ENUM('none', 'daily', 'weekly', name='assignment_recurrence', create_type=False)
+assignment_target_status = postgresql.ENUM('assigned', 'submitted', 'graded', 'excused', name='assignment_target_status', create_type=False)
 
 
 def upgrade() -> None:

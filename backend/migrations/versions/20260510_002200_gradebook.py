@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,8 +26,8 @@ ROLLBACK_NOTES = """
 - Export gradebook configuration before rollback if families need to preserve custom weighting rules or alternate GPA scales.
 """
 
-old_assignment_category = sa.Enum('homework', 'quiz', 'test', 'project', 'other', name='assignment_category')
-new_assignment_category = sa.Enum(
+old_assignment_category = postgresql.ENUM('homework', 'quiz', 'test', 'project', 'other', name='assignment_category', create_type=False)
+new_assignment_category = postgresql.ENUM(
     'homework',
     'quiz',
     'test',
@@ -35,8 +36,9 @@ new_assignment_category = sa.Enum(
     'extra_credit',
     'other',
     name='assignment_category',
+create_type=False,
 )
-subject_grading_mode = sa.Enum('points', 'percentage', name='subject_grading_mode')
+subject_grading_mode = postgresql.ENUM('points', 'percentage', name='subject_grading_mode', create_type=False)
 
 
 def _upgrade_assignment_category_enum() -> None:
@@ -59,7 +61,7 @@ def _downgrade_assignment_category_enum() -> None:
     bind = op.get_bind()
     op.execute("UPDATE assignments SET category = 'other' WHERE category IN ('participation', 'extra_credit')")
     if bind.dialect.name == 'postgresql':
-        replacement = sa.Enum('homework', 'quiz', 'test', 'project', 'other', name='assignment_category_old')
+        replacement = postgresql.ENUM('homework', 'quiz', 'test', 'project', 'other', name='assignment_category_old', create_type=False)
         replacement.create(bind, checkfirst=True)
         op.execute(
             """

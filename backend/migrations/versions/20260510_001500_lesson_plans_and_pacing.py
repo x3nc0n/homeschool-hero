@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,13 +26,14 @@ ROLLBACK_NOTES = """
 - pacing_targets is removed before lesson_plans to satisfy dependency order.
 """
 
-lesson_plan_status = sa.Enum(
+lesson_plan_status = postgresql.ENUM(
     'planned',
     'in_progress',
     'completed',
     'skipped',
     'rescheduled',
     name='lesson_plan_status',
+create_type=False,
 )
 
 
