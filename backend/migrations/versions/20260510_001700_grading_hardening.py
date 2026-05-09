@@ -19,6 +19,14 @@ down_revision: Union[str, Sequence[str], None] = '20260510_001600'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() reverts the grading_jobs status enum from the expanded 8-value set back to the original 5-value set,
+  dropping the answer_keys table and all added columns on grading_jobs.
+- Status values are mapped back on a best-effort basis; ocr_processing/ocr_complete/ai_complete all collapse to 'processing'.
+- answer_keys data and the extra grading_jobs audit columns (ai_response, answer_key_result, etc.) are permanently lost.
+- Export answer keys and grading audit data before rolling back.
+"""
+
 new_grading_status = sa.Enum(
     'pending',
     'ocr_processing',

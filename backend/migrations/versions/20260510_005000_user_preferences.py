@@ -19,6 +19,12 @@ down_revision: Union[str, Sequence[str], None] = '20260510_004500'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops the user_preferences table.
+- All stored UI preferences (theme, accent color, font size, etc.) for every user will be permanently lost.
+- Users will revert to application defaults after rollback; no other table is affected.
+"""
+
 
 def upgrade() -> None:
     op.create_table(

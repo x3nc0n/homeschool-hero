@@ -20,6 +20,11 @@ down_revision: Union[str, Sequence[str], None] = (
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- This is a merge revision that joins parallel feature branches; it introduces no schema changes.
+- downgrade() is a no-op pass; reverting this revision simply re-opens the branch heads.
+"""
+
 
 def upgrade() -> None:
     pass

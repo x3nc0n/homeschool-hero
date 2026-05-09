@@ -19,6 +19,12 @@ down_revision: Union[str, Sequence[str], None] = '20260510_004000'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops the maintenance_modes table, removing all maintenance window scheduling and the seeded singleton row.
+- If maintenance mode is currently active, it will be deactivated immediately without warning to end users.
+- No family-scoped data is affected.
+"""
+
 
 def upgrade() -> None:
     op.create_table(

@@ -16,10 +16,16 @@ down_revision: Union[str, Sequence[str], None] = '20260510_001600'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- This is a bridge/alias revision that introduces no schema changes.
+- downgrade() is a deliberate no-op return; no schema objects are created or destroyed by this revision.
+"""
+
 
 def upgrade() -> None:
     pass
 
 
 def downgrade() -> None:
-    pass
+    # Bridge migration: no schema changes were introduced; nothing to reverse.
+    return

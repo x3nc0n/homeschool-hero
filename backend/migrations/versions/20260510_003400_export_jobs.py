@@ -19,6 +19,12 @@ down_revision: Union[str, Sequence[str], None] = '20260510_003300'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops the export_jobs table and the export_type, export_format, and export_job_status enum types.
+- All export job records and file-path references will be permanently lost; the physical export files on disk are not removed.
+- Export job metadata should be archived before rolling back if audit trails are required.
+"""
+
 export_type = sa.Enum('full', 'incremental', 'entity', name='export_type')
 export_format = sa.Enum('json', 'csv', 'zip', name='export_format')
 export_job_status = sa.Enum('pending', 'processing', 'complete', 'failed', name='export_job_status')

@@ -19,6 +19,12 @@ down_revision: Union[str, Sequence[str], None] = '20260510_003400'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ROLLBACK_NOTES = """
+- downgrade() drops the backup_jobs table and the backup_type, backup_job_status, and backup_destination enum types.
+- All backup job history and manifest data will be permanently lost; physical backup files on disk are not affected.
+- Record any in-progress or pending backup job details before rolling back.
+"""
+
 backup_type = sa.Enum('full', 'incremental', 'manual', name='backup_type')
 backup_job_status = sa.Enum('pending', 'running', 'complete', 'failed', name='backup_job_status')
 backup_destination = sa.Enum('local', 'smb', 'nfs', name='backup_destination')
