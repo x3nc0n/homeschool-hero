@@ -341,6 +341,7 @@ async def build_health_payload(
             ),
             'hsts_enabled': bool(getattr(config, 'hsts_enabled', False)),
         },
+        'maintenance': {'active': False},
     }
 
 
@@ -353,6 +354,7 @@ async def build_simple_health_payload(app: FastAPI, config: Settings = settings)
         'ready': payload['ready'],
         'checked_at': payload['checked_at'],
         'transport': payload['transport'],
+        'maintenance': payload['maintenance'],
     }
 
 
