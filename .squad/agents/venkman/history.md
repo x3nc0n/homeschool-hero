@@ -37,3 +37,8 @@
 - Added portfolio and learning journal backend support: portfolio entry/collection models, Alembic migration, CRUD/filter/share/public APIs, attachment uploads, audit hooks, and family-isolated tests.
 - Added frontend portfolio workspace with entry/journal views, collection builder with drag-and-drop, public share page, typed API client support, and navigation/routes for parents, tutors, and student viewers.
 - Validated with cd backend && python -m pytest -q (133 passed, 1 skipped) and cd frontend && npm run build.
+
+### RC-01 Report cards and progress reports (2026-05-09T07:05:00-05:00)
+- Added backend report card support with new report card/report card entry models, Alembic migration, generation service, family-scoped APIs, PDF export, finalize workflow, and report-card tests covering aggregation, immutability, PDF output, and family isolation.
+- Added frontend report cards workspace with generation by student/grading period, draft detail/editing, progress-report snapshot, finalize controls, PDF download, typed API client updates, navigation, and routing.
+- Hardened async assignment/report-card flows to avoid lazy-load `MissingGreenlet` regressions and validated with `cd backend && python -m pytest -q` (`152 passed, 1 skipped`) plus `cd frontend && npm run build`.

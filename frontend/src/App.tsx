@@ -25,6 +25,7 @@ import { PlannerPage } from '@/pages/PlannerPage'
 import { PortfolioPage } from '@/pages/PortfolioPage'
 import { PortfolioSharePage } from '@/pages/PortfolioSharePage'
 import { QuizzesPage } from '@/pages/QuizzesPage'
+import { ReportCardsPage } from '@/pages/ReportCardsPage'
 import { ReviewQueuePage } from '@/pages/ReviewQueuePage'
 import { ReviewDetailPage } from '@/pages/ReviewDetailPage'
 import { ResourceLibraryPage } from '@/pages/ResourceLibraryPage'
@@ -84,6 +85,7 @@ function ProtectedRoutes() {
         <Route path="/assignments" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<AssignmentsPage />} />} />
         <Route path="/upload" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<UploadPage />} />} />
         <Route path="/grades" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<GradesPage />} />} />
+        <Route path="/report-cards" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<ReportCardsPage />} />} />
         <Route path="/quizzes" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<QuizzesPage />} />} />
         <Route path="/review" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewQueuePage />} />} />
         <Route path="/review/:reviewId" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewDetailPage />} />} />

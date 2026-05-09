@@ -48,6 +48,7 @@ class SchoolYear(TimestampMixin, Base):
     schedules = relationship('Schedule', back_populates='school_year', cascade='all, delete-orphan')
     lesson_plans = relationship('LessonPlan', back_populates='school_year', cascade='all, delete-orphan')
     compliance_statuses = relationship('ComplianceStatus', back_populates='school_year', cascade='all, delete-orphan')
+    report_cards = relationship('ReportCard', back_populates='school_year', cascade='all, delete-orphan')
 
 
 class Term(TimestampMixin, Base):
@@ -88,6 +89,7 @@ class GradingPeriod(TimestampMixin, Base):
 
     term = relationship('Term', back_populates='grading_periods')
     assignments = relationship('Assignment', back_populates='grading_period')
+    report_cards = relationship('ReportCard', back_populates='grading_period', cascade='all, delete-orphan')
 
 
 class CalendarEvent(TimestampMixin, Base):

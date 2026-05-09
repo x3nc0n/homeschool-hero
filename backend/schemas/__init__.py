@@ -75,6 +75,13 @@ from backend.schemas.notifications import (
     NotificationReadUpdate,
 )
 from backend.schemas.quizzes import QuizAttemptCreate, QuizAttemptRead, QuizCreate, QuizRead, QuizUpdate
+from backend.schemas.report_cards import (
+    ReportCardEntryRead,
+    ReportCardGenerateRequest,
+    ReportCardRead,
+    ReportCardSummaryRead,
+    ReportCardUpdateRequest,
+)
 from backend.schemas.students import StudentCreate, StudentRead, StudentUpdate
 from backend.schemas.subjects import SubjectCreate, SubjectRead, SubjectUpdate
 from backend.schemas.submissions import SubmissionRead
@@ -141,6 +148,11 @@ __all__ = [
     "QuizCreate",
     "QuizRead",
     "QuizUpdate",
+    "ReportCardEntryRead",
+    "ReportCardGenerateRequest",
+    "ReportCardRead",
+    "ReportCardSummaryRead",
+    "ReportCardUpdateRequest",
     "SessionResponse",
     "SchoolYearCreate",
     "SchoolYearDetail",

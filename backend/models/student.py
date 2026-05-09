@@ -25,3 +25,4 @@ class Student(TimestampMixin, Base):
     portfolio_entries = relationship('PortfolioEntry', back_populates='student', cascade='all, delete-orphan')
     portfolio_collections = relationship('PortfolioCollection', back_populates='student', cascade='all, delete-orphan')
     compliance_statuses = relationship('ComplianceStatus', back_populates='student', cascade='all, delete-orphan')
+    report_cards = relationship('ReportCard', back_populates='student', cascade='all, delete-orphan')

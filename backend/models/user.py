@@ -29,3 +29,4 @@ class User(TimestampMixin, Base):
     notifications = relationship('Notification', back_populates='user', cascade='all, delete-orphan')
     notification_preferences = relationship('NotificationPreference', back_populates='user', cascade='all, delete-orphan')
     portfolio_entries = relationship('PortfolioEntry', back_populates='creator')
+    generated_report_cards = relationship('ReportCard', back_populates='generated_by')

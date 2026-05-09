@@ -124,6 +124,14 @@ ATTENDANCE = {
     'excuse_approve': f'{API_PREFIX}/attendance/excuses/{{excuse_id}}/approve',
 }
 
+REPORT_CARDS = {
+    'collection': f'{API_PREFIX}/report-cards',
+    'generate': f'{API_PREFIX}/report-cards/generate',
+    'detail': f'{API_PREFIX}/report-cards/{{report_card_id}}',
+    'finalize': f'{API_PREFIX}/report-cards/{{report_card_id}}/finalize',
+    'pdf': f'{API_PREFIX}/report-cards/{{report_card_id}}/pdf',
+}
+
 SCHEDULE = {
     'collection': f'{API_PREFIX}/schedule',
     'detail': f'{API_PREFIX}/schedule/{{schedule_id}}',

@@ -15,5 +15,6 @@ pytest==8.3.5
 httpx==0.28.1
 aiosqlite==0.21.0
 pillow==10.4.0
+reportlab==4.2.5
 pytesseract==0.3.13
 PyMuPDF==1.25.5

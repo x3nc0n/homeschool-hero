@@ -28,6 +28,7 @@ from backend.models.grading_job import GradingJob, GradingJobStatus
 from backend.models.notification import Notification, NotificationPreference, NotificationType
 from backend.models.portfolio import PortfolioCollection, PortfolioEntry, PortfolioEntryType
 from backend.models.quiz import Quiz, QuizAttempt
+from backend.models.report_card import ReportCard, ReportCardEntry, ReportCardStatus
 from backend.models.review import ReviewComment, ReviewItem, ReviewItemStatus, ReviewPriority
 from backend.models.schedule import Schedule, ScheduleBlock, ScheduleOverride, ScheduleOverrideType
 from backend.models.student import Student
@@ -79,6 +80,9 @@ __all__ = [
     'PortfolioCollection',
     'PortfolioEntry',
     'PortfolioEntryType',
+    'ReportCard',
+    'ReportCardEntry',
+    'ReportCardStatus',
     'PacingTarget',
     'Quiz',
     'QuizAttempt',
