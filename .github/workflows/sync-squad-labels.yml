@@ -91,6 +91,11 @@ jobs:
               { name: 'type:epic', color: 'CC4455', description: 'Parent issue that decomposes into sub-issues' }
             ];
 
+            const AUTOMATION_LABELS = [
+              { name: 'dependencies', color: '1D76DB', description: 'Dependency updates and maintenance work' },
+              { name: 'security', color: 'B60205', description: 'Security automation, findings, or remediation work' }
+            ];
+
             // High-signal labels — these MUST visually dominate all others
             const SIGNAL_LABELS = [
               { name: 'bug', color: 'FF0422', description: 'Something isn\'t working' },
@@ -131,6 +136,7 @@ jobs:
             labels.push(...GO_LABELS);
             labels.push(...RELEASE_LABELS);
             labels.push(...TYPE_LABELS);
+            labels.push(...AUTOMATION_LABELS);
             labels.push(...PRIORITY_LABELS);
             labels.push(...SIGNAL_LABELS);
 

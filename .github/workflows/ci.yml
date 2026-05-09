@@ -174,31 +174,37 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
-        run: docker build -t "${CI_IMAGE_NAME}" .
+        run: docker build --pull -t "${CI_IMAGE_NAME}" .
 
       - name: Scan image with Trivy policy gate
         id: trivy-policy
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.CI_IMAGE_NAME }}
+          scan-type: image
+          scanners: vuln
+          vuln-type: os,library
           format: table
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           exit-code: '1'
-          trivyignores: .trivyignore
+          ignorefile: .trivyignore
 
       - name: Generate Trivy SARIF
         if: always()
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.CI_IMAGE_NAME }}
+          scan-type: image
+          scanners: vuln
+          vuln-type: os,library
           format: sarif
           output: trivy-results.sarif
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           exit-code: '0'
-          trivyignores: .trivyignore
+          ignorefile: .trivyignore
 
       - name: Upload Trivy SARIF
         if: always()
@@ -224,6 +230,8 @@ jobs:
           fetch-depth: 0
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_SUMMARY: 'true'

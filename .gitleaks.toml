@@ -1,0 +1,44 @@
+title = "Homeschool Hero Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "homeschool-hero-runtime-secret"
+description = "Potential committed runtime credential in env, workflow, or container configuration."
+path = '''(?i)(?:^|/)(?:\.env(?:\.[^/]+)?|docker-compose\.ya?ml|compose\.ya?ml|\.github/workflows/.*\.ya?ml|.*\.(?:env|ini|cfg|conf|ya?ml|toml))$'''
+regex = '''(?i)(OPENAI_API_KEY|SECRET_KEY|FAMILY_PASSWORD|POSTGRES_PASSWORD|[A-Z0-9_]*(?:API[_-]?KEY|TOKEN|PASSWORD|SECRET))\s*(?:=|:)\s*["']?([A-Za-z0-9_./+=-]{8,})["']?'''
+secretGroup = 2
+entropy = 2.5
+keywords = [
+  "openai_api_key",
+  "secret_key",
+  "family_password",
+  "postgres_password",
+  "token",
+  "password",
+  "api_key",
+  "secret",
+]
+tags = ["secret", "config", "runtime"]
+
+[[rules.allowlists]]
+description = "Allow placeholder values and variable interpolation"
+condition = "OR"
+regexTarget = "match"
+regexes = [
+  '''(?i)(?:changeme|change-me|change_me|example|sample|placeholder|dummy|test|localhost|owner@homeschool-hero\.local|super-secret-change-me)''',
+  '''\$\{\{[^}]+}}''',
+  '''\$\{[^}]+}''',
+]
+
+[[allowlists]]
+description = "Allow placeholder sample environment file"
+paths = ['''(?:^|/)\.env\.example$''']
+
+[[allowlists]]
+description = "Allow secret-handling training documents with example key blocks"
+paths = [
+  '''(?:^|/)\.copilot/skills/secret-handling/SKILL\.md$''',
+  '''(?:^|/)\.squad/templates/skills/secret-handling/SKILL\.md$''',
+]

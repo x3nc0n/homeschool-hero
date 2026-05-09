@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
   schedule:
     - cron: '0 6 * * 1'
 
@@ -24,18 +25,57 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language:
-          - python
-          - javascript-typescript
+        include:
+          - language: python
+            setup: python
+          - language: javascript-typescript
+            setup: node
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: matrix.setup == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            backend/requirements-test.txt
+
+      - name: Install Python dependencies
+        if: matrix.setup == 'python'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          if [ -f backend/requirements-test.txt ]; then
+            python -m pip install -r backend/requirements-test.txt
+          fi
+
+      - name: Set up Node.js
+        if: matrix.setup == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: matrix.setup == 'node'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend for analysis
+        if: matrix.setup == 'node'
+        working-directory: frontend
+        run: npm run build
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          queries: security-and-quality
+          queries: security-extended,security-and-quality
 
       - name: Analyze with CodeQL
         uses: github/codeql-action/analyze@v3

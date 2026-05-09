@@ -17,6 +17,8 @@
 - 2026-05-08 — Security automation now includes PR-time Gitleaks, weekly/PR CodeQL analysis, weekly Dependabot updates, and Trivy image scanning with `.trivyignore` as the reviewed exception list.
 - 2026-05-08 — Release automation now publishes version-tagged containers to `ghcr.io/x3nc0n/homeschool-hero` and creates GitHub Releases from generated notes.
 - 2026-05-08 — The `main` branch protection now requires `Backend quality gate`, `Migration checks`, `Frontend checks`, `Container checks`, and `Secret scan` before merge.
+- 2026-05-08 — CodeQL now primes both Python and JavaScript/TypeScript dependency graphs before weekly/PR analysis and runs the broader `security-extended` plus `security-and-quality` suites for FastAPI + React coverage.
+- 2026-05-08 — Trivy now scans built images for both OS and library CVEs with `.trivyignore` as the reviewed exception file, while Gitleaks uses a repo-level `.gitleaks.toml` plus PR-time scanning and documented local pre-commit setup.
 
 ### Phase 1 Completion (2026-05-08T22:04:55Z)
 - Test infrastructure tasks 21-22 completed successfully: pytest contracts, async httpx clients, mocked dependencies ✓

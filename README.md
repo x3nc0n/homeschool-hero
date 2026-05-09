@@ -92,9 +92,38 @@ Additional automation:
 - **Dependabot** — opens weekly dependency update PRs for pip, npm, and GitHub Actions.
 - **Release workflow** — pushing a `v*` tag builds and publishes `ghcr.io/x3nc0n/homeschool-hero`, then creates a GitHub Release with generated notes.
 
+See `docs/security-scanning.md` for the full security scanning playbook, severity guidance, suppression rules, and escalation path.
+
 ### Contributor recommendations
 
 - Run backend tests from a clean state with `cd backend && python -m pytest -q`.
 - Run frontend checks with `cd frontend && npm ci && npm run lint && npm run build`.
 - Keep `.trivyignore` limited to reviewed exceptions only.
 - Add Gitleaks to your local pre-commit workflow so staged changes are scanned before you push.
+
+### Local pre-commit secret scanning
+
+Create `.pre-commit-config.yaml` in the repository root with:
+
+```yaml
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks
+```
+
+Then run:
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit run gitleaks --all-files
+```
+
+### Dependency update process
+
+- Dependabot opens weekly PRs for root pip, backend test pip, frontend npm, and GitHub Actions updates.
+- Dependabot PRs are labeled `dependencies`, `type:chore`, and `squad:copilot` for routing.
+- Review update PRs against CI, Security, and container scan results before merge.
+- If an update cannot merge safely, document the blocker on the PR and suppress only the specific scanner finding that was reviewed.

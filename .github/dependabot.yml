@@ -8,6 +8,10 @@ updates:
       time: '06:00'
       timezone: UTC
     open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - type:chore
+      - squad:copilot
     commit-message:
       prefix: deps
 
@@ -19,6 +23,10 @@ updates:
       time: '06:00'
       timezone: UTC
     open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - type:chore
+      - squad:copilot
     commit-message:
       prefix: deps
 
@@ -30,6 +38,10 @@ updates:
       time: '06:00'
       timezone: UTC
     open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - type:chore
+      - squad:copilot
     commit-message:
       prefix: deps
 
@@ -41,5 +53,9 @@ updates:
       time: '06:00'
       timezone: UTC
     open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - type:chore
+      - squad:copilot
     commit-message:
       prefix: ci
