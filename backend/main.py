@@ -23,6 +23,7 @@ from backend.routers import (
     audit_router,
     auth_router,
     compliance_router,
+    compliance_reports_router,
     curriculum_router,
     dashboard_router,
     gradebook_router,
@@ -39,6 +40,7 @@ from backend.routers import (
     students_router,
     subjects_router,
     submissions_router,
+    transcripts_router,
 )
 from backend.routers.calendar import router as calendar_router
 from backend.routers.grading import router as grading_router
@@ -411,6 +413,7 @@ def create_app() -> FastAPI:
     app.include_router(calendar_router, prefix=API_PREFIX)
     app.include_router(attendance_router, prefix=API_PREFIX)
     app.include_router(compliance_router, prefix=API_PREFIX)
+    app.include_router(compliance_reports_router, prefix=API_PREFIX)
     app.include_router(assignments_router, prefix=API_PREFIX)
     app.include_router(lesson_plans_router, prefix=API_PREFIX)
     app.include_router(submissions_router, prefix=API_PREFIX)
@@ -418,6 +421,7 @@ def create_app() -> FastAPI:
     app.include_router(imports_router, prefix=API_PREFIX)
     app.include_router(quizzes_router, prefix=API_PREFIX)
     app.include_router(report_cards_router, prefix=API_PREFIX)
+    app.include_router(transcripts_router, prefix=API_PREFIX)
     app.include_router(schedule_router, prefix=API_PREFIX)
     app.include_router(grading_router, prefix=API_PREFIX)
     app.include_router(reviews_router, prefix=API_PREFIX)

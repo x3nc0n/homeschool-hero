@@ -12,6 +12,7 @@ import { AttendancePage } from '@/pages/AttendancePage'
 import { AuditLogPage } from '@/pages/AuditLogPage'
 import { CalendarPage } from '@/pages/CalendarPage'
 import { CompliancePage } from '@/pages/CompliancePage'
+import { ComplianceReportsPage } from '@/pages/ComplianceReportsPage'
 import { CurriculumPage } from '@/pages/CurriculumPage'
 import { GradesPage } from '@/pages/GradesPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
@@ -33,6 +34,7 @@ import { SearchPage } from '@/pages/SearchPage'
 import { SetupPage } from '@/pages/SetupPage'
 import { StudentsPage } from '@/pages/StudentsPage'
 import { SubjectsPage } from '@/pages/SubjectsPage'
+import { TranscriptsPage } from '@/pages/TranscriptsPage'
 import { UploadPage } from '@/pages/UploadPage'
 
 function LoadingScreen() {
@@ -75,6 +77,7 @@ function ProtectedRoutes() {
         <Route path="/calendar" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CalendarPage />} />} />
         <Route path="/attendance" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<AttendancePage />} />} />
         <Route path="/compliance" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<CompliancePage />} />} />
+        <Route path="/compliance-reports" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<ComplianceReportsPage />} />} />
         <Route path="/planner" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PlannerPage />} />} />
         <Route path="/lesson-plans" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<LessonPlansPage />} />} />
         <Route path="/curriculum" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CurriculumPage />} />} />
@@ -86,6 +89,7 @@ function ProtectedRoutes() {
         <Route path="/upload" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<UploadPage />} />} />
         <Route path="/grades" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<GradesPage />} />} />
         <Route path="/report-cards" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<ReportCardsPage />} />} />
+        <Route path="/transcripts" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<TranscriptsPage />} />} />
         <Route path="/quizzes" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<QuizzesPage />} />} />
         <Route path="/review" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewQueuePage />} />} />
         <Route path="/review/:reviewId" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewDetailPage />} />} />

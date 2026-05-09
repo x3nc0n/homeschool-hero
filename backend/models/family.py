@@ -37,7 +37,9 @@ class Family(TimestampMixin, Base):
     portfolio_collections = relationship('PortfolioCollection', back_populates='family', cascade='all, delete-orphan')
     compliance_rules = relationship('ComplianceRule', back_populates='family', cascade='all, delete-orphan')
     compliance_statuses = relationship('ComplianceStatus', back_populates='family', cascade='all, delete-orphan')
+    compliance_reports = relationship('ComplianceReport', back_populates='family', cascade='all, delete-orphan')
     report_cards = relationship('ReportCard', back_populates='family', cascade='all, delete-orphan')
+    transcripts = relationship('Transcript', back_populates='family', cascade='all, delete-orphan')
 
 
 class FamilySettings(TimestampMixin, Base):

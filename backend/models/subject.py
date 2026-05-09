@@ -29,3 +29,4 @@ class Subject(TimestampMixin, Base):
     schedule_overrides = relationship('ScheduleOverride', back_populates='subject')
     portfolio_entries = relationship('PortfolioEntry', back_populates='subject')
     report_card_entries = relationship('ReportCardEntry', back_populates='subject')
+    transcript_entries = relationship('TranscriptEntry', back_populates='subject')

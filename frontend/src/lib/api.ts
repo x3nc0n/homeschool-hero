@@ -17,6 +17,10 @@ import type {
   CalendarEvent,
   ComplianceCustomRulePayload,
   ComplianceDashboard,
+  ComplianceReport,
+  ComplianceReportStatus,
+  ComplianceReportSummary,
+  ComplianceReportType,
   ComplianceRule,
   ComplianceRuleListResponse,
   ComplianceStudentStatus,
@@ -76,8 +80,12 @@ import type {
   ReportCard,
   ReportCardSummary,
   ReportCardStatus,
+  RequiredComplianceReportListResponse,
   Resource,
   ResourceType,
+  Transcript,
+  TranscriptStatus,
+  TranscriptSummary,
   ReviewApprovePayload,
   ReviewAssignPayload,
   ReviewBulkResponse,
@@ -202,6 +210,16 @@ export const api = {
   getComplianceStatus(studentId: number, schoolYearId?: number) {
     const query = schoolYearId ? `?school_year_id=${schoolYearId}` : ''
     return request<ComplianceStudentStatus>(`/compliance/${studentId}/status${query}`)
+  },
+
+  listRequiredComplianceReports(filters: { state?: string; student_id?: number; school_year_id?: number } = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<RequiredComplianceReportListResponse>(`/compliance-reports/required${query ? `?${query}` : ''}`)
   },
 
   getFamilyComplianceState() {
@@ -886,6 +904,96 @@ export const api = {
 
   getReportCardPdfUrl(id: number) {
     return `${API_BASE_URL}/report-cards/${id}/pdf`
+  },
+
+  listComplianceReports(filters: {
+    student_id?: number
+    school_year_id?: number
+    report_type?: ComplianceReportType
+    status?: ComplianceReportStatus
+  } = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null) return
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<ComplianceReportSummary[]>(`/compliance-reports${query ? `?${query}` : ''}`)
+  },
+
+  generateComplianceReport(payload: {
+    student_id: number
+    school_year_id: number
+    report_type: ComplianceReportType
+    grading_period_id?: number | null
+    notes?: string | null
+  }) {
+    return request<ComplianceReport>('/compliance-reports/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getComplianceReport(id: number) {
+    return request<ComplianceReport>(`/compliance-reports/${id}`)
+  },
+
+  finalizeComplianceReport(id: number) {
+    return request<ComplianceReport>(`/compliance-reports/${id}/finalize`, { method: 'POST' })
+  },
+
+  getComplianceReportPdfUrl(id: number) {
+    return `${API_BASE_URL}/compliance-reports/${id}/pdf`
+  },
+
+  listTranscripts(filters: { student_id?: number; status?: TranscriptStatus } = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null) return
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<TranscriptSummary[]>(`/transcripts${query ? `?${query}` : ''}`)
+  },
+
+  generateTranscript(payload: { student_id: number; notes?: string | null }) {
+    return request<Transcript>('/transcripts/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getTranscript(id: number) {
+    return request<Transcript>(`/transcripts/${id}`)
+  },
+
+  updateTranscript(
+    id: number,
+    payload: {
+      notes?: string | null
+      status?: TranscriptStatus
+      entries?: Array<{
+        entry_id: number
+        credits?: number | null
+        is_honors?: boolean | null
+        is_ap?: boolean | null
+        notes?: string | null
+        subject_name?: string | null
+      }>
+    },
+  ) {
+    return request<Transcript>(`/transcripts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  finalizeTranscript(id: number) {
+    return request<Transcript>(`/transcripts/${id}/finalize`, { method: 'POST' })
+  },
+
+  getTranscriptPdfUrl(id: number) {
+    return `${API_BASE_URL}/transcripts/${id}/pdf`
   },
 
   listQuizzes() {

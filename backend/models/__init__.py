@@ -12,6 +12,7 @@ from backend.models.audit_event import AuditAction, AuditEvent
 from backend.models.lesson_plan import LessonPlan, LessonPlanStatus, PacingTarget
 from backend.models.calendar import CalendarEvent, CalendarEventType, GradingPeriod, SchoolYear, Term, TermType
 from backend.models.compliance import ComplianceRule, ComplianceRuleType, ComplianceState, ComplianceStatus
+from backend.models.compliance_report import ComplianceReport, ComplianceReportStatus, ComplianceReportType
 from backend.models.curriculum import (
     CurriculumLesson,
     CurriculumPackage,
@@ -34,6 +35,7 @@ from backend.models.schedule import Schedule, ScheduleBlock, ScheduleOverride, S
 from backend.models.student import Student
 from backend.models.subject import Subject
 from backend.models.submission import Submission
+from backend.models.transcript import Transcript, TranscriptEntry, TranscriptStatus
 from backend.models.user import User
 
 __all__ = [
@@ -53,6 +55,9 @@ __all__ = [
     'CalendarEvent',
     'CalendarEventType',
     'ComplianceRule',
+    'ComplianceReport',
+    'ComplianceReportStatus',
+    'ComplianceReportType',
     'ComplianceRuleType',
     'ComplianceState',
     'ComplianceStatus',
@@ -101,6 +106,9 @@ __all__ = [
     'SubjectGradingMode',
     'Subject',
     'Submission',
+    'Transcript',
+    'TranscriptEntry',
+    'TranscriptStatus',
     'Term',
     'TermType',
     'User',

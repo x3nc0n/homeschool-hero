@@ -132,6 +132,23 @@ REPORT_CARDS = {
     'pdf': f'{API_PREFIX}/report-cards/{{report_card_id}}/pdf',
 }
 
+COMPLIANCE_REPORTS = {
+    'collection': f'{API_PREFIX}/compliance-reports',
+    'generate': f'{API_PREFIX}/compliance-reports/generate',
+    'required': f'{API_PREFIX}/compliance-reports/required',
+    'detail': f'{API_PREFIX}/compliance-reports/{{report_id}}',
+    'finalize': f'{API_PREFIX}/compliance-reports/{{report_id}}/finalize',
+    'pdf': f'{API_PREFIX}/compliance-reports/{{report_id}}/pdf',
+}
+
+TRANSCRIPTS = {
+    'collection': f'{API_PREFIX}/transcripts',
+    'generate': f'{API_PREFIX}/transcripts/generate',
+    'detail': f'{API_PREFIX}/transcripts/{{transcript_id}}',
+    'finalize': f'{API_PREFIX}/transcripts/{{transcript_id}}/finalize',
+    'pdf': f'{API_PREFIX}/transcripts/{{transcript_id}}/pdf',
+}
+
 SCHEDULE = {
     'collection': f'{API_PREFIX}/schedule',
     'detail': f'{API_PREFIX}/schedule/{{schedule_id}}',

@@ -63,6 +63,9 @@ export type LessonPlanStatus = 'planned' | 'in_progress' | 'completed' | 'skippe
 export type ImportEntityType = 'students' | 'subjects' | 'assignments' | 'grades' | 'attendance' | 'curriculum_packages'
 export type ImportJobStatus = 'pending' | 'validating' | 'importing' | 'complete' | 'failed'
 export type ReportCardStatus = 'draft' | 'final' | 'archived'
+export type ComplianceReportType = 'annual_assessment' | 'quarterly_report' | 'notice_of_intent' | 'attendance_log' | 'portfolio_review'
+export type ComplianceReportStatus = 'draft' | 'final' | 'submitted'
+export type TranscriptStatus = 'draft' | 'final' | 'archived'
 
 export interface ApiErrorPayload {
   detail?: string
@@ -968,6 +971,89 @@ export interface ReportCardSummary {
 export interface ReportCard extends ReportCardSummary {
   student?: Student | null
   entries: ReportCardEntry[]
+}
+
+export interface ComplianceReportSummary {
+  id: number
+  family_id: number
+  student_id: number
+  school_year_id: number
+  state_code: string
+  report_type: ComplianceReportType
+  generated_at: string
+  generated_by_user_id?: number | null
+  generated_by_name?: string | null
+  status: ComplianceReportStatus
+  notes?: string | null
+  student_name: string
+  school_year_name: string
+  period_label?: string | null
+  title: string
+}
+
+export interface ComplianceReport extends ComplianceReportSummary {
+  student?: Student | null
+  data: Record<string, unknown>
+}
+
+export interface RequiredComplianceReport {
+  report_type: ComplianceReportType
+  label: string
+  description: string
+  cadence: string
+  required_count: number
+  generated_count: number
+  completed_count: number
+  outstanding_count: number
+  is_complete: boolean
+}
+
+export interface RequiredComplianceReportListResponse {
+  state_code: string
+  student_id?: number | null
+  school_year_id?: number | null
+  items: RequiredComplianceReport[]
+}
+
+export interface TranscriptEntry {
+  id: number
+  transcript_id: number
+  school_year_id: number
+  school_year_name: string
+  subject_id: number
+  subject_name: string
+  credits: number
+  letter_grade?: string | null
+  gpa_points?: number | null
+  weighted_gpa_points?: number | null
+  is_honors: boolean
+  is_ap: boolean
+  notes?: string | null
+}
+
+export interface TranscriptSummary {
+  id: number
+  family_id: number
+  student_id: number
+  generated_at: string
+  generated_by_user_id?: number | null
+  generated_by_name?: string | null
+  status: TranscriptStatus
+  cumulative_gpa?: number | null
+  weighted_gpa?: number | null
+  total_credits: number
+  notes?: string | null
+  student_name: string
+  entry_count: number
+}
+
+export interface Transcript extends TranscriptSummary {
+  student?: Student | null
+  class_rank?: number | null
+  class_size?: number | null
+  honors_weight_bonus: number
+  ap_weight_bonus: number
+  entries: TranscriptEntry[]
 }
 
 export interface DashboardActivityItem {

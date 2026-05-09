@@ -4,6 +4,7 @@ from backend.routers.audit import router as audit_router
 from backend.routers.auth import router as auth_router
 from backend.routers.calendar import router as calendar_router
 from backend.routers.compliance import router as compliance_router
+from backend.routers.compliance_reports import router as compliance_reports_router
 from backend.routers.curriculum import router as curriculum_router
 from backend.routers.dashboard import router as dashboard_router
 from backend.routers.gradebook import router as gradebook_router
@@ -21,6 +22,7 @@ from backend.routers.search import router as search_router
 from backend.routers.students import router as students_router
 from backend.routers.subjects import router as subjects_router
 from backend.routers.submissions import router as submissions_router
+from backend.routers.transcripts import router as transcripts_router
 
 __all__ = [
     'assignments_router',
@@ -29,6 +31,7 @@ __all__ = [
     'auth_router',
     'calendar_router',
     'compliance_router',
+    'compliance_reports_router',
     'curriculum_router',
     'dashboard_router',
     'gradebook_router',
@@ -46,4 +49,5 @@ __all__ = [
     'students_router',
     'subjects_router',
     'submissions_router',
+    'transcripts_router',
 ]
