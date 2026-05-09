@@ -8,6 +8,7 @@ type CapabilityContextValue = {
   status: 'ok' | 'degraded'
   capabilities: CapabilitiesResponse['capabilities']
   optionalUnavailable: CapabilityName[]
+  auth: CapabilitiesResponse['auth']
   refresh: () => Promise<void>
   isEnabled: (name: CapabilityName) => boolean
 }
@@ -51,6 +52,14 @@ const defaultCapabilities = {
   },
 } satisfies Record<CapabilityName, CapabilityStatus>
 
+const defaultAuth = {
+  current_provider: 'local',
+  available_providers: ['local'],
+  local_enabled: true,
+  oidc_enabled: false,
+  saml_enabled: false,
+} satisfies CapabilitiesResponse['auth']
+
 const CapabilityContext = createContext<CapabilityContextValue | undefined>(undefined)
 
 export function CapabilitiesProvider({ children }: { children: React.ReactNode }) {
@@ -61,6 +70,7 @@ export function CapabilitiesProvider({ children }: { children: React.ReactNode }
   const [optionalUnavailable, setOptionalUnavailable] = useState<CapabilityName[]>(
     Object.keys(defaultCapabilities) as CapabilityName[],
   )
+  const [auth, setAuth] = useState<CapabilitiesResponse['auth']>(defaultAuth)
 
   const refresh = async () => {
     setLoading(true)
@@ -69,6 +79,7 @@ export function CapabilitiesProvider({ children }: { children: React.ReactNode }
       setCapabilities(response.capabilities)
       setOptionalUnavailable(response.optional_unavailable)
       setStatus(response.status)
+      setAuth(response.auth)
       setError('')
     } catch (capabilityError) {
       setError(capabilityError instanceof Error ? capabilityError.message : 'Unable to load capability status')
@@ -89,10 +100,11 @@ export function CapabilitiesProvider({ children }: { children: React.ReactNode }
       status,
       capabilities,
       optionalUnavailable,
+      auth,
       refresh,
       isEnabled: (name: CapabilityName) => capabilities[name]?.enabled ?? false,
     }),
-    [capabilities, error, loading, optionalUnavailable, status],
+    [auth, capabilities, error, loading, optionalUnavailable, status],
   )
 
   return <CapabilityContext.Provider value={value}>{children}</CapabilityContext.Provider>

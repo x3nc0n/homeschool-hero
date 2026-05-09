@@ -20,6 +20,16 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file: *shared_env
+    environment:
+      AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
+      AUTH_AUTO_PROVISION_MODE: ${AUTH_AUTO_PROVISION_MODE:-default_family}
+      AUTH_DEFAULT_FAMILY_NAME: ${AUTH_DEFAULT_FAMILY_NAME:-SSO Users}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_DISCOVERY_URL: ${OIDC_DISCOVERY_URL:-}
+      SAML_METADATA_URL: ${SAML_METADATA_URL:-}
+      SAML_ENTITY_ID: ${SAML_ENTITY_ID:-}
+      SAML_ACS_URL: ${SAML_ACS_URL:-}
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:

@@ -125,6 +125,8 @@ curl http://localhost:8000/api/capabilities
 - Existing single-family installs are migrated into one default family plus one owner user automatically.
 - The migrated owner uses `BOOTSTRAP_OWNER_EMAIL` for login and reuses the previous `FAMILY_PASSWORD` or `FAMILY_PASSWORD_HASH` as the new password.
 - All family data is tenant-scoped in the API and database using `family_id` foreign keys.
+- Local email/password auth remains the default; optional OIDC and SAML overlays can be enabled with `AUTH_PROVIDER`.
+- See `docs/auth-providers.md` for Microsoft Entra ID, generic OIDC, and SAML setup details.
 
 ## Environment variables
 
@@ -137,8 +139,18 @@ curl http://localhost:8000/api/capabilities
 | `DATABASE_URL` | Yes | Async SQLAlchemy connection string used by FastAPI and Alembic. |
 | `SECRET_KEY` | Yes | Signing key for session cookies. Change this for any real deployment. |
 | `SESSION_COOKIE_NAME` | No | Cookie name for the authenticated user session. |
+| `CSRF_COOKIE_NAME` | No | Cookie name for the CSRF token used by authenticated browser requests. |
 | `SESSION_MAX_AGE_SECONDS` | No | Session lifetime in seconds. |
 | `SESSION_COOKIE_SECURE` | No | Set to `true` when serving over HTTPS. |
+| `AUTH_PROVIDER` | No | `local`, `oidc`, or `saml`. Local remains the default. |
+| `AUTH_AUTO_PROVISION_MODE` | No | `default_family` to auto-place SSO users, or `reject` to require an invitation or existing membership. |
+| `AUTH_DEFAULT_FAMILY_NAME` | No | Family name used when SSO users are auto-provisioned. |
+| `OIDC_CLIENT_ID` | No | Required when `AUTH_PROVIDER=oidc`. |
+| `OIDC_CLIENT_SECRET` | No | Required when `AUTH_PROVIDER=oidc`. |
+| `OIDC_DISCOVERY_URL` | No | Required when `AUTH_PROVIDER=oidc`; OpenID discovery document URL. |
+| `SAML_METADATA_URL` | No | Required when `AUTH_PROVIDER=saml`; IdP metadata XML URL. |
+| `SAML_ENTITY_ID` | No | Required when `AUTH_PROVIDER=saml`; service provider entity ID. |
+| `SAML_ACS_URL` | No | Required when `AUTH_PROVIDER=saml`; Assertion Consumer Service callback URL. |
 | `BOOTSTRAP_OWNER_EMAIL` | No | Email used by the initial owner account and migration-created owner user. |
 | `BOOTSTRAP_OWNER_DISPLAY_NAME` | No | Display name for the bootstrap owner account. |
 | `BOOTSTRAP_FAMILY_NAME` | No | Default family name used during bootstrap and legacy migration. |
