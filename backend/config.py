@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     ai_provider: str = Field("ollama", alias="AI_PROVIDER")
     ollama_host: str = Field("http://ollama:11434", alias="OLLAMA_HOST")
-    ollama_model: str = Field("llama3", alias="OLLAMA_MODEL")
+    ollama_model: str = Field("llama3.2", alias="OLLAMA_MODEL")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
     confidence_threshold: float = Field(0.8, alias="CONFIDENCE_THRESHOLD")

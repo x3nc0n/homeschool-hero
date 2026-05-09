@@ -18,9 +18,17 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-assignment_status = sa.Enum("pending", "complete", "graded", name="assignment_status")
-graded_by = sa.Enum("human", "ai", "ai+human", name="graded_by")
-grading_job_status = sa.Enum("queued", "processing", "needs_review", "complete", "failed", name="grading_job_status")
+assignment_status = postgresql.ENUM("pending", "complete", "graded", name="assignment_status", create_type=False)
+graded_by = postgresql.ENUM("human", "ai", "ai+human", name="graded_by", create_type=False)
+grading_job_status = postgresql.ENUM(
+    "queued",
+    "processing",
+    "needs_review",
+    "complete",
+    "failed",
+    name="grading_job_status",
+    create_type=False,
+)
 
 
 def upgrade() -> None:

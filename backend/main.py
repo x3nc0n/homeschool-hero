@@ -2,9 +2,11 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from backend.config import settings
 from backend.database import engine
@@ -54,6 +56,45 @@ def _is_api_path(path: str) -> bool:
     return path == API_PREFIX or path.startswith(f"{API_PREFIX}/")
 
 
+async def _check_database_health() -> str:
+    async with engine.connect() as connection:
+        await connection.execute(text("SELECT 1"))
+    return "ok"
+
+
+async def _check_ai_health() -> str:
+    if settings.testing:
+        return "skipped"
+
+    provider = settings.ai_provider.lower().strip()
+    if provider == "openai":
+        if settings.openai_api_key:
+            return "configured"
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+
+    ollama_url = f"{settings.ollama_host.rstrip('/')}/api/tags"
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.get(ollama_url)
+        response.raise_for_status()
+
+    body = response.json()
+    configured_model = settings.ollama_model.strip()
+    available_models = {
+        str(model.get("name", "")).strip()
+        for model in body.get("models", [])
+        if isinstance(model, dict)
+    }
+    if not any(
+        name == configured_model
+        or name == f"{configured_model}:latest"
+        or name.startswith(f"{configured_model}:")
+        for name in available_models
+    ):
+        raise RuntimeError(f"Ollama model '{configured_model}' is not loaded")
+
+    return "ok"
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
@@ -77,11 +118,18 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/health")
     async def api_health() -> dict[str, str]:
-        return {"status": "ok"}
+        try:
+            database_status, ai_status = await asyncio.gather(
+                _check_database_health(),
+                _check_ai_health(),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {"status": "ok", "database": database_status, "ai": ai_status}
 
     @app.get("/health", include_in_schema=False)
     async def health_alias() -> dict[str, str]:
-        return {"status": "ok"}
+        return await api_health()
 
     app.include_router(auth_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)

@@ -9,8 +9,7 @@ Homeschool Hero is a self-hosted homeschool platform for assignments, uploads, O
 ```bash
 git clone https://github.com/x3nc0n/homeschool-hero.git
 cd homeschool-hero
-cp .env.example .env
-# edit .env to set your FAMILY_PASSWORD
+# optional: copy .env.example to .env if you want to override defaults
 docker compose up --build
 # Open http://localhost:8000
 ```
@@ -19,24 +18,10 @@ The default `docker compose up --build` flow starts:
 
 - `app` — FastAPI API + bundled React UI on port `8000`
 - `db` — PostgreSQL 16 with persistent data
+- `ollama` — local LLM runtime for grading
+- `ollama-model` — one-shot model bootstrap that pulls the default grading model before the app starts
 
-Uploads are persisted in a Docker volume mounted at `/data/uploads`, and Postgres data is persisted in a named volume.
-
-## Optional Ollama setup for AI grading
-
-AI grading works best when Ollama is enabled:
-
-```bash
-docker compose --profile ai up --build
-```
-
-Then pull a model inside the Ollama container, for example:
-
-```bash
-docker compose exec ollama ollama pull llama3
-```
-
-If you skip the Ollama profile, the app still runs locally and grading jobs fall back to manual review.
+Uploads are persisted in a Docker volume mounted at `/data/uploads`, Postgres data is persisted in a named volume, and Ollama models are cached in a named volume. The first startup takes longer because Compose now pulls the default `llama3.2` model automatically so grading works end-to-end without extra setup.
 
 ## Environment variables
 
@@ -53,11 +38,12 @@ If you skip the Ollama profile, the app still runs locally and grading jobs fall
 | `FAMILY_PASSWORD_HASH` | No | Optional bcrypt hash; overrides `FAMILY_PASSWORD` when set. |
 | `FAMILY_PIN` | No | Optional alternate PIN login. |
 | `FAMILY_PIN_HASH` | No | Optional bcrypt hash for the PIN. |
-| `AI_PROVIDER` | No | `ollama` or `openai`. Leave as `ollama` for local AI grading. |
+| `AI_PROVIDER` | No | `ollama` or `openai`. Leave as `ollama` for the standard local stack. |
 | `OLLAMA_HOST` | No | Base URL for the Ollama service. |
-| `OLLAMA_MODEL` | No | Ollama model name to use for grading. |
+| `OLLAMA_MODEL` | No | Ollama model name to pre-pull and use for grading. Defaults to `llama3.2`. |
 | `OPENAI_API_KEY` | No | Required only when `AI_PROVIDER=openai`. |
 | `CONFIDENCE_THRESHOLD` | No | AI auto-approval threshold between `0` and `1`. |
+| `GRADING_POLL_INTERVAL` | No | Seconds between grading worker polls. |
 | `UPLOAD_DIR` | No | Filesystem path for uploaded work inside the app container. |
 
 \* Set either `FAMILY_PASSWORD` or `FAMILY_PASSWORD_HASH`.
@@ -65,6 +51,8 @@ If you skip the Ollama profile, the app still runs locally and grading jobs fall
 ## What the container does on startup
 
 - Runs Alembic migrations automatically
+- Waits for PostgreSQL and Ollama to be ready
+- Pulls the configured Ollama model automatically
 - Ensures the uploads directory exists
 - Starts the background grading worker
 - Serves the React SPA and FastAPI API from the same port

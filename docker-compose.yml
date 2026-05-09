@@ -3,16 +3,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    env_file:
-      - .env
+    env_file: &shared_env
+      - path: .env.example
+        required: true
+      - path: .env
+        required: false
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
       ollama:
-        condition: service_started
-        required: false
+        condition: service_healthy
+      ollama-model:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
       interval: 10s
@@ -24,14 +28,9 @@ services:
 
   db:
     image: postgres:16
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
+    env_file: *shared_env
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -41,16 +40,26 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    profiles:
-      - ai
-    ports:
-      - "11434:11434"
+    env_file: *shared_env
     healthcheck:
       test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
       start_period: 30s
+    volumes:
+      - ollama_data:/root/.ollama
+
+  ollama-model:
+    image: ollama/ollama:latest
+    env_file: *shared_env
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c", "ollama pull \"$$OLLAMA_MODEL\""]
+    restart: "no"
     volumes:
       - ollama_data:/root/.ollama
 

@@ -329,10 +329,10 @@ DATABASE_URL=postgresql://homeschool:changeme@db:5432/homeschool_hero
 # Auth
 FAMILY_PASSWORD=changeme
 
-# AI Grading (optional — Ollama is default)
+# AI Grading (Ollama is part of the standard stack)
 AI_PROVIDER=ollama          # or "openai"
 OLLAMA_HOST=http://ollama:11434
-OLLAMA_MODEL=llama3
+OLLAMA_MODEL=llama3.2
 OPENAI_API_KEY=             # only if AI_PROVIDER=openai
 
 # Grading
@@ -346,7 +346,8 @@ UPLOAD_DIR=/data/uploads
 services:
   app:        # FastAPI + background worker (single process with threading)
   db:         # PostgreSQL 16
-  ollama:     # Ollama LLM server (optional, can be disabled)
+  ollama:     # Ollama LLM server
+  ollama-model: # One-shot model bootstrap for the grading pipeline
 ```
 
 ---
