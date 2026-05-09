@@ -70,3 +70,10 @@
 - Added a full appearance system with a ThemeProvider, localStorage-backed preferences, light/dark/high-contrast themes, accent color overrides, font size and density controls, and a desktop sidebar position toggle that supports left, right, and collapsed layouts.
 - Added backend-backed UI preferences with a new user preferences model, migration, auth session payload support, and authenticated `GET/PUT /api/users/preferences` endpoints so saved appearance choices load immediately after sign-in.
 - Added a dedicated Appearance settings page with live preview and reset/save flows, then validated with `python -m pytest backend\tests\test_user_preferences.py backend\tests\test_auth.py -q` plus `cd frontend && npm run lint && npm run build`.
+
+### Team Architecture Sync (2026-05-09T12:25:20Z)
+- Ray submitted 9 architectural decisions: AG-02 (submission versioning), AG-03 (grading hardening), AG-04 (gradebook model), AG-06 (performance strategy), AM-05 (attendance migration), DM-02 (exports), DM-03 (backups), IO-04 (observability), CI fix (ROLLBACK_NOTES + TLS 1.2).
+- Ray fixed 3 CI root causes: 16 migration ROLLBACK_NOTES blocks, TLS security (minimum TLSv1_2), removed redundant test definitions. 210 tests passing.
+- Venkman submitted RC-01 (report cards with ReportLab PDF generation), UX-03 (unified search API), ESLint 9.x pin decision.
+- Security triage: #22 (Insecure TLS, backend/services/health.py) → Ray; #23-25 (redundant assignments, backend/tests/contracts.py) → Winston.
+- All 14 inbox decisions merged to active registry; clear execution path for post-MVP production features.

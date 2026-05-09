@@ -46,3 +46,10 @@
 - #22 (insecure TLS protocol in backend/services/health.py) → squad:ray ✓
 - #23, #24, #25 (redundant assignments in backend/tests/contracts.py) → squad:winston ✓
 - Rationale: Ray owns production code hardening; Winston owns test code quality and maintainability
+
+### Team Architecture Sync (2026-05-09T12:25:20Z)
+- Ray completed 9 architectural decisions: AG-02 (submission versioning), AG-03 (grading hardening), AG-04 (gradebook model), AG-06 (performance strategy), AM-05 (attendance migration), CI fix (ROLLBACK_NOTES + TLS policy), DM-02 (exports), DM-03 (backups), IO-04 (observability).
+- Ray fixed 3 CI root causes: 16 migration ROLLBACK_NOTES blocks, TLS security (minimum TLSv1_2), removed redundant test definitions. 210 tests passing.
+- Venkman fixed ESLint 9.x peer conflict; 3 architectural decisions: RC-01 (report cards), UX-03 (search), ESLint pin decision.
+- Winston submitted auto-patch policy decision (SD-04): limited auto-remediation to direct dependencies, human review for high-risk findings.
+- All 14 inbox decisions merged to active registry; clear execution path defined for post-MVP production features.

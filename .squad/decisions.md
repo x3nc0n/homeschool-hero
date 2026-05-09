@@ -63,6 +63,89 @@
 - **What:** Authentication should support OIDC with configurable IdP. Must integrate with Microsoft Entra ID. SAML 2.0 support is acceptable too. Config should let users pick their own identity provider. John will personally integrate with Entra ID.
 - **Why:** User request — captured for team memory.
 
+### Security Issue Triage (2026-05-09)
+- **Author:** Egon
+- **Decision:** Assigned 4 open security issues using role-based routing: real production security vulnerabilities → Ray (backend code owner); code quality issues in test code → Winston (test maintainability).
+- **Assignments:** #22 (Insecure TLS, backend/services/health.py:110) → Ray; #23-25 (Redundant assignments, backend/tests/contracts.py) → Winston.
+- **Impact:** Clear role boundaries enforce accountability; appropriate expertise applied to each issue; consistent routing for future security/quality triage.
+
+### Ray AG-02 Submission Versioning (2026-05-09)
+- **Author:** Ray
+- **Context:** Submission uploads need deterministic storage, resubmission history, and single current version controlling grading/review.
+- **Decision:** Keep version history on `submissions` table with `submission_version`, `parent_submission_id`, and `is_current`; store files under family/student/assignment/submission folders; only grade/review on current version.
+- **Impact:** Backup/export layout stays predictable, prior uploads remain viewable, grading logic safely ignores superseded work.
+
+### Ray AG-03 Grading Hardening (2026-05-09)
+- **Author:** Ray
+- **Context:** Grading pipeline needs OCR/AI outage resilience, operator state visibility, and answer-key-assisted scoring.
+- **Decision:** Keep grading orchestration on `grading_jobs` with validated status machine; store answer keys separately per assignment; combine answer-key scoring with AI confidence; route timeout/circuit-breaker failures to manual review.
+- **Impact:** Resilient grading behavior, precise pipeline progress visibility, audit records capture both automated and human steps.
+
+### Ray AG-04 Gradebook Model (2026-05-09)
+- **Author:** Ray
+- **Context:** Weighted gradebooks need configurable category weights, drop-lowest rules, letter grades, GPA mapping, subject-specific modes.
+- **Decision:** Keep `Assignment` as record, add subject-level grading mode (`points` vs `percentage`), persist `GradeCategory` and `GradeScale` per family, calculate running grades on demand via service.
+- **Impact:** Existing grading CRUD stays backward compatible, families can override scales per subject, gradebook views stay current.
+
+### Ray AG-06 Performance Strategy (2026-05-09)
+- **Author:** Ray
+- **Context:** Gradebook, compliance, pacing endpoints recomputed expensive payloads; assignment/grade search lacked indexes.
+- **Decision:** Use app-local TTL caching with explicit prefix invalidation, add conditional GET headers, ship composite/partial/PostgreSQL full-text indexes aligned to dominant query patterns.
+- **Impact:** Hot read paths cheaper without changing API semantics; stale results bounded by explicit invalidation + TTLs; production gains new index coverage via Alembic.
+
+### Ray AM-05 Attendance Migration Graph (2026-05-09)
+- **Author:** Ray
+- **Context:** Parallel wave work created multiple `20260510_001500` migrations, blocking `alembic upgrade head`.
+- **Decision:** Assign unique revision IDs to parallel migrations (notifications, submission_versioning, attendance_tracking); add `20260510_001600` merge revision for convergence.
+- **Impact:** Operators use `upgrade head` without manual targeting; future parallel migrations remain unblocked.
+
+### Ray CI Fix (2026-05-09)
+- **Author:** Ray
+- **Decision:** Four policies: (1) All migrations require `ROLLBACK_NOTES` string-literal block; (2) No-op downgrades exempt only merge revisions; (3) All SSL contexts set `context.minimum_version = ssl.TLSv1_2`; (4) No duplicate function definitions in test helpers.
+- **Impact:** 210 backend tests pass, migration lint passes with 0 errors, CI green on next push. All new migrations must follow ROLLBACK_NOTES policy.
+
+### Ray DM-02 Export Packages (2026-05-09)
+- **Author:** Ray
+- **Context:** DM-02 needs JSON, CSV, ZIP export packages for dataset representation, spreadsheet review, portability.
+- **Decision:** Multi-entity CSV exports as ZIP bundles (one CSV per entity + metadata); ZIP exports add full JSON snapshot, PDFs, attachments.
+- **Impact:** Families choose lightweight tabular export without losing structure; full ZIP remains portable.
+
+### Ray DM-03 NAS Backup Runtime (2026-05-09)
+- **Author:** Ray
+- **Context:** DM-03 needs scheduled NAS backups over SMB/NFS; Docker containers can't mount shares without host setup.
+- **Decision:** Treat `BACKUP_TARGET` as container path, add `BACKUP_MOUNT_SOURCE` for Docker bind mount, validate writability on startup, auto-enable restic when binary and `BACKUP_ENCRYPTION_KEY` present.
+- **Impact:** Operators point Docker at host-mounted NAS, backups fail fast when missing/read-only, runtime falls back to plain copies.
+
+### Ray IO-04 Observability Surfaces (2026-05-09)
+- **Author:** Ray
+- **Context:** Operators need basic troubleshooting without external stack.
+- **Decision:** Standard Python logging with JSON output outside tests, correlation IDs in middleware, authenticated `/api/metrics` endpoint, recent activity in dashboard.
+- **Impact:** Request/grading/backup activity traced with consistent fields; slow endpoints and failed jobs visible in logs and UI.
+
+### Venkman ESLint 9.x Pin (2026-05-09)
+- **Author:** Venkman
+- **Context:** CI failing with ERESOLVE peer-dependency conflict; `eslint-plugin-jsx-a11y@6.10.2` excludes `eslint@^10`.
+- **Decision:** Downgrade `eslint` and `@eslint/js` from `^10.x` to `^9.9.0`; ESLint 9.9.0 has needed flat-config helpers.
+- **Impact:** Frontend CI unblocked, `npm ci` resolves cleanly, `npm run lint` and `npm run build` pass.
+
+### Venkman RC-01 Report Cards (2026-05-09)
+- **Author:** Venkman
+- **Context:** RC-01 needs printable report cards reusing AG-04 gradebook and AM-05 attendance without separate reporting pipeline.
+- **Decision:** Generate from live data per grading period, persist drafts/finals as `report_cards` + `report_card_entries`, use ReportLab for deterministic server-side PDF rendering.
+- **Impact:** Families get draft/final cards and printable PDFs from one backend workflow; tests validate PDF bytes plus immutability.
+
+### Venkman UX-03 Unified Search (2026-05-09)
+- **Author:** Venkman
+- **Context:** UX-03 needs one search experience across family-scoped entities while supporting SQLite tests and RBAC.
+- **Decision:** Normalize search behind `/api/search` returning entity type, title, snippet, link, timestamps, facet counts. Use PostgreSQL full-text in prod, SQLite-compatible case-insensitive in tests, enforce family/student scope before return.
+- **Impact:** Frontend relies on one consistent API, production search scales with indexes, tests stay deterministic.
+
+### Winston SD-04 Auto-Patch Policy (2026-05-09)
+- **Author:** Winston
+- **Context:** Security sync creates normalized GitHub issues; SD-04 adds triage and patch generation.
+- **Decision:** Limit auto-remediation to direct dependency version bumps. Route CodeQL, base-image, transitive, ambiguous findings to needs-human-review. Require CI gate pass before PR opening, never auto-merge critical/non-dependency without sign-off.
+- **Impact:** Clear audit trail, low-risk fixes proposed quickly, reviewers keep control over high-risk remediation.
+
 ## Governance
 
 - All meaningful changes require team consensus

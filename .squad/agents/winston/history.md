@@ -67,3 +67,10 @@
 - Added dedicated integration, grading, edge-case, business-logic, and expanded lesson-plan/performance coverage across backend tests.
 - Fixed restore backup listing (`backend/services/restore_service.py`) and validated full backend suite: 210 passed, 1 skipped; frontend build passed.
 - CI now runs a Python 3.11/3.12 backend matrix by unit/integration/performance, enforces an 80% coverage gate, and posts PR test summaries; docs/testing.md documents the workflow.
+
+### Team Architecture Sync (2026-05-09T12:25:20Z)
+- Ray submitted 9 architectural decisions: AG-02 (submission versioning), AG-03 (grading hardening), AG-04 (gradebook model), AG-06 (performance strategy), AM-05 (attendance migration), DM-02 (exports), DM-03 (backups), IO-04 (observability), CI fix (ROLLBACK_NOTES + TLS 1.2).
+- Venkman submitted RC-01 (report cards/ReportLab PDF), UX-03 (unified search), ESLint 9.x pin decision.
+- Winston submitted SD-04 (auto-patch policy): limits auto-remediation to direct dependencies; routes CodeQL/base-image/transitive/ambiguous findings to needs-human-review.
+- Security triage completed: #22 (Insecure TLS in health.py) → Ray; #23-25 (redundant test assignments) → Winston test code quality.
+- All 14 inbox decisions merged to active registry; clear execution path for post-MVP production features.
