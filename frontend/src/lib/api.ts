@@ -1,24 +1,32 @@
 import type {
   AcceptInvitationPayload,
+  AuditEventFilters,
+  AuditEventListResponse,
   ApiErrorPayload,
   Assignment,
+  CalendarEvent,
   AuthSession,
   BootstrapStatus,
   CapabilitiesResponse,
   CreateInvitationPayload,
   Grade,
+  GradingPeriod,
+  InstructionalDayCount,
   Invitation,
   Quiz,
   QuizAttempt,
   RegisterPayload,
   ReviewDecisionPayload,
   ReviewQueueItem,
+  SchoolYear,
+  SchoolYearDetail,
   Student,
   Subject,
   Submission,
+  Term,
 } from '@/types/api'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
 export class ApiError extends Error {
   status: number
@@ -76,6 +84,10 @@ export const api = {
     return request<CapabilitiesResponse>('/capabilities')
   },
 
+  getExternalAuthUrl(provider: 'oidc' | 'saml') {
+    return `${API_BASE_URL}/auth/${provider}/login`
+  },
+
   register(payload: RegisterPayload) {
     return request<AuthSession>('/auth/register', {
       method: 'POST',
@@ -107,6 +119,18 @@ export const api = {
 
   listInvitations() {
     return request<Invitation[]>('/invitations')
+  },
+
+  listAuditEvents(filters: AuditEventFilters = {}) {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '' || value === 'all') {
+        return
+      }
+      params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<AuditEventListResponse>(`/audit${query ? `?${query}` : ''}`)
   },
 
   createInvitation(payload: CreateInvitationPayload) {
@@ -147,6 +171,75 @@ export const api = {
 
   deleteSubject(id: number) {
     return request<void>(`/subjects/${id}`, { method: 'DELETE' })
+  },
+
+  listSchoolYears() {
+    return request<SchoolYear[]>('/calendar/school-years')
+  },
+
+  getSchoolYear(id: number) {
+    return request<SchoolYearDetail>(`/calendar/school-years/${id}`)
+  },
+
+  createSchoolYear(payload: Pick<SchoolYear, 'name' | 'start_date' | 'end_date' | 'is_active'>) {
+    return request<SchoolYear>('/calendar/school-years', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateSchoolYear(id: number, payload: Pick<SchoolYear, 'name' | 'start_date' | 'end_date' | 'is_active'>) {
+    return request<SchoolYear>(`/calendar/school-years/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteSchoolYear(id: number) {
+    return request<void>(`/calendar/school-years/${id}`, { method: 'DELETE' })
+  },
+
+  getActiveSchoolYear() {
+    return request<SchoolYearDetail>('/calendar/active')
+  },
+
+  getInstructionalDays(schoolYearId: number) {
+    return request<InstructionalDayCount>(`/calendar/${schoolYearId}/days`)
+  },
+
+  createTerm(payload: Pick<Term, 'school_year_id' | 'name' | 'start_date' | 'end_date' | 'term_type'>) {
+    return request<Term>('/calendar/terms', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateTerm(id: number, payload: Pick<Term, 'name' | 'start_date' | 'end_date' | 'term_type'>) {
+    return request<Term>(`/calendar/terms/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteTerm(id: number) {
+    return request<void>(`/calendar/terms/${id}`, { method: 'DELETE' })
+  },
+
+  createGradingPeriod(payload: Pick<GradingPeriod, 'term_id' | 'name' | 'start_date' | 'end_date'>) {
+    return request<GradingPeriod>('/calendar/grading-periods', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateGradingPeriod(id: number, payload: Pick<GradingPeriod, 'name' | 'start_date' | 'end_date'>) {
+    return request<GradingPeriod>(`/calendar/grading-periods/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteGradingPeriod(id: number) {
+    return request<void>(`/calendar/grading-periods/${id}`, { method: 'DELETE' })
+  },
+
+  createCalendarEvent(
+    payload: Pick<CalendarEvent, 'school_year_id' | 'date' | 'event_type' | 'name' | 'is_instructional_day' | 'notes'>,
+  ) {
+    return request<CalendarEvent>('/calendar/events', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  updateCalendarEvent(
+    id: number,
+    payload: Pick<CalendarEvent, 'date' | 'event_type' | 'name' | 'is_instructional_day' | 'notes'>,
+  ) {
+    return request<CalendarEvent>(`/calendar/events/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  deleteCalendarEvent(id: number) {
+    return request<void>(`/calendar/events/${id}`, { method: 'DELETE' })
   },
 
   listAssignments() {

@@ -11,12 +11,21 @@ AUTH = {
     'login': f'{API_PREFIX}/auth/login',
     'logout': f'{API_PREFIX}/auth/logout',
     'me': f'{API_PREFIX}/auth/me',
+    'oidc_login': f'{API_PREFIX}/auth/oidc/login',
+    'oidc_callback': f'{API_PREFIX}/auth/oidc/callback',
+    'saml_login': f'{API_PREFIX}/auth/saml/login',
+    'saml_metadata': f'{API_PREFIX}/auth/saml/metadata',
+    'saml_acs': f'{API_PREFIX}/auth/saml/acs',
 }
 
 INVITATIONS = {
     'collection': f'{API_PREFIX}/invitations',
     'accept': f'{API_PREFIX}/invitations/{{invitation_id}}/accept',
     'revoke': f'{API_PREFIX}/invitations/{{invitation_id}}/revoke',
+}
+
+AUDIT = {
+    'collection': f'{API_PREFIX}/audit',
 }
 
 STUDENTS = {
@@ -60,6 +69,19 @@ GRADING = {
     'review_queue': f'{API_PREFIX}/grading/review-queue',
     'approve': f'{API_PREFIX}/grading/review-queue/{{job_id}}/approve',
     'reject': f'{API_PREFIX}/grading/review-queue/{{job_id}}/reject',
+}
+
+CALENDAR = {
+    'school_years': f'{API_PREFIX}/calendar/school-years',
+    'school_year_detail': f'{API_PREFIX}/calendar/school-years/{{school_year_id}}',
+    'terms': f'{API_PREFIX}/calendar/terms',
+    'term_detail': f'{API_PREFIX}/calendar/terms/{{term_id}}',
+    'grading_periods': f'{API_PREFIX}/calendar/grading-periods',
+    'grading_period_detail': f'{API_PREFIX}/calendar/grading-periods/{{grading_period_id}}',
+    'events': f'{API_PREFIX}/calendar/events',
+    'event_detail': f'{API_PREFIX}/calendar/events/{{event_id}}',
+    'active': f'{API_PREFIX}/calendar/active',
+    'days': f'{API_PREFIX}/calendar/{{school_year_id}}/days',
 }
 
 SERVICE_CANDIDATES = {
@@ -145,3 +167,71 @@ def quiz_attempt_payload(student_id: int | str) -> dict[str, Any]:
         'student_id': student_id,
         'answers': ['3/4', '3/4'],
     }
+
+
+def school_year_payload(
+    *,
+    name: str = '2025-2026',
+    start_date: str = '2025-08-18',
+    end_date: str = '2026-05-29',
+    is_active: bool = True,
+) -> dict[str, Any]:
+    return {
+        'name': name,
+        'start_date': start_date,
+        'end_date': end_date,
+        'is_active': is_active,
+    }
+
+
+def term_payload(
+    school_year_id: int | str,
+    *,
+    name: str = 'Fall Semester',
+    start_date: str = '2025-08-18',
+    end_date: str = '2025-12-19',
+    term_type: str = 'semester',
+) -> dict[str, Any]:
+    return {
+        'school_year_id': school_year_id,
+        'name': name,
+        'start_date': start_date,
+        'end_date': end_date,
+        'term_type': term_type,
+    }
+
+
+def grading_period_payload(
+    term_id: int | str,
+    *,
+    name: str = 'Q1',
+    start_date: str = '2025-08-18',
+    end_date: str = '2025-10-17',
+) -> dict[str, Any]:
+    return {
+        'term_id': term_id,
+        'name': name,
+        'start_date': start_date,
+        'end_date': end_date,
+    }
+
+
+def calendar_event_payload(
+    school_year_id: int | str,
+    *,
+    date: str = '2025-11-27',
+    event_type: str = 'holiday',
+    name: str = 'Thanksgiving Break',
+    is_instructional_day: bool = False,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    payload = {
+        'school_year_id': school_year_id,
+        'date': date,
+        'event_type': event_type,
+        'name': name,
+        'is_instructional_day': is_instructional_day,
+    }
+    if notes is not None:
+        payload['notes'] = notes
+    return payload

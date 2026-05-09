@@ -2,6 +2,22 @@ export type AssignmentStatus = 'pending' | 'complete' | 'graded'
 export type ReviewAction = 'approve' | 'modify' | 'reject'
 export type FamilyRole = 'parent' | 'co-parent' | 'tutor' | 'student_viewer'
 export type CapabilityName = 'ai_grading' | 'email' | 'backup' | 'ocr'
+export type AuthProvider = 'local' | 'oidc' | 'saml'
+export type AuditAction =
+  | 'login'
+  | 'logout'
+  | 'role_change'
+  | 'grade_create'
+  | 'grade_update'
+  | 'attendance_edit'
+  | 'report_generate'
+  | 'export'
+  | 'restore'
+  | 'config_change'
+  | 'invitation_create'
+  | 'invitation_accept'
+export type TermType = 'semester' | 'quarter' | 'trimester' | 'custom'
+export type CalendarEventType = 'holiday' | 'closure' | 'custom'
 
 export interface ApiErrorPayload {
   detail?: string
@@ -22,6 +38,13 @@ export interface CapabilitiesResponse {
   status: 'ok' | 'degraded'
   capabilities: Record<CapabilityName, CapabilityStatus>
   optional_unavailable: CapabilityName[]
+  auth: {
+    current_provider: AuthProvider
+    available_providers: AuthProvider[]
+    local_enabled: boolean
+    oidc_enabled: boolean
+    saml_enabled: boolean
+  }
 }
 
 export interface User {
@@ -29,6 +52,7 @@ export interface User {
   email: string
   display_name: string
   is_active: boolean
+  auth_provider: AuthProvider
 }
 
 export interface Family {
@@ -193,4 +217,100 @@ export interface CreateInvitationPayload {
   role: FamilyRole
   student_id?: number
   expires_in_days?: number
+}
+
+export interface AuditEvent {
+  id: number
+  family_id: number
+  actor_user_id: number
+  actor_display_name?: string | null
+  actor_email?: string | null
+  action: AuditAction
+  target_entity_type: string
+  target_entity_id?: string | null
+  before_snapshot?: Record<string, unknown> | null
+  after_snapshot?: Record<string, unknown> | null
+  ip_address?: string | null
+  user_agent?: string | null
+  timestamp: string
+}
+
+export interface AuditEventListResponse {
+  items: AuditEvent[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface AuditEventFilters {
+  page?: number
+  page_size?: number
+  date_from?: string
+  date_to?: string
+  actor?: string
+  action?: AuditAction | 'all'
+  entity_type?: string
+  entity_id?: string
+}
+
+export interface GradingPeriod {
+  id: number
+  term_id: number
+  family_id: number
+  name: string
+  start_date: string
+  end_date: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface Term {
+  id: number
+  school_year_id: number
+  family_id: number
+  name: string
+  start_date: string
+  end_date: string
+  term_type: TermType
+  grading_periods: GradingPeriod[]
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CalendarEvent {
+  id: number
+  family_id: number
+  school_year_id: number
+  date: string
+  event_type: CalendarEventType
+  name: string
+  is_instructional_day: boolean
+  notes?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface SchoolYear {
+  id: number
+  family_id: number
+  name: string
+  start_date: string
+  end_date: string
+  is_active: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export interface SchoolYearDetail extends SchoolYear {
+  terms: Term[]
+  calendar_events: CalendarEvent[]
+}
+
+export interface InstructionalDayCount {
+  school_year_id: number
+  instructional_days: number
+  weekday_days: number
+  non_instructional_overrides: number
+  instructional_overrides: number
 }

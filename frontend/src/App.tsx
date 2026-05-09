@@ -6,6 +6,8 @@ import { CapabilitiesProvider } from '@/context/CapabilitiesContext'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { AcceptInvitationPage } from '@/pages/AcceptInvitationPage'
 import { AssignmentsPage } from '@/pages/AssignmentsPage'
+import { AuditLogPage } from '@/pages/AuditLogPage'
+import { CalendarPage } from '@/pages/CalendarPage'
 import { GradesPage } from '@/pages/GradesPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
 import { LoginPage } from '@/pages/LoginPage'
@@ -54,12 +56,14 @@ function ProtectedRoutes() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/students" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<StudentsPage />} />} />
         <Route path="/subjects" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<SubjectsPage />} />} />
+        <Route path="/calendar" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CalendarPage />} />} />
         <Route path="/assignments" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<AssignmentsPage />} />} />
         <Route path="/upload" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<UploadPage />} />} />
         <Route path="/grades" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<GradesPage />} />} />
         <Route path="/quizzes" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<QuizzesPage />} />} />
         <Route path="/review" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewQueuePage />} />} />
         <Route path="/invitations" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<InvitationsPage />} />} />
+        <Route path="/audit" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<AuditLogPage />} />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AppShell>

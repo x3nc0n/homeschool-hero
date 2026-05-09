@@ -1,4 +1,4 @@
-import { BookMarked, ClipboardCheck, FileUp, GraduationCap, LayoutDashboard, LogOut, MailPlus, Users } from 'lucide-react'
+import { BookMarked, CalendarDays, ClipboardCheck, FileUp, GraduationCap, LayoutDashboard, LogOut, MailPlus, ScrollText, Users } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import type { FamilyRole } from '@/types/api'
 import { useAuth } from '@/context/AuthContext'
@@ -9,12 +9,14 @@ const navItems: Array<{ to: string; label: string; icon: typeof LayoutDashboard;
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/students', label: 'Students', icon: Users, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/subjects', label: 'Subjects', icon: BookMarked, roles: ['parent', 'co-parent', 'tutor'] },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/assignments', label: 'Assignments', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/upload', label: 'Uploads', icon: FileUp, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/grades', label: 'Grade Book', icon: GraduationCap, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
   { to: '/quizzes', label: 'Quizzes', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/review', label: 'Review Queue', icon: GraduationCap, roles: ['parent', 'co-parent', 'tutor'] },
   { to: '/invitations', label: 'Invitations', icon: MailPlus, roles: ['parent', 'co-parent'] },
+  { to: '/audit', label: 'Audit Log', icon: ScrollText, roles: ['parent', 'co-parent'] },
 ]
 
 const roleLabels: Record<FamilyRole, string> = {
@@ -45,7 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Log out
           </Button>
         </div>
-        <nav className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-8">
+        <nav className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-9">
           {items.map((item) => (
             <NavLink
               key={item.to}

@@ -16,6 +16,7 @@ from backend.routers import (
     auth_router,
     grades_router,
     invitations_router,
+from backend.routers.calendar import router as calendar_router
     quizzes_router,
     students_router,
     subjects_router,
@@ -161,6 +162,7 @@ def create_app() -> FastAPI:
     app.include_router(students_router, prefix=API_PREFIX)
     app.include_router(subjects_router, prefix=API_PREFIX)
     app.include_router(assignments_router, prefix=API_PREFIX)
+    app.include_router(calendar_router, prefix=API_PREFIX)
     app.include_router(submissions_router, prefix=API_PREFIX)
     app.include_router(grades_router, prefix=API_PREFIX)
     app.include_router(quizzes_router, prefix=API_PREFIX)

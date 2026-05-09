@@ -98,15 +98,17 @@ def backend_module(test_environment):
 
 
 @pytest_asyncio.fixture(scope='session')
+    db_path = DB_DIR / 'test.db'
+    if db_path.exists(): db_path.unlink()
 async def database_schema(test_environment):
     database_module = _import_optional_module('backend.database')
+    _import_optional_module('backend.models.calendar')
     models_module = _import_optional_module('backend.models')
     async with database_module.engine.begin() as connection:
         await connection.run_sync(models_module.Base.metadata.create_all)
     yield
-    async with database_module.engine.begin() as connection:
-        await connection.run_sync(models_module.Base.metadata.drop_all)
     await database_module.engine.dispose()
+    if db_path.exists(): db_path.unlink()
 
 
 @pytest_asyncio.fixture(autouse=True)
