@@ -3,13 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
-import socket
-import ssl
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any
-from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from sqlalchemy import text
@@ -83,65 +80,6 @@ async def check_database_health() -> dict[str, Any]:
         message='Database query succeeded.',
         response_time_ms=(perf_counter() - started) * 1000,
         details={},
-    )
-
-
-def _check_cache_health_sync(config: Settings = settings) -> dict[str, Any]:
-    started = perf_counter()
-    redis_url = str(getattr(config, 'redis_url', '') or '').strip()
-    if not redis_url:
-        return _service_payload(
-            'cache',
-            'Redis / cache',
-            status='not_configured',
-            required=False,
-            configured=False,
-            message='REDIS_URL is not configured; using in-process cache only.',
-            response_time_ms=(perf_counter() - started) * 1000,
-            details={'backend': 'memory'},
-        )
-
-    parsed = urlparse(redis_url)
-    host = parsed.hostname or 'localhost'
-    port = parsed.port or 6379
-    try:
-        connection = socket.create_connection((host, port), timeout=2.0)
-        if parsed.scheme == 'rediss':
-            context = ssl.create_default_context()
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-            sock = context.wrap_socket(connection, server_hostname=host)
-        else:
-            sock = connection
-        try:
-            sock.settimeout(2.0)
-            sock.sendall(b'*1\r\n$4\r\nPING\r\n')
-            response = sock.recv(16)
-            if response and not (response.startswith(b'+PONG') or response.startswith(b'-NOAUTH')):
-                raise RuntimeError(f'Unexpected Redis response: {response!r}')
-        finally:
-            sock.close()
-    except Exception as exc:
-        logger.error('Redis health check failed: %s', exc)
-        return _service_payload(
-            'cache',
-            'Redis / cache',
-            status='degraded',
-            required=False,
-            configured=True,
-            message='Redis is unreachable.',
-            response_time_ms=(perf_counter() - started) * 1000,
-            details={'host': host, 'port': port},
-        )
-
-    return _service_payload(
-        'cache',
-        'Redis / cache',
-        status='healthy',
-        required=False,
-        configured=True,
-        message='Redis responded to connectivity probe.',
-        response_time_ms=(perf_counter() - started) * 1000,
-        details={'host': host, 'port': port},
     )
 
 
@@ -257,15 +195,13 @@ def summarize_health(services: dict[str, dict[str, Any]]) -> tuple[str, dict[str
 
 async def collect_service_health(config: Settings = settings) -> dict[str, dict[str, Any]]:
     database_task = asyncio.create_task(check_database_health())
-    cache_task = asyncio.create_task(asyncio.to_thread(_check_cache_health_sync, config))
     ai_task = asyncio.create_task(asyncio.to_thread(check_ai_grading, config))
     smtp_task = asyncio.create_task(asyncio.to_thread(check_email, config))
     backup_task = asyncio.create_task(asyncio.to_thread(_check_backup_destination_sync, config))
     disk_task = asyncio.create_task(asyncio.to_thread(_check_disk_health_sync, config))
 
-    database, cache, ai_payload, smtp_payload, backup_destination, disk = await asyncio.gather(
+    database, ai_payload, smtp_payload, backup_destination, disk = await asyncio.gather(
         database_task,
-        cache_task,
         ai_task,
         smtp_task,
         backup_task,
@@ -273,7 +209,6 @@ async def collect_service_health(config: Settings = settings) -> dict[str, dict[
     )
     return {
         'database': database,
-        'cache': cache,
         'ai_service': _map_capability_to_service('ai_service', 'AI / Ollama', ai_payload),
         'smtp': _map_capability_to_service('smtp', 'SMTP', smtp_payload),
         'backup_destination': backup_destination,
@@ -283,7 +218,7 @@ async def collect_service_health(config: Settings = settings) -> dict[str, dict[
 
 def build_startup_log_lines(services: dict[str, dict[str, Any]]) -> list[str]:
     lines: list[str] = []
-    for key in ['database', 'cache', 'ai_service', 'smtp', 'backup_destination', 'disk_space']:
+    for key in ['database', 'ai_service', 'smtp', 'backup_destination', 'disk_space']:
         service = services.get(key)
         if service is None:
             continue

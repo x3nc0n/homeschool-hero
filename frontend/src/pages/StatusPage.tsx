@@ -117,7 +117,7 @@ export function StatusPage() {
         <Card>
           <CardHeader>
             <CardTitle>Service traffic lights</CardTitle>
-            <CardDescription>Database, cache, AI, email, backup destination, and storage.</CardDescription>
+            <CardDescription>Database, AI, email, backup destination, and storage.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
             {services.map((service) => (

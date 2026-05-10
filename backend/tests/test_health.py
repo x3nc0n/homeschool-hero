@@ -40,7 +40,6 @@ def test_health_endpoint_reports_degraded_when_optional_service_is_down(app, mon
     async def fake_collect(_config=settings):
         return {
             'database': _service('database', 'healthy', required=True),
-            'cache': _service('cache', 'not_configured', required=False, configured=False, message='not configured'),
             'ai_service': _service('ai_service', 'degraded', required=False, message='AI unavailable'),
             'smtp': _service('smtp', 'healthy', required=False),
             'backup_destination': _service('backup_destination', 'healthy', required=False),
@@ -60,7 +59,6 @@ def test_health_endpoint_reports_unhealthy_when_required_service_fails(app, monk
     async def fake_collect(_config=settings):
         return {
             'database': _service('database', 'unhealthy', required=True, message='db down'),
-            'cache': _service('cache', 'healthy', required=False),
             'ai_service': _service('ai_service', 'healthy', required=False),
             'smtp': _service('smtp', 'healthy', required=False),
             'backup_destination': _service('backup_destination', 'healthy', required=False),
@@ -133,4 +131,3 @@ async def test_detailed_health_scopes_backup_status_by_family(
     assert secondary_detail.status_code == 200, secondary_detail.text
     secondary_payload = secondary_detail.json()
     assert secondary_payload['backup']['last_backup'] is None
-

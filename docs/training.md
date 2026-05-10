@@ -10,7 +10,7 @@ along.
 git clone https://github.com/x3nc0n/homeschool-hero.git
 cd homeschool-hero
 cp .env.example .env          # DEMO_MODE=true is already set
-docker compose up --build -d
+docker compose --profile ai up --build -d
 ```
 
 Open **http://localhost:8000** and log in:
@@ -21,7 +21,11 @@ Open **http://localhost:8000** and log in:
 | Password | `demo1234`           |
 
 > **Tip:** To reset demo data, run `docker compose down -v` then
-> `docker compose up --build -d`.
+> `docker compose --profile ai up --build -d`.
+>
+> **AI note:** Demo grading and review features require the `ai` profile so the
+> `ollama` service starts. On first boot, Ollama downloads `OLLAMA_MODEL`, so AI
+> features may stay degraded for a few minutes until the model is ready.
 
 ---
 

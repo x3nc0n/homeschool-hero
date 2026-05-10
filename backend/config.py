@@ -79,7 +79,6 @@ class Settings(BaseSettings):
     smtp_password: str | None = Field(default=None, alias='SMTP_PASSWORD')
     smtp_from_email: str | None = Field(default=None, alias='SMTP_FROM_EMAIL')
     smtp_use_tls: bool = Field(True, alias='SMTP_USE_TLS')
-    redis_url: str | None = Field(default=None, alias='REDIS_URL')
     backup_destination: str = Field('local', alias='BACKUP_DESTINATION')
     backup_target: str | None = Field(default=None, alias='BACKUP_TARGET')
     backup_schedule: str = Field('0 2 * * *', alias='BACKUP_SCHEDULE')

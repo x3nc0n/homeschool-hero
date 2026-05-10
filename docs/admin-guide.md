@@ -289,7 +289,7 @@ Homeschool Hero reads settings from environment variables through `backend/confi
 | `AI_CIRCUIT_BREAKER_THRESHOLD` | `3` | Consecutive AI failures before the circuit opens. |
 | `AI_CIRCUIT_BREAKER_RESET_SECONDS` | `300` | Circuit breaker reset window. |
 
-### Email, metrics, cache, and observability
+### Email, metrics, and observability
 
 | Variable | Default | Notes |
 | --- | --- | --- |
@@ -302,7 +302,6 @@ Homeschool Hero reads settings from environment variables through `backend/confi
 | `SMTP_DEV_PORT` | `1025` | Host SMTP port for Mailpit. |
 | `SMTP_WEB_PORT` | `8025` | Host web UI port for Mailpit. |
 | `ENABLE_METRICS_ENDPOINT` | `false` | Enables authenticated `GET /api/metrics`. |
-| `REDIS_URL` | unset | Optional external cache; otherwise the app uses in-process cache only. |
 
 ### Backups and restore
 

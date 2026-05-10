@@ -20,23 +20,27 @@ Homeschool Hero is a self-hosted homeschool platform for roster management, curr
 ```bash
 git clone https://github.com/x3nc0n/homeschool-hero.git
 cd homeschool-hero
-docker compose up --build
+docker compose --profile ai up --build
 # Open http://localhost:8000
 ```
 
 > **Tip:** Demo mode (`DEMO_MODE=true` in `.env.example`) seeds sample data on first
 > startup. Log in with **`demo@example.com`** / **`demo1234`**.
+> Start the demo with the `ai` profile so Ollama comes up alongside the app.
+> AI grading and review features will show as degraded until Ollama finishes its
+> first model download.
 > If you see stale data from a previous run, tear down the Docker volumes first:
 >
 > ```bash
 > docker compose down -v
-> docker compose up --build
+> docker compose --profile ai up --build
 > ```
 
-The default stack starts:
+The default demo stack starts:
 
 - `app` — FastAPI API + bundled React UI on port `8000`
 - `db` — PostgreSQL 16 with persistent storage
+- `ollama` — local AI service for grading and review
 
 ## API documentation
 
@@ -112,7 +116,10 @@ Recommended production steps:
 Examples:
 
 ```bash
-# Base stack
+# Demo stack with Ollama
+docker compose --profile ai up -d --build
+
+# Base stack without AI
 docker compose up -d --build
 
 # Full stack
