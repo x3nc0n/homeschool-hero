@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 import pytest
 from sqlalchemy import select
 
+from backend.models import FamilyRole
+from backend.services import invitations
 from tests.contracts import AUTH, INVITATIONS, STUDENTS, student_payload
 from tests.helpers import response_id
 
@@ -109,3 +112,30 @@ async def test_invitation_expiry_blocks_acceptance(authorized_client, secondary_
     )
     assert accept_response.status_code == 410, accept_response.text
     assert 'expired' in accept_response.json()['detail']
+
+
+def test_dispatch_invitation_uses_configured_email_provider(monkeypatch) -> None:
+    sent: dict[str, object] = {}
+
+    monkeypatch.setattr(invitations, 'email_enabled', lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        invitations,
+        'send_email',
+        lambda **kwargs: sent.update(kwargs),
+    )
+
+    delivery_method, delivered, invite_link = invitations.dispatch_invitation(
+        email='invitee@example.com',
+        family_name='Example Family',
+        role=FamilyRole.tutor,
+        invitation_id=42,
+        token='token+value',
+        expires_at=datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert delivery_method == 'email'
+    assert delivered is True
+    assert invite_link == f'/accept-invite/42?token={quote("token+value")}'
+    assert sent['to_email'] == 'invitee@example.com'
+    assert sent['subject'] == 'Join Example Family on Homeschool Hero'
+    assert 'Accept invitation' in str(sent['html'])

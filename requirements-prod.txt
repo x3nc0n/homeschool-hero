@@ -18,3 +18,4 @@ pillow==12.2.0
 reportlab==4.2.5
 pytesseract==0.3.13
 PyMuPDF==1.27.2.3
+azure-communication-email>=1.0.0

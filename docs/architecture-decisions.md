@@ -60,3 +60,38 @@ additions would be warranted:
 These changes are intentionally deferred. The current architecture optimizes
 for simplicity and ease of deployment for the primary use case: a single
 family running Homeschool Hero on their home network or a small VPS.
+
+## ADR-002: Azure Communication Services email integration (2026-05-10)
+
+### Status
+Accepted
+
+### Context
+The app originally supported only SMTP for sending transactional emails
+(notifications, invitations, security alerts). For cloud deployments on
+Azure, Azure Communication Services (ACS) provides a managed email service
+that eliminates the need to run or configure an SMTP relay.
+
+### Decision
+Add `EMAIL_PROVIDER` configuration that supports three modes:
+- `smtp` (default) — traditional SMTP relay (backward compatible)
+- `acs` — Azure Communication Services email via SDK
+- `none` — disable email entirely
+
+The implementation uses a strategy pattern in `backend/services/email_service.py`
+that abstracts the sending and health-check logic behind a unified interface.
+
+### Consequences
+- **Backward compatible** — existing SMTP users need no changes
+- **Azure-native** — cloud deployments can use ACS without SMTP infrastructure
+- **New dependency** — `azure-communication-email` package added
+- **Connection string auth** — ACS uses connection strings; the deployment
+  infrastructure (Bicep) provisions the ACS resource and outputs the
+  connection string for the app to consume
+
+### Configuration
+```env
+EMAIL_PROVIDER=acs
+ACS_CONNECTION_STRING=endpoint=https://...;accesskey=...
+ACS_SENDER_ADDRESS=DoNotReply@your-domain.azurecomm.net
+```

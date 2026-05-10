@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import shutil
-import smtplib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -146,58 +145,9 @@ def check_ai_grading(config: Settings = settings) -> dict[str, Any]:
 
 
 def check_email(config: Settings = settings) -> dict[str, Any]:
-    if not config.smtp_host or not config.smtp_from_email:
-        return _status(
-            'email',
-            enabled=False,
-            configured=False,
-            reason='SMTP_HOST and SMTP_FROM_EMAIL must be configured to enable email.',
-            details={},
-        )
+    from backend.services.email_service import check_provider_health
 
-    if config.smtp_username and not config.smtp_password:
-        return _status(
-            'email',
-            enabled=False,
-            configured=False,
-            reason='SMTP_PASSWORD is required when SMTP_USERNAME is configured.',
-            details={'host': config.smtp_host, 'port': config.smtp_port},
-        )
-
-    server: smtplib.SMTP | None = None
-    try:
-        server = smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=5)
-        server.ehlo()
-        if config.smtp_use_tls:
-            server.starttls()
-            server.ehlo()
-        if config.smtp_username:
-            server.login(config.smtp_username, config.smtp_password or '')
-        code, _ = server.noop()
-        if code >= 400:
-            raise RuntimeError(f'SMTP NOOP returned {code}')
-    except Exception as exc:
-        return _status(
-            'email',
-            enabled=False,
-            configured=True,
-            reason=f'SMTP is unreachable: {exc}',
-            details={'host': config.smtp_host, 'port': config.smtp_port},
-        )
-    finally:
-        if server is not None:
-            try:
-                server.quit()
-            except Exception:
-                pass
-
-    return _status(
-        'email',
-        enabled=True,
-        configured=True,
-        reason='SMTP is reachable.',
-        details={'host': config.smtp_host, 'port': config.smtp_port},
-    )
+    return check_provider_health(config)
 
 
 def check_backup(config: Settings = settings) -> dict[str, Any]:

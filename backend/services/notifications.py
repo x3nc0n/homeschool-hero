@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-import smtplib
 from datetime import UTC, datetime, timedelta
-from email.message import EmailMessage
 from html import escape
 
 from sqlalchemy import func, select
@@ -24,6 +22,7 @@ from backend.models import (
     Subject,
     User,
 )
+from backend.services.email_service import email_enabled, send_email
 from backend.services.monitoring import get_backup_last_success
 
 logger = logging.getLogger(__name__)
@@ -45,14 +44,6 @@ EMAIL_TEMPLATE_CONFIG: dict[NotificationType, dict[str, str]] = {
     NotificationType.invitation: {'headline': 'Invitation update', 'cta': 'Open invitations'},
     NotificationType.compliance_reminder: {'headline': 'Compliance reminder', 'cta': 'Open dashboard'},
 }
-
-
-def _smtp_enabled() -> bool:
-    if not settings.smtp_host or not settings.smtp_from_email:
-        return False
-    if settings.smtp_username and not settings.smtp_password:
-        return False
-    return True
 
 
 def _default_preference(notification_type: NotificationType) -> NotificationPreference:
@@ -185,33 +176,6 @@ def render_email_template(
     return subject, html
 
 
-def _send_email(*, to_email: str, subject: str, html: str) -> None:
-    if not _smtp_enabled():
-        return
-
-    message = EmailMessage()
-    message['Subject'] = subject
-    message['From'] = settings.smtp_from_email or ''
-    message['To'] = to_email
-    message.set_content('This email contains HTML content. Please view it in an HTML-capable client.')
-    message.add_alternative(html, subtype='html')
-
-    server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10)
-    try:
-        server.ehlo()
-        if settings.smtp_use_tls:
-            server.starttls()
-            server.ehlo()
-        if settings.smtp_username:
-            server.login(settings.smtp_username, settings.smtp_password or '')
-        server.send_message(message)
-    finally:
-        try:
-            server.quit()
-        except Exception:
-            logger.debug('SMTP quit failed', exc_info=True)
-
-
 async def create_notification(
     db: AsyncSession,
     user_id: int,
@@ -256,10 +220,10 @@ async def create_notification(
         db.add(notification)
         await db.flush()
 
-    if preference.email_enabled and _smtp_enabled():
+    if preference.email_enabled and email_enabled():
         try:
             subject, html = render_email_template(notification_type, title=title, message=message, link=link)
-            _send_email(to_email=user.email, subject=subject, html=html)
+            send_email(to_email=user.email, subject=subject, html=html)
         except Exception:
             logger.exception('Failed to send notification email', extra={'user_id': user_id, 'type': notification_type.value})
 

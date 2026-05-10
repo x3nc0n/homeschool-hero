@@ -299,6 +299,9 @@ Homeschool Hero reads settings from environment variables through `backend/confi
 | `SMTP_PASSWORD` | unset | Required when `SMTP_USERNAME` is set. |
 | `SMTP_FROM_EMAIL` | `notifications@homeschool-hero.local` | Sender address. |
 | `SMTP_USE_TLS` | `false` in `.env.example` | Enables STARTTLS. |
+| `EMAIL_PROVIDER` | `smtp` | `smtp`, `acs`, or `none`. |
+| `ACS_CONNECTION_STRING` | unset | Azure Communication Services connection string when `EMAIL_PROVIDER=acs`. |
+| `ACS_SENDER_ADDRESS` | unset | Azure Communication Services sender address when `EMAIL_PROVIDER=acs`. |
 | `SMTP_DEV_PORT` | `1025` | Host SMTP port for Mailpit. |
 | `SMTP_WEB_PORT` | `8025` | Host web UI port for Mailpit. |
 | `ENABLE_METRICS_ENDPOINT` | `false` | Enables authenticated `GET /api/metrics`. |
@@ -359,6 +362,7 @@ AUTH_PROVIDER=local
 AI_PROVIDER=ollama
 OLLAMA_MODEL=llama3.2
 
+EMAIL_PROVIDER=smtp
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USERNAME=mailer
@@ -692,6 +696,7 @@ Mailpit endpoints:
 Production SMTP example:
 
 ```env
+EMAIL_PROVIDER=smtp
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USERNAME=mailer
@@ -700,7 +705,15 @@ SMTP_FROM_EMAIL=notifications@example.com
 SMTP_USE_TLS=true
 ```
 
-If SMTP is unavailable, invitation delivery falls back to a copyable invitation link.
+Azure Communication Services example:
+
+```env
+EMAIL_PROVIDER=acs
+ACS_CONNECTION_STRING=endpoint=https://your-acs.communication.azure.com/;accesskey=...
+ACS_SENDER_ADDRESS=DoNotReply@your-domain.azurecomm.net
+```
+
+If email delivery is unavailable or `EMAIL_PROVIDER=none`, invitations fall back to a copyable invitation link.
 
 ### Backups / NAS
 
@@ -906,9 +919,11 @@ Common causes:
 
 ### Email is not sending
 
-- verify `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`
+- verify `EMAIL_PROVIDER`
+- for SMTP, verify `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`
 - if `SMTP_USERNAME` is set, `SMTP_PASSWORD` must also be set
-- for local testing, open Mailpit at `http://localhost:8025`
+- for ACS, verify `ACS_CONNECTION_STRING` and `ACS_SENDER_ADDRESS`
+- for local SMTP testing, open Mailpit at `http://localhost:8025`
 
 ### `/api/metrics` returns 404
 

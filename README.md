@@ -236,6 +236,9 @@ See `docs/development.md` for the full development workflow.
 | `SMTP_PASSWORD` | No | SMTP password. |
 | `SMTP_FROM_EMAIL` | No | Sender address for notification email. |
 | `SMTP_USE_TLS` | No | Enable STARTTLS for SMTP. |
+| `EMAIL_PROVIDER` | No | `smtp` (default), `acs`, or `none`. |
+| `ACS_CONNECTION_STRING` | No | Azure Communication Services connection string when `EMAIL_PROVIDER=acs`. |
+| `ACS_SENDER_ADDRESS` | No | Azure Communication Services sender address when `EMAIL_PROVIDER=acs`. |
 | `SMTP_DEV_PORT` | No | Host port for Mailpit SMTP. |
 | `SMTP_WEB_PORT` | No | Host port for Mailpit web UI. |
 | `BACKUP_TARGET` | No | Backup path inside the container. Use `/data/backups` when the host bind mount points at a NAS or local archive path. |
