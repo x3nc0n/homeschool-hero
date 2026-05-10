@@ -26,7 +26,7 @@ ROLLBACK_NOTES = """
 """
 
 assignment_status = postgresql.ENUM("pending", "complete", "graded", name="assignment_status", create_type=False)
-graded_by = postgresql.ENUM("human", "ai", "ai+human", name="graded_by", create_type=False)
+graded_by = postgresql.ENUM("human", "ai", "ai_human", name="graded_by", create_type=False)
 grading_job_status = postgresql.ENUM(
     "queued",
     "processing",

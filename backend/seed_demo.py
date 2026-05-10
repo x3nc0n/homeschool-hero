@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import (
@@ -644,9 +644,23 @@ def _subject_display_name(spec: StudentSpec, subject_title: str) -> str:
 
 
 async def seed_demo_data(session: AsyncSession) -> bool:
-    existing_family = (await session.execute(select(Family.id).limit(1))).scalar_one_or_none()
-    if existing_family is not None:
+    demo_family = (
+        await session.execute(
+            select(Family.id).where(
+                Family.settings['demo_mode'].as_boolean() == True  # noqa: E712
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+    if demo_family is not None:
         return False
+
+    # Remove bootstrap family/user created by migration so demo data owns the DB
+    await session.execute(delete(FamilyMembership))
+    await session.execute(delete(FamilySettings))
+    await session.execute(delete(Family))
+    await session.execute(delete(UserPreference))
+    await session.execute(delete(User))
+    await session.flush()
 
     family = Family(
         name='Demo Family',
