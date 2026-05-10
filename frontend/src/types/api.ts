@@ -257,6 +257,11 @@ export interface Family {
   id: number
   name: string
   state_code?: string
+  enabled_features?: Record<string, boolean>
+}
+
+export interface FamilyFeatureSettings {
+  enabled_features: Record<string, boolean>
 }
 
 export interface FamilyMembership {

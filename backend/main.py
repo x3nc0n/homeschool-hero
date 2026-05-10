@@ -31,6 +31,7 @@ from backend.routers import (
     curriculum_router,
     dashboard_router,
     exports_router,
+    family_settings_router,
     gradebook_router,
     grades_router,
     invitations_router,
@@ -560,6 +561,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router, prefix=API_PREFIX)
     app.include_router(backups_router, prefix=API_PREFIX)
     app.include_router(exports_router, prefix=API_PREFIX)
+    app.include_router(family_settings_router, prefix=API_PREFIX)
     app.include_router(gradebook_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)
     app.include_router(subjects_router, prefix=API_PREFIX)

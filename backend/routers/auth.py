@@ -63,6 +63,7 @@ def _auth_session_from_record(
         is_owner=membership.is_owner,
         family_name=family.name,
         family_state_code=family_settings.state_code if family_settings else 'CUSTOM',
+        enabled_features=family_settings.enabled_features if family_settings else {},
         student_id=membership.student_id,
         ui_preferences=serialize_user_preferences(preferences),
     )
@@ -114,7 +115,12 @@ def _session_response(auth: AuthSession, message: str | None = None) -> SessionR
             'is_active': True,
             'auth_provider': auth.auth_provider,
         },
-        family={'id': auth.family_id, 'name': auth.family_name, 'state_code': auth.family_state_code},
+        family={
+            'id': auth.family_id,
+            'name': auth.family_name,
+            'state_code': auth.family_state_code,
+            'enabled_features': auth.enabled_features or {},
+        },
         membership={'role': auth.role, 'is_owner': auth.is_owner, 'student_id': auth.student_id},
         ui_preferences=auth.ui_preferences or DEFAULT_USER_PREFERENCES.model_dump(),
         message=message,
@@ -174,6 +180,7 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
         is_owner=membership.is_owner,
         family_name=family.name,
         family_state_code=family_settings.state_code,
+        enabled_features=family_settings.enabled_features,
         student_id=membership.student_id,
         ui_preferences=serialize_user_preferences(user_preferences),
     )
@@ -195,7 +202,7 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
             await _register_failed_login(db, user)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid email or password')
 
-    user, membership, family, state_code, preferences = membership_row
+    user, membership, family, state_code, enabled_features, preferences = membership_row
     if _is_locked(user):
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail='Account temporarily locked. Try again later.')
     if not verify_password(payload.password, user.password_hash):
@@ -214,6 +221,7 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
         is_owner=membership.is_owner,
         family_name=family.name,
         family_state_code=(state_code or 'CUSTOM').upper(),
+        enabled_features=enabled_features or {},
         student_id=membership.student_id,
         ui_preferences=serialize_user_preferences(preferences),
     )

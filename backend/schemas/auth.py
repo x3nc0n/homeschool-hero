@@ -56,6 +56,7 @@ class SessionFamily(BaseModel):
     id: int
     name: str
     state_code: str = 'CUSTOM'
+    enabled_features: dict[str, bool] = Field(default_factory=dict)
 
 
 class SessionMembership(BaseModel):

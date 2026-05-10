@@ -129,12 +129,19 @@ export function GradesPage() {
   }, [load])
 
   useEffect(() => {
-    const params = new URLSearchParams()
-    Object.entries(filters).forEach(([key, value]) => {
-      if (!value || value === 'all') return
-      params.set(key, value)
-    })
-    setSearchParams(params, { replace: true })
+    setSearchParams((current) => {
+      const params = new URLSearchParams(current)
+      params.delete('student_id')
+      params.delete('subject_id')
+      params.delete('grading_period_id')
+
+      Object.entries(filters).forEach(([key, value]) => {
+        if (!value || value === 'all') return
+        params.set(key, value)
+      })
+
+      return params
+    }, { replace: true })
   }, [filters, setSearchParams])
 
   const filteredSummarySubjects = useMemo(() => {

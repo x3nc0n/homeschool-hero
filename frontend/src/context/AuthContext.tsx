@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { AcceptInvitationPayload, AuthSession, FamilyRole, RegisterPayload, UserUiPreferences } from '@/types/api'
 import { api, ApiError } from '@/lib/api'
 import { DEFAULT_UI_PREFERENCES } from '@/lib/theme'
@@ -10,6 +10,8 @@ type AuthContextValue = {
   userName: string
   familyName: string
   role: FamilyRole | null
+  enabledFeatures: Record<string, boolean>
+  isFeatureEnabled: (feature: string) => boolean
   studentId: number | null
   canEditStudents: boolean
   canManageCurriculum: boolean
@@ -24,6 +26,7 @@ type AuthContextValue = {
   register: (payload: RegisterPayload) => Promise<void>
   acceptInvitation: (invitationId: number, payload: AcceptInvitationPayload) => Promise<void>
   logout: () => Promise<void>
+  refreshSession: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -40,17 +43,25 @@ function getRole(session: AuthSession | null): FamilyRole | null {
   return session?.membership.role || null
 }
 
+function getEnabledFeatures(session: AuthSession | null): Record<string, boolean> {
+  return session?.family.enabled_features ?? {}
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState<AuthSession | null>(null)
   const [bootstrapRequired, setBootstrapRequired] = useState(false)
 
+  const refreshSession = useCallback(async () => {
+    const currentSession = await api.me()
+    setSession(currentSession)
+    setBootstrapRequired(false)
+  }, [])
+
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        const currentSession = await api.me()
-        setSession(currentSession)
-        setBootstrapRequired(false)
+        await refreshSession()
       } catch (error) {
         if (error instanceof ApiError && [401, 403].includes(error.status)) {
           try {
@@ -71,12 +82,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     void bootstrap()
-  }, [])
+  }, [refreshSession])
 
   const value = useMemo(() => {
     const role = getRole(session)
     const isParentAdmin = role === 'parent' || role === 'co-parent'
     const isTutor = role === 'tutor'
+    const enabledFeatures = getEnabledFeatures(session)
     return {
       isAuthenticated: Boolean(session?.authenticated),
       loading,
@@ -84,6 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userName: getUserName(session),
       familyName: getFamilyName(session),
       role,
+      enabledFeatures,
+      isFeatureEnabled: (feature: string) => enabledFeatures[feature] !== false,
       studentId: session?.membership.student_id ?? null,
       canEditStudents: isParentAdmin,
       canManageCurriculum: isParentAdmin || isTutor,
@@ -116,8 +130,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(null)
         setBootstrapRequired(false)
       },
+      refreshSession,
     }
-  }, [bootstrapRequired, loading, session])
+  }, [bootstrapRequired, loading, refreshSession, session])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

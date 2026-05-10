@@ -56,6 +56,9 @@ class FamilySettings(TimestampMixin, Base):
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default='UTC', server_default='UTC')
     grading_scale: Mapped[str] = mapped_column(String(64), nullable=False, default='letter', server_default='letter')
     state_code: Mapped[str] = mapped_column(String(8), nullable=False, default='CUSTOM', server_default='CUSTOM')
+    enabled_features: Mapped[dict[str, Any]] = mapped_column(
+        json_type, nullable=False, default=dict, server_default=text("'{}'"),
+    )
 
     family = relationship('Family', back_populates='family_settings')
 

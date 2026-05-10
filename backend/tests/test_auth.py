@@ -20,6 +20,7 @@ async def test_bootstrap_register_creates_owner_session(async_client):
     assert payload['authenticated'] is True
     assert payload['user']['email'] == 'owner@example.com'
     assert payload['family']['name'] == 'Test Family'
+    assert payload['family']['enabled_features'] == {}
     assert payload['membership']['is_owner'] is True
 
     status_after = await async_client.get(AUTH['bootstrap'])
@@ -59,6 +60,31 @@ async def test_logout_invalidates_session(authorized_client):
 
     me = await authorized_client.get(AUTH['me'])
     assert me.status_code == 401, me.text
+
+
+@pytest.mark.asyncio
+async def test_family_feature_flags_flow_through_session_and_login(authorized_client, secondary_client):
+    update = await authorized_client.put(
+        '/api/family-settings/features',
+        json={'enabled_features': {'attendance': False, 'planner': True, 'quizzes': False}},
+    )
+
+    assert update.status_code == 200, update.text
+    assert update.json()['enabled_features'] == {'attendance': False, 'planner': True, 'quizzes': False}
+
+    me = await authorized_client.get(AUTH['me'])
+    assert me.status_code == 200, me.text
+    assert me.json()['family']['enabled_features'] == {'attendance': False, 'planner': True, 'quizzes': False}
+
+    logout = await authorized_client.post(AUTH['logout'])
+    assert logout.status_code in {200, 204}, logout.text
+
+    login = await secondary_client.post(
+        AUTH['login'],
+        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+    )
+    assert login.status_code == 200, login.text
+    assert login.json()['family']['enabled_features'] == {'attendance': False, 'planner': True, 'quizzes': False}
 
 
 @pytest.mark.asyncio

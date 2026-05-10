@@ -10,10 +10,12 @@ import { PwaProvider } from '@/context/PwaContext'
 import { ThemeProvider } from '@/context/ThemeContext'
 import { api, MAINTENANCE_EVENT } from '@/lib/api'
 import { AppearanceSettingsPage } from '@/pages/AppearanceSettingsPage'
+import AcademicRecordsPage from '@/pages/AcademicRecordsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
-import { BackupsPage } from '@/pages/BackupsPage'
-import { ExportsPage } from '@/pages/ExportsPage'
+import CurriculumHubPage from '@/pages/CurriculumHubPage'
+import DataManagementPage from '@/pages/DataManagementPage'
 import { FamilySettingsPage } from '@/pages/FamilySettingsPage'
+import GradebookPage from '@/pages/GradebookPage'
 import { AcceptInvitationPage } from '@/pages/AcceptInvitationPage'
 import { AssignmentsPage } from '@/pages/AssignmentsPage'
 import { AttendancePage } from '@/pages/AttendancePage'
@@ -21,11 +23,7 @@ import { AuditLogPage } from '@/pages/AuditLogPage'
 import { CalendarPage } from '@/pages/CalendarPage'
 import { CompliancePage } from '@/pages/CompliancePage'
 import { ComplianceReportsPage } from '@/pages/ComplianceReportsPage'
-import { CurriculumPage } from '@/pages/CurriculumPage'
-import { GradesPage } from '@/pages/GradesPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
-import { ImportsPage } from '@/pages/ImportsPage'
-import { LessonPlansPage } from '@/pages/LessonPlansPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotificationPreferencesPage } from '@/pages/NotificationPreferencesPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
@@ -34,17 +32,12 @@ import { PlannerPage } from '@/pages/PlannerPage'
 import { PortfolioPage } from '@/pages/PortfolioPage'
 import { PortfolioSharePage } from '@/pages/PortfolioSharePage'
 import { QuizzesPage } from '@/pages/QuizzesPage'
-import { ReportCardsPage } from '@/pages/ReportCardsPage'
-import { RestorePage } from '@/pages/RestorePage'
-import { ReviewQueuePage } from '@/pages/ReviewQueuePage'
 import { ReviewDetailPage } from '@/pages/ReviewDetailPage'
-import { ResourceLibraryPage } from '@/pages/ResourceLibraryPage'
 import { SearchPage } from '@/pages/SearchPage'
 import { SetupPage } from '@/pages/SetupPage'
 import { StudentsPage } from '@/pages/StudentsPage'
 import { StudentDetailPage } from '@/pages/StudentDetailPage'
 import { SubjectsPage } from '@/pages/SubjectsPage'
-import { TranscriptsPage } from '@/pages/TranscriptsPage'
 import { UploadPage } from '@/pages/UploadPage'
 import { MaintenancePage } from '@/pages/MaintenancePage'
 import { StatusPage } from '@/pages/StatusPage'
@@ -60,12 +53,15 @@ function LoadingScreen() {
 }
 
 function defaultRouteForRole() {
-  return '/'
+  return '/dashboard'
 }
 
-function RoleRoute({ allowedRoles, element }: { allowedRoles: FamilyRole[]; element: JSX.Element }) {
-  const { role } = useAuth()
+function RoleRoute({ allowedRoles, element, feature }: { allowedRoles: FamilyRole[]; element: JSX.Element; feature?: string }) {
+  const { role, isFeatureEnabled } = useAuth()
   if (!role || !allowedRoles.includes(role)) {
+    return <Navigate to={defaultRouteForRole()} replace />
+  }
+  if (feature && !isFeatureEnabled(feature)) {
     return <Navigate to={defaultRouteForRole()} replace />
   }
   return element
@@ -85,8 +81,8 @@ function ProtectedRoutes() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/dashboard" element={<Navigate to="/" replace />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/students" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<StudentsPage />} />} />
         <Route
           path="/students/:studentId"
@@ -94,35 +90,78 @@ function ProtectedRoutes() {
         />
         <Route path="/subjects" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<SubjectsPage />} />} />
         <Route path="/calendar" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CalendarPage />} />} />
-        <Route path="/attendance" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<AttendancePage />} />} />
-        <Route path="/compliance" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<CompliancePage />} />} />
-        <Route path="/compliance-reports" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<ComplianceReportsPage />} />} />
-        <Route path="/planner" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PlannerPage />} />} />
-        <Route path="/lesson-plans" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<LessonPlansPage />} />} />
-        <Route path="/curriculum" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CurriculumPage />} />} />
-        <Route path="/exports" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<ExportsPage />} />} />
-        <Route path="/settings/backups" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<BackupsPage />} />} />
-
-        <Route path="/settings/restore" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<RestorePage />} />} />
-
-        <Route path="/imports" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ImportsPage />} />} />
-        <Route path="/resources" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ResourceLibraryPage />} />} />
-        <Route path="/portfolio" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<PortfolioPage />} />} />
+        <Route
+          path="/attendance"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} feature="attendance" element={<AttendancePage />} />}
+        />
+        <Route
+          path="/compliance"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} feature="compliance" element={<CompliancePage />} />}
+        />
+        <Route
+          path="/compliance-reports"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} feature="compliance" element={<ComplianceReportsPage />} />}
+        />
+        <Route
+          path="/planner"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} feature="planner" element={<PlannerPage />} />}
+        />
+        <Route path="/curriculum" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<CurriculumHubPage />} />} />
+        <Route
+          path="/lesson-plans"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<Navigate to="/curriculum?tab=lesson-plans" replace />} />}
+        />
+        <Route
+          path="/resources"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<Navigate to="/curriculum?tab=resources" replace />} />}
+        />
+        <Route
+          path="/imports"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<Navigate to="/data?tab=imports" replace />} />}
+        />
+        <Route
+          path="/exports"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<Navigate to="/data?tab=exports" replace />} />}
+        />
+        <Route
+          path="/settings/backups"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<Navigate to="/data?tab=backups" replace />} />}
+        />
+        <Route
+          path="/settings/restore"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<Navigate to="/data?tab=restore" replace />} />}
+        />
+        <Route path="/data" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<DataManagementPage />} />} />
+        <Route
+          path="/portfolio"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} feature="portfolio" element={<PortfolioPage />} />}
+        />
         <Route path="/search" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<SearchPage />} />} />
         <Route path="/assignments" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<AssignmentsPage />} />} />
         <Route path="/upload" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<UploadPage />} />} />
-        <Route path="/grades" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<GradesPage />} />} />
-        <Route path="/report-cards" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<ReportCardsPage />} />} />
-        <Route path="/transcripts" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<TranscriptsPage />} />} />
-        <Route path="/quizzes" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<QuizzesPage />} />} />
-        <Route path="/review" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewQueuePage />} />} />
+        <Route path="/grades" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<GradebookPage />} />} />
+        <Route path="/review" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<Navigate to="/grades?tab=review" replace />} />} />
+        <Route path="/quizzes" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} feature="quizzes" element={<QuizzesPage />} />} />
         <Route path="/review/:reviewId" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewDetailPage />} />} />
+        <Route
+          path="/academic-records"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<AcademicRecordsPage />} />}
+        />
+        <Route
+          path="/report-cards"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<Navigate to="/academic-records" replace />} />}
+        />
+        <Route
+          path="/transcripts"
+          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<Navigate to="/academic-records?tab=transcripts" replace />} />}
+        />
         <Route path="/invitations" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<InvitationsPage />} />} />
         <Route path="/audit" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<AuditLogPage />} />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/settings/family" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<FamilySettingsPage />} />} />
         <Route path="/settings/appearance" element={<AppearanceSettingsPage />} />
-        <Route path="/settings/notifications" element={<NotificationPreferencesPage />} />
+        <Route path="/notifications/preferences" element={<NotificationPreferencesPage />} />
+        <Route path="/settings/notifications" element={<Navigate to="/notifications/preferences" replace />} />
         <Route path="/settings/status" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<StatusPage />} />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

@@ -52,7 +52,8 @@ async def test_schedule_crud_and_block_crud(authorized_client):
 
     listing = await authorized_client.get(f"{SCHEDULE['collection']}?student_id={student_id}")
     assert listing.status_code == 200, listing.text
-    assert [item['id'] for item in listing.json()] == [schedule_id]
+    listing_ids = [item['id'] for item in listing.json()]
+    assert schedule_id in listing_ids
 
     detail = await authorized_client.get(SCHEDULE['detail'].format(schedule_id=schedule_id))
     assert detail.status_code == 200, detail.text

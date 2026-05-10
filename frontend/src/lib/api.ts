@@ -54,6 +54,7 @@ import type {
   ExportJob,
   ExportType,
   CapabilitiesResponse,
+  FamilyFeatureSettings,
   CreateInvitationPayload,
   Grade,
   GradeHistoryResponse,
@@ -295,6 +296,13 @@ export const api = {
     return request<{ state_code: string }>('/compliance/family/state', {
       method: 'PUT',
       body: JSON.stringify({ state_code: stateCode }),
+    })
+  },
+
+  updateFamilyFeatures(enabledFeatures: Record<string, boolean>) {
+    return request<FamilyFeatureSettings>('/family-settings/features', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled_features: enabledFeatures }),
     })
   },
 

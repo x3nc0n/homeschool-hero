@@ -40,6 +40,7 @@ class AuthSession:
     is_owner: bool
     family_name: str
     family_state_code: str = 'CUSTOM'
+    enabled_features: dict[str, bool] | None = None
     student_id: int | None = None
     ui_preferences: dict[str, str] | None = None
 
@@ -180,7 +181,7 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
 
     stmt = (
-        select(User, FamilyMembership, Family, FamilySettings.state_code, UserPreference)
+        select(User, FamilyMembership, Family, FamilySettings.state_code, FamilySettings.enabled_features, UserPreference)
         .join(FamilyMembership, FamilyMembership.user_id == User.id)
         .join(Family, Family.id == FamilyMembership.family_id)
         .outerjoin(FamilySettings, FamilySettings.family_id == Family.id)
@@ -196,7 +197,7 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
     row = result.one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
-    user, membership, family, state_code, preferences = row
+    user, membership, family, state_code, enabled_features, preferences = row
     return AuthSession(
         user_id=user.id,
         family_id=family.id,
@@ -207,6 +208,7 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
         is_owner=membership.is_owner,
         family_name=family.name,
         family_state_code=(state_code or 'CUSTOM').upper(),
+        enabled_features=enabled_features or {},
         student_id=membership.student_id,
         ui_preferences=serialize_user_preferences(preferences),
     )
@@ -238,9 +240,9 @@ async def get_login_membership(
     *,
     email: str,
     family_id: int | None = None,
-) -> tuple[User, FamilyMembership, Family, str | None, UserPreference | None] | None:
+) -> tuple[User, FamilyMembership, Family, str | None, dict[str, bool] | None, UserPreference | None] | None:
     stmt = (
-        select(User, FamilyMembership, Family, FamilySettings.state_code, UserPreference)
+        select(User, FamilyMembership, Family, FamilySettings.state_code, FamilySettings.enabled_features, UserPreference)
         .join(FamilyMembership, FamilyMembership.user_id == User.id)
         .join(Family, Family.id == FamilyMembership.family_id)
         .outerjoin(FamilySettings, FamilySettings.family_id == Family.id)

@@ -266,6 +266,7 @@ async def accept_invitation(
         is_owner=membership.is_owner,
         family_name=family.name,
         family_state_code=family_settings.state_code if family_settings else 'CUSTOM',
+        enabled_features=family_settings.enabled_features if family_settings else {},
         student_id=membership.student_id,
         ui_preferences=(user.ui_preferences and {
             'theme': user.ui_preferences.theme,

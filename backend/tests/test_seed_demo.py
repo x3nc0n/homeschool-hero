@@ -29,24 +29,37 @@ async def test_seed_demo_data_populates_empty_database() -> None:
     async with AsyncSessionLocal() as session:
         family = (await session.execute(select(Family))).scalar_one()
         assert family.name == 'Demo Family'
+        assert family.settings == {
+            'timezone': 'America/Chicago',
+            'state_code': 'OK',
+            'grading_scale': 'letter',
+            'demo_mode': True,
+        }
 
         family_settings = await session.get(FamilySettings, family.id)
         assert family_settings is not None
         assert family_settings.timezone == 'America/Chicago'
         assert family_settings.state_code == 'OK'
         assert family_settings.grading_scale == 'letter'
+        assert family_settings.enabled_features == {
+            'attendance': True,
+            'quizzes': True,
+            'compliance': True,
+            'portfolio': True,
+            'planner': True,
+        }
 
         user = (
             await session.execute(select(User).where(User.email == 'demo@example.com'))
         ).scalar_one()
         assert user.display_name == 'Demo Parent'
 
-        assert (await session.execute(select(func.count()).select_from(Student))).scalar_one() == 13
+        assert (await session.execute(select(func.count()).select_from(Student))).scalar_one() == 3
         subject_count = (await session.execute(select(func.count()).select_from(Subject))).scalar_one()
-        assert subject_count == 98
+        assert subject_count == 23
         assert (await session.execute(select(func.count()).select_from(CurriculumPackage))).scalar_one() == subject_count
-        assert (await session.execute(select(func.count()).select_from(Assignment))).scalar_one() == 130
-        assert (await session.execute(select(func.count()).select_from(AttendanceRecord))).scalar_one() == 780
+        assert (await session.execute(select(func.count()).select_from(Assignment))).scalar_one() == 30
+        assert (await session.execute(select(func.count()).select_from(AttendanceRecord))).scalar_one() == 180
         assert (await session.execute(select(func.count()).select_from(SchoolYear))).scalar_one() == 1
         assert (await session.execute(select(func.count()).select_from(Term))).scalar_one() == 2
         assert (await session.execute(select(func.count()).select_from(GradingPeriod))).scalar_one() == 4

@@ -10,6 +10,7 @@ from backend.routers.compliance_reports import router as compliance_reports_rout
 from backend.routers.curriculum import router as curriculum_router
 from backend.routers.dashboard import router as dashboard_router
 from backend.routers.exports import router as exports_router
+from backend.routers.family_settings import router as family_settings_router
 from backend.routers.gradebook import router as gradebook_router
 from backend.routers.grades import router as grades_router
 from backend.routers.grading import router as grading_router
@@ -43,6 +44,7 @@ __all__ = [
     'curriculum_router',
     'dashboard_router',
     'exports_router',
+    'family_settings_router',
     'gradebook_router',
     'grades_router',
     'grading_router',

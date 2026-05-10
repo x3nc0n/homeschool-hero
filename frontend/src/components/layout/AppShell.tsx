@@ -1,25 +1,20 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  BarChart,
   Bell,
-  BookMarked,
+  BookOpen,
   BookOpenCheck,
+  Calendar,
   CalendarDays,
   ClipboardCheck,
-  Download,
+  Database,
+  FileStack,
   FileText,
-  FileUp,
-  FolderSync,
   GraduationCap,
-  HardDriveDownload,
-  HeartPulse,
-  Inbox,
   LayoutDashboard,
-  Library,
   LogOut,
-  MailPlus,
   Menu,
   Palette,
-  ScrollText,
   Search,
   Settings,
   ShieldCheck,
@@ -48,6 +43,7 @@ type NavItem = {
   label: string
   icon: typeof LayoutDashboard
   roles: FamilyRole[]
+  feature?: string
 }
 
 type NavGroup = {
@@ -57,66 +53,41 @@ type NavGroup = {
 
 const navGroups: NavGroup[] = [
   {
-    label: 'Dashboard',
-    items: [
-      { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/notifications', label: 'Notifications', icon: Bell, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-    ],
-  },
-  {
-    label: 'Students',
-    items: [{ to: '/students', label: 'Student roster', icon: Users, roles: ['parent', 'co-parent', 'tutor'] }],
-  },
-  {
     label: 'Academics',
     items: [
-      { to: '/calendar', label: 'Calendar', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/planner', label: 'Planner', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/subjects', label: 'Subjects', icon: BookMarked, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/curriculum', label: 'Curriculum', icon: Library, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/lesson-plans', label: 'Lesson Plans', icon: BookOpenCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/attendance', label: 'Attendance', icon: UserCheck, roles: ['parent', 'co-parent', 'tutor'] },
+      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+      { to: '/students', label: 'Students', icon: Users, roles: ['parent', 'co-parent', 'tutor'] },
+      { to: '/subjects', label: 'Subjects', icon: BookOpen, roles: ['parent', 'co-parent', 'tutor'] },
+      { to: '/curriculum', label: 'Curriculum', icon: GraduationCap, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+      { to: '/calendar', label: 'Calendar', icon: Calendar, roles: ['parent', 'co-parent', 'tutor'] },
+      { to: '/planner', label: 'Planner', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'], feature: 'planner' },
+      { to: '/attendance', label: 'Attendance', icon: UserCheck, roles: ['parent', 'co-parent', 'tutor'], feature: 'attendance' },
     ],
   },
   {
-    label: 'Assignments & Grading',
+    label: 'Schoolwork',
     items: [
-      { to: '/assignments', label: 'Assignments', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/grades', label: 'Grade Book', icon: GraduationCap, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/review', label: 'Review Queue', icon: Inbox, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/upload', label: 'Uploads', icon: Upload, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/quizzes', label: 'Quizzes', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor'] },
+      { to: '/assignments', label: 'Assignments', icon: FileText, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+      { to: '/upload', label: 'Upload', icon: Upload, roles: ['parent', 'co-parent', 'tutor'] },
+      { to: '/quizzes', label: 'Quizzes', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor'], feature: 'quizzes' },
+      { to: '/grades', label: 'Gradebook', icon: BarChart, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
     ],
   },
   {
-    label: 'Reports',
+    label: 'Records',
     items: [
-      { to: '/report-cards', label: 'Report Cards', icon: FileText, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/transcripts', label: 'Transcripts', icon: FileText, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/compliance', label: 'Compliance', icon: ShieldCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/compliance-reports', label: 'Compliance Reports', icon: FileText, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/portfolio', label: 'Portfolio', icon: BookOpenCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-    ],
-  },
-  {
-    label: 'Data',
-    items: [
-      { to: '/imports', label: 'Import data', icon: FolderSync, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/exports', label: 'Export data', icon: Download, roles: ['parent', 'co-parent'] },
-      { to: '/resources', label: 'Resources', icon: FileUp, roles: ['parent', 'co-parent', 'tutor'] },
+      { to: '/academic-records', label: 'Academic Records', icon: FileStack, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+      { to: '/portfolio', label: 'Portfolio', icon: BookOpenCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'], feature: 'portfolio' },
+      { to: '/compliance', label: 'Compliance', icon: ShieldCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'], feature: 'compliance' },
     ],
   },
   {
     label: 'Settings',
     items: [
-      { to: '/invitations', label: 'Invitations', icon: MailPlus, roles: ['parent', 'co-parent'] },
-      { to: '/audit', label: 'Audit Log', icon: ScrollText, roles: ['parent', 'co-parent'] },
-      { to: '/settings/family', label: 'Family', icon: Settings, roles: ['parent', 'co-parent'] },
+      { to: '/settings/family', label: 'Family & Features', icon: Settings, roles: ['parent', 'co-parent'] },
+      { to: '/data', label: 'Data Management', icon: Database, roles: ['parent', 'co-parent', 'tutor'] },
       { to: '/settings/appearance', label: 'Appearance', icon: Palette, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/settings/notifications', label: 'Notifications', icon: Settings, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/settings/backups', label: 'Backups', icon: HardDriveDownload, roles: ['parent', 'co-parent'] },
-      { to: '/settings/restore', label: 'Restore', icon: HardDriveDownload, roles: ['parent', 'co-parent'] },
-      { to: '/settings/status', label: 'System status', icon: HeartPulse, roles: ['parent', 'co-parent'] },
+      { to: '/notifications/preferences', label: 'Notifications', icon: Bell, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
     ],
   },
 ]
@@ -138,7 +109,7 @@ const focusableSelector = [
 ].join(', ')
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { logout, userName, familyName, role } = useAuth()
+  const { logout, userName, familyName, role, enabledFeatures } = useAuth()
   const { preferences } = useTheme()
   const { recent, unreadCount, markAllAsRead, markAsRead } = useNotifications()
   const { canInstall, installApp, isOfflineReady, isOnline, needsRefresh, dismissOfflineReady, applyUpdate } = usePwa()
@@ -158,10 +129,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       navGroups
         .map((group) => ({
           ...group,
-          items: group.items.filter((item) => (role ? item.roles.includes(role) : false)),
+          items: group.items.filter(
+            (item) => (role ? item.roles.includes(role) : false) && (item.feature ? enabledFeatures[item.feature] !== false : true),
+          ),
         }))
         .filter((group) => group.items.length),
-    [role],
+    [enabledFeatures, role],
   )
 
   useEffect(() => {
@@ -359,7 +332,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const mobileTabs = useMemo(
     () =>
       [
-        { to: '/', label: 'Home', icon: LayoutDashboard },
+        { to: '/dashboard', label: 'Home', icon: LayoutDashboard },
         { to: '/students', label: 'Students', icon: Users },
         { to: '/assignments', label: 'Tasks', icon: ClipboardCheck },
         { to: '/upload', label: 'Upload', icon: Upload },
@@ -385,7 +358,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="mx-auto max-w-7xl px-3 py-4 pb-24 md:px-6 md:pb-6">
         <div className={cn('grid gap-4', desktopSidebarCollapsed ? 'md:grid-cols-[92px_minmax(0,1fr)]' : 'md:grid-cols-[260px_minmax(0,1fr)]')}>
           <aside aria-label="Workspace navigation" className={cn('hidden md:block', desktopSidebarOnRight && 'md:order-2')}>
-            <div className="sticky top-4 space-y-4 rounded-xl border bg-card p-4 shadow-sm">
+            <div className="sticky top-4 max-h-[calc(100vh-2rem)] space-y-4 overflow-y-auto rounded-xl border bg-card p-4 shadow-sm">
               <div>
                 <p className="text-lg font-bold">{desktopSidebarCollapsed ? 'HH' : 'Homeschool Hero'}</p>
                 {!desktopSidebarCollapsed ? <p className="text-sm text-muted-foreground">{familyName || 'Family workspace'}</p> : null}

@@ -20,6 +20,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { LoadingState } from '@/components/common/LoadingState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { LanguageSelector } from '@/components/common/LanguageSelector'
+import { useAuth } from '@/context/AuthContext'
 
 const defaultRanges: GradeScaleRange[] = [
   { letter: 'A', min: 90, max: 100, gpa_points: 4 },
@@ -49,6 +50,38 @@ const blankRule: ComplianceCustomRulePayload = {
   is_active: true,
 }
 
+const featureDefinitions = [
+  {
+    key: 'attendance',
+    label: 'Attendance Tracking',
+    description: 'Show attendance navigation and allow access to the attendance page.',
+  },
+  {
+    key: 'quizzes',
+    label: 'Quizzes',
+    description: 'Show quiz management and allow access to quiz routes.',
+  },
+  {
+    key: 'compliance',
+    label: 'Compliance Tracking',
+    description: 'Show compliance dashboards, rules, and compliance reports routes.',
+  },
+  {
+    key: 'portfolio',
+    label: 'Portfolio',
+    description: 'Show the portfolio workspace and allow access to portfolio routes.',
+  },
+  {
+    key: 'planner',
+    label: 'Schedule Planner',
+    description: 'Show the planner in navigation and allow access to planner routes.',
+  },
+] as const
+
+function normalizeFeatureSettings(enabledFeatures: Record<string, boolean>) {
+  return Object.fromEntries(featureDefinitions.map((feature) => [feature.key, enabledFeatures[feature.key] !== false])) as Record<string, boolean>
+}
+
 function toLocalDateTime(value?: string | null) {
   if (!value) return ''
   const date = new Date(value)
@@ -63,12 +96,15 @@ function toIsoDateTime(value: string) {
 
 export function FamilySettingsPage() {
   const { t } = useTranslation(['common', 'settings'])
+  const { enabledFeatures, refreshSession } = useAuth()
   const [scales, setScales] = useState<GradeScaleInput[]>([])
+  const [featureSettings, setFeatureSettings] = useState<Record<string, boolean>>(() => normalizeFeatureSettings(enabledFeatures))
   const [stateCode, setStateCode] = useState('CUSTOM')
   const [customRules, setCustomRules] = useState<ComplianceRule[]>([])
   const [ruleForm, setRuleForm] = useState<ComplianceCustomRulePayload>(blankRule)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savingFeatures, setSavingFeatures] = useState(false)
   const [savingState, setSavingState] = useState(false)
   const [savingRule, setSavingRule] = useState(false)
   const [maintenance, setMaintenance] = useState<MaintenanceStatus | null>(null)
@@ -98,6 +134,10 @@ export function FamilySettingsPage() {
     () => ruleTypes.find((option) => option.value === ruleForm.rule_type) ?? ruleTypes[0],
     [ruleForm.rule_type, ruleTypes],
   )
+
+  useEffect(() => {
+    setFeatureSettings(normalizeFeatureSettings(enabledFeatures))
+  }, [enabledFeatures])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -156,6 +196,23 @@ export function FamilySettingsPage() {
       setError(saveError instanceof Error ? saveError.message : t('settings:family.errors.saveState'))
     } finally {
       setSavingState(false)
+    }
+  }
+
+  const saveFeatures = async (nextFeatures: Record<string, boolean>) => {
+    setSavingFeatures(true)
+    setError('')
+    setMessage('')
+    try {
+      const updated = await api.updateFamilyFeatures(nextFeatures)
+      setFeatureSettings(normalizeFeatureSettings(updated.enabled_features))
+      await refreshSession()
+      setMessage('Feature visibility updated.')
+    } catch (saveError) {
+      setFeatureSettings(normalizeFeatureSettings(enabledFeatures))
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save feature settings')
+    } finally {
+      setSavingFeatures(false)
     }
   }
 
@@ -230,6 +287,34 @@ export function FamilySettingsPage() {
         </CardHeader>
         <CardContent className="max-w-xs">
           <LanguageSelector />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Features</CardTitle>
+          <CardDescription>Choose which optional areas stay visible in navigation and available by route.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {featureDefinitions.map((feature) => (
+            <label key={feature.key} className="flex items-start justify-between gap-4 rounded-lg border p-4">
+              <div className="space-y-1">
+                <p className="font-medium">{feature.label}</p>
+                <p className="text-sm text-muted-foreground">{feature.description}</p>
+              </div>
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4"
+                checked={featureSettings[feature.key]}
+                disabled={savingFeatures}
+                onChange={(event) => {
+                  const nextFeatures = { ...featureSettings, [feature.key]: event.target.checked }
+                  setFeatureSettings(nextFeatures)
+                  void saveFeatures(nextFeatures)
+                }}
+              />
+            </label>
+          ))}
         </CardContent>
       </Card>
 

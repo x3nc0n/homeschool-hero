@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.models import Student
+from backend.models.calendar import SchoolYear
+from backend.models.schedule import Schedule
 from backend.schemas.students import StudentCreate, StudentRead, StudentUpdate
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
@@ -37,6 +39,25 @@ async def create_student(
 
     student = Student(family_id=auth.family_id, name=payload.name.strip())
     db.add(student)
+    await db.flush()
+
+    # Auto-create a default schedule for the active school year
+    active_year = (
+        await db.execute(
+            select(SchoolYear).where(
+                SchoolYear.family_id == auth.family_id,
+                SchoolYear.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if active_year:
+        db.add(Schedule(
+            family_id=auth.family_id,
+            student_id=student.id,
+            school_year_id=active_year.id,
+            name='Default',
+        ))
+
     await db.commit()
     await db.refresh(student)
     return student
