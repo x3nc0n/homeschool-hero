@@ -25,8 +25,8 @@ docker compose up --build
 ```
 
 > **Tip:** Demo mode (`DEMO_MODE=true` in `.env.example`) seeds sample data on first
-> startup only when the database is empty. If you see stale data from a previous run,
-> tear down the Docker volumes first:
+> startup. Log in with **`demo@example.com`** / **`demo1234`**.
+> If you see stale data from a previous run, tear down the Docker volumes first:
 >
 > ```bash
 > docker compose down -v
