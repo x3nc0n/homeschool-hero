@@ -54,11 +54,15 @@ def _issue_token(
     student_id: int | None = None,
     auth_provider: str = 'jwt',
     expires_in_seconds: int = 3600,
+    issuer: str | None = None,
+    audience: str | None = None,
+    secret: str | None = None,
+    extra_claims: dict[str, object] | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     claims: dict[str, object] = {
-        'iss': jwt_auth_settings['issuer'],
-        'aud': jwt_auth_settings['audience'],
+        'iss': issuer or jwt_auth_settings['issuer'],
+        'aud': audience or jwt_auth_settings['audience'],
         'sub': str(user_id),
         'user_id': user_id,
         'email': f'user{user_id}@example.com',
@@ -75,7 +79,9 @@ def _issue_token(
         claims['family_role'] = family_role
     if student_id is not None:
         claims['student_id'] = student_id
-    return jwt.encode(claims, jwt_auth_settings['secret'], algorithm=jwt_auth_settings['algorithm'])
+    if extra_claims:
+        claims.update(extra_claims)
+    return jwt.encode(claims, secret or jwt_auth_settings['secret'], algorithm=jwt_auth_settings['algorithm'])
 
 
 async def _login_local(client, *, email: str, password: str, family_id: int) -> None:
@@ -97,6 +103,27 @@ def _bearer_headers(token: str, *, family_id_header: int | None = None) -> dict[
     return headers
 
 
+async def _create_bearer_member(
+    create_family_user,
+    *,
+    family_id: int,
+    email: str,
+    role: str,
+    student_id: int | None = None,
+    is_owner: bool = False,
+) -> dict[str, int | str | None]:
+    return await create_family_user(
+        family_name='Test Family',
+        family_id=family_id,
+        email=email,
+        password='strongpass-bearer',
+        display_name=email.split('@', 1)[0].replace('-', ' ').title(),
+        role=role,
+        student_id=student_id,
+        is_owner=is_owner,
+    )
+
+
 class TestUnifiedRBACAccessMatrix:
     @pytest.mark.asyncio
     @pytest.mark.parametrize('provider', AUTH_PROVIDERS, ids=AUTH_PROVIDERS)
@@ -112,11 +139,17 @@ class TestUnifiedRBACAccessMatrix:
         if provider == 'local':
             response = await authorized_client.get(ADMIN_ROUTE)
         else:
+            user = await _create_bearer_member(
+                create_family_user,
+                family_id=family_id,
+                email=f'admin-{provider}@example.com',
+                role='tutor',
+            )
             token = _issue_token(
                 jwt_auth_settings,
                 roles=['Admin'],
                 family_id=family_id,
-                user_id=9001,
+                user_id=user['user_id'],
                 family_role='tutor',
                 auth_provider=provider,
             )
@@ -147,11 +180,17 @@ class TestUnifiedRBACAccessMatrix:
             packages = await secondary_client.get(TEACHER_ROUTE)
             grading_jobs = await secondary_client.get(GRADING['jobs'])
         else:
+            user = await _create_bearer_member(
+                create_family_user,
+                family_id=family_id,
+                email=f'teacher-{provider}@example.com',
+                role='tutor',
+            )
             token = _issue_token(
                 jwt_auth_settings,
                 roles=['Teacher'],
                 family_id=family_id,
-                user_id=9002,
+                user_id=user['user_id'],
                 family_role='tutor',
                 auth_provider=provider,
             )
@@ -194,11 +233,18 @@ class TestUnifiedRBACAccessMatrix:
             own_history = await secondary_client.get(f"{STUDENT_PROGRESS_ROUTE}?student_id={own_student_id}")
             other_history = await secondary_client.get(f"{STUDENT_PROGRESS_ROUTE}?student_id={other_student_id}")
         else:
+            user = await _create_bearer_member(
+                create_family_user,
+                family_id=family_id,
+                email=f'student-{provider}@example.com',
+                role='student_viewer',
+                student_id=own_student_id,
+            )
             token = _issue_token(
                 jwt_auth_settings,
                 roles=['Student'],
                 family_id=family_id,
-                user_id=9003,
+                user_id=user['user_id'],
                 family_role='student_viewer',
                 student_id=own_student_id,
                 auth_provider=provider,
@@ -242,11 +288,17 @@ class TestUnifiedRBACAccessMatrix:
 
         external_statuses = []
         for provider, client in (('oidc', tertiary_client), ('saml', authorized_client)):
+            user = await _create_bearer_member(
+                create_family_user,
+                family_id=family_id,
+                email=f'teacher-compare-{provider}@example.com',
+                role='tutor',
+            )
             token = _issue_token(
                 jwt_auth_settings,
                 roles=['Teacher'],
                 family_id=family_id,
-                user_id=9100 if provider == 'oidc' else 9101,
+                user_id=user['user_id'],
                 family_role='tutor',
                 auth_provider=provider,
             )
@@ -305,11 +357,18 @@ class TestUnifiedRBACStatusCodes:
             await _login_local(secondary_client, email='student-denied@example.com', password='strongpass567', family_id=family_id)
             response = await secondary_client.get(ADMIN_ROUTE)
         else:
+            user = await _create_bearer_member(
+                create_family_user,
+                family_id=family_id,
+                email=f'student-denied-{provider}@example.com',
+                role='student_viewer',
+                student_id=student_id,
+            )
             token = _issue_token(
                 jwt_auth_settings,
                 roles=['Student'],
                 family_id=family_id,
-                user_id=9200,
+                user_id=user['user_id'],
                 family_role='student_viewer',
                 student_id=student_id,
                 auth_provider=provider,
@@ -354,11 +413,17 @@ class TestUnifiedRBACStatusCodes:
             await _login_local(secondary_client, email='teacher-ok@example.com', password='strongpass678', family_id=family_id)
             response = await secondary_client.get(TEACHER_ROUTE)
         else:
+            user = await _create_bearer_member(
+                create_family_user,
+                family_id=family_id,
+                email=f'teacher-ok-{provider}@example.com',
+                role='tutor',
+            )
             token = _issue_token(
                 jwt_auth_settings,
                 roles=['Teacher'],
                 family_id=family_id,
-                user_id=9400,
+                user_id=user['user_id'],
                 family_role='tutor',
                 auth_provider=provider,
             )
@@ -470,6 +535,239 @@ class TestUnifiedRBACConflictResolution:
             )
         assert provisioned.created_default_family_membership is True
         assert provisioned.family.name == 'SSO Users'
+
+
+class TestNegativeSecurityCases:
+    @pytest.mark.asyncio
+    @pytest.mark.skip(reason='awaiting Tully security fixes')
+    async def test_bearer_token_with_forged_family_header_returns_403(
+        self,
+        authorized_client,
+        secondary_client,
+        jwt_auth_settings,
+    ):
+        family_id = await _family_id_from_client(authorized_client)
+        token = _issue_token(
+            jwt_auth_settings,
+            roles=['Teacher'],
+            family_id=family_id,
+            user_id=9501,
+            family_role='tutor',
+        )
+
+        response = await secondary_client.get(
+            TEACHER_ROUTE,
+            headers=_bearer_headers(token, family_id_header=family_id + 999),
+        )
+
+        assert response.status_code == 403, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.skip(reason='awaiting Tully security fixes')
+    async def test_bearer_token_cannot_set_is_owner_via_claims(
+        self,
+        authorized_client,
+        secondary_client,
+        create_family_user,
+        jwt_auth_settings,
+    ):
+        family_id = await _family_id_from_client(authorized_client)
+        user = await create_family_user(
+            family_name='Test Family',
+            family_id=family_id,
+            email='claim-owner@example.com',
+            password='strongpass-owner',
+            display_name='Claim Owner',
+            role='parent',
+            is_owner=False,
+        )
+        token = _issue_token(
+            jwt_auth_settings,
+            roles=['Teacher', 'Admin'],
+            family_id=family_id,
+            user_id=user['user_id'],
+            family_role='parent',
+            extra_claims={'is_owner': True},
+        )
+
+        response = await secondary_client.get(AUTH['me'], headers=_bearer_headers(token))
+
+        assert response.status_code == 200, response.text
+        assert response.json()['membership']['is_owner'] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.skip(reason='awaiting Tully security fixes')
+    async def test_missing_family_role_claims_fail_closed(self, authorized_client, secondary_client, jwt_auth_settings):
+        family_id = await _family_id_from_client(authorized_client)
+        token = _issue_token(
+            jwt_auth_settings,
+            roles=['Teacher'],
+            family_id=family_id,
+            user_id=9503,
+        )
+
+        response = await secondary_client.get(TEACHER_ROUTE, headers=_bearer_headers(token))
+
+        assert response.status_code == 403, response.text
+
+    @pytest.mark.asyncio
+    async def test_expired_jwt_tokens_return_401(self, authorized_client, secondary_client, jwt_auth_settings):
+        family_id = await _family_id_from_client(authorized_client)
+        token = _issue_token(
+            jwt_auth_settings,
+            roles=['Teacher'],
+            family_id=family_id,
+            user_id=9504,
+            family_role='tutor',
+            expires_in_seconds=-30,
+        )
+
+        response = await secondary_client.get(TEACHER_ROUTE, headers=_bearer_headers(token))
+
+        assert response.status_code == 401, response.text
+
+    @pytest.mark.asyncio
+    async def test_jwt_with_invalid_signature_returns_401(self, authorized_client, secondary_client, jwt_auth_settings):
+        family_id = await _family_id_from_client(authorized_client)
+        token = _issue_token(
+            jwt_auth_settings,
+            roles=['Teacher'],
+            family_id=family_id,
+            user_id=9505,
+            family_role='tutor',
+            secret='wrong-signing-secret-with-32-char-minimum',
+        )
+
+        response = await secondary_client.get(TEACHER_ROUTE, headers=_bearer_headers(token))
+
+        assert response.status_code == 401, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('issuer', 'audience'),
+        (
+            ('https://forged-issuer.example.test', None),
+            (None, 'wrong-audience'),
+        ),
+        ids=('wrong-issuer', 'wrong-audience'),
+    )
+    async def test_jwt_with_wrong_issuer_or_audience_returns_401(
+        self,
+        authorized_client,
+        secondary_client,
+        jwt_auth_settings,
+        issuer: str | None,
+        audience: str | None,
+    ):
+        family_id = await _family_id_from_client(authorized_client)
+        token = _issue_token(
+            jwt_auth_settings,
+            roles=['Teacher'],
+            family_id=family_id,
+            user_id=9506,
+            family_role='tutor',
+            issuer=issuer,
+            audience=audience,
+        )
+
+        response = await secondary_client.get(TEACHER_ROUTE, headers=_bearer_headers(token))
+
+        assert response.status_code == 401, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.skip(reason='awaiting Tully security fixes')
+    async def test_bearer_token_for_nonexistent_user_returns_401(self, authorized_client, secondary_client, jwt_auth_settings):
+        family_id = await _family_id_from_client(authorized_client)
+        token = _issue_token(
+            jwt_auth_settings,
+            roles=['Teacher'],
+            family_id=family_id,
+            user_id=9951,
+            family_role='tutor',
+        )
+
+        response = await secondary_client.get(AUTH['me'], headers=_bearer_headers(token))
+
+        assert response.status_code == 401, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.skip(reason='awaiting Tully security fixes')
+    async def test_valid_jwt_without_family_membership_returns_403_when_family_context_required(
+        self,
+        authorized_client,
+        secondary_client,
+        create_family_user,
+        jwt_auth_settings,
+    ):
+        family_id = await _family_id_from_client(authorized_client)
+        outsider = await create_family_user(
+            family_name='Other Family',
+            email='outsider@example.com',
+            password='strongpass-outsider',
+            display_name='Family Outsider',
+            role='tutor',
+        )
+        token = _issue_token(
+            jwt_auth_settings,
+            roles=['Teacher'],
+            family_id=family_id,
+            user_id=outsider['user_id'],
+            family_role='tutor',
+        )
+
+        response = await secondary_client.get(TEACHER_ROUTE, headers=_bearer_headers(token))
+
+        assert response.status_code == 403, response.text
+
+    def test_role_escalation_attempt_ignores_admin_group_fallback_when_roles_claim_present(self, monkeypatch):
+        monkeypatch.setattr(settings, 'oidc_group_role_map', '{"group-admin": "Admin"}', raising=False)
+        identity = extract_oidc_identity(
+            {
+                'sub': 'oidc-user',
+                'email': 'oidc@example.com',
+                'name': 'OIDC User',
+                'roles': ['Teacher'],
+                'groups': ['group-admin'],
+            }
+        )
+
+        assert identity.roles == ('teacher',)
+
+    def test_oidc_callback_manipulated_role_claims_are_normalized_not_trusted_raw(self, caplog):
+        caplog.set_level(logging.WARNING)
+        identity = extract_oidc_identity(
+            {
+                'sub': 'oidc-user',
+                'email': 'oidc@example.com',
+                'name': 'OIDC User',
+                'roles': [' Teacher ', 'ADMIN', 'Unknown Role', 'student', 'Admin'],
+            }
+        )
+
+        assert identity.roles == ('admin', 'teacher', 'student')
+        assert 'Unknown Role' in caplog.text
+
+    @pytest.mark.skip(reason='awaiting Tully security fixes')
+    def test_saml_assertion_with_extra_role_attributes_only_uses_configured_attribute(self, monkeypatch):
+        monkeypatch.setattr('backend.config.settings.saml_role_attribute', 'CustomRole', raising=False)
+        identity = extract_saml_identity(
+            type(
+                'SamlAuthStub',
+                (),
+                {
+                    'get_attributes': lambda self: {
+                        'email': ['saml@example.com'],
+                        'displayName': ['SAML User'],
+                        'CustomRole': ['Teacher'],
+                        'Role': ['Admin'],
+                        'role': ['Student'],
+                    },
+                    'get_nameid': lambda self: 'saml-user',
+                },
+            )()
+        )
+
+        assert identity.roles == ('teacher',)
 
 
 class TestUnifiedRBACBackwardCompatibility:

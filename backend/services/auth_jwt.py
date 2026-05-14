@@ -200,7 +200,7 @@ def _build_bearer_claims(raw_claims: dict[str, Any], *, request: Request) -> Bea
         auth_provider=_claim_string(raw_claims.get('auth_provider')) or 'jwt',
         family_name=_claim_string(raw_claims.get('family_name')) or '',
         family_state_code=family_state_code,
-        is_owner=bool(raw_claims.get('is_owner', False)),
+        is_owner=False,
         student_id=_claim_int(raw_claims.get('student_id')),
         enabled_features=_claim_dict(raw_claims.get('enabled_features')),
         ui_preferences=_claim_string_dict(raw_claims.get('ui_preferences')),
@@ -283,6 +283,4 @@ def _resolve_family_role(raw_claims: dict[str, Any], app_roles: list[str]) -> st
                 detail=f"Bearer token family role '{candidate}' is invalid",
             ) from exc
 
-    if 'student' in app_roles and not {'teacher', 'admin'} & set(app_roles):
-        return FamilyRole.student_viewer.value
-    return FamilyRole.tutor.value
+    return FamilyRole.student_viewer.value

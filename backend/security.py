@@ -12,7 +12,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
-from backend.database import get_db
+from backend.database import AsyncSessionLocal, get_db
 from backend.models import Family, FamilyMembership, FamilyRole, FamilySettings, User, UserPreference
 from backend.services.auth_jwt import BearerSessionClaims, authenticate_bearer_token
 from backend.services.preferences import serialize_user_preferences
@@ -255,30 +255,99 @@ def session_can_rotate(claims: SessionClaims | None) -> bool:
     return bool(claims and claims.get('rotatable', True))
 
 
-async def resolve_request_session_claims(request: Request) -> SessionClaims | None:
+async def _get_authenticated_membership_row(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    family_id: int,
+) -> tuple[User, FamilyMembership, Family, str | None, dict[str, bool] | None, UserPreference | None] | None:
+    stmt = (
+        select(User, FamilyMembership, Family, FamilySettings.state_code, FamilySettings.enabled_features, UserPreference)
+        .join(FamilyMembership, FamilyMembership.user_id == User.id)
+        .join(Family, Family.id == FamilyMembership.family_id)
+        .outerjoin(FamilySettings, FamilySettings.family_id == Family.id)
+        .outerjoin(UserPreference, UserPreference.user_id == User.id)
+        .where(
+            User.id == user_id,
+            User.is_active.is_(True),
+            FamilyMembership.family_id == family_id,
+            FamilyMembership.accepted_at.is_not(None),
+        )
+    )
+    result = await db.execute(stmt)
+    return result.one_or_none()
+
+
+def _session_claims_from_membership_row(
+    user: User,
+    membership: FamilyMembership,
+    family: Family,
+    state_code: str | None,
+    enabled_features: dict[str, bool] | None,
+    preferences: UserPreference | None,
+    *,
+    app_roles: list[str],
+    auth_type: str,
+    rotatable: bool,
+    auth_provider: str,
+) -> SessionClaims:
+    return {
+        'user_id': user.id,
+        'family_id': family.id,
+        'app_roles': list(app_roles),
+        'auth_type': auth_type,
+        'rotatable': rotatable,
+        'email': user.email,
+        'display_name': user.display_name,
+        'auth_provider': auth_provider,
+        'family_role': membership.role.value,
+        'is_owner': membership.is_owner,
+        'family_name': family.name,
+        'family_state_code': (state_code or 'CUSTOM').upper(),
+        'enabled_features': enabled_features or {},
+        'student_id': membership.student_id,
+        'ui_preferences': serialize_user_preferences(preferences),
+    }
+
+
+async def _resolve_bearer_session_claims(
+    db: AsyncSession,
+    bearer_claims: BearerSessionClaims,
+) -> SessionClaims:
+    row = await _get_authenticated_membership_row(
+        db,
+        user_id=bearer_claims.user_id,
+        family_id=bearer_claims.family_id,
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Bearer token family access is forbidden')
+    user, membership, family, state_code, enabled_features, preferences = row
+    return _session_claims_from_membership_row(
+        user,
+        membership,
+        family,
+        state_code,
+        enabled_features,
+        preferences,
+        app_roles=list(bearer_claims.app_roles),
+        auth_type='bearer',
+        rotatable=False,
+        auth_provider=bearer_claims.auth_provider,
+    )
+
+
+async def resolve_request_session_claims(request: Request, db: AsyncSession | None = None) -> SessionClaims | None:
     claims = getattr(request.state, 'session', None)
     if claims:
         return claims
 
     bearer_claims = await authenticate_bearer_token(request)
     if bearer_claims is not None:
-        claims = {
-            'user_id': bearer_claims.user_id,
-            'family_id': bearer_claims.family_id,
-            'app_roles': list(bearer_claims.app_roles),
-            'auth_type': 'bearer',
-            'rotatable': False,
-            'email': bearer_claims.email,
-            'display_name': bearer_claims.display_name,
-            'auth_provider': bearer_claims.auth_provider,
-            'family_role': bearer_claims.family_role,
-            'is_owner': bearer_claims.is_owner,
-            'family_name': bearer_claims.family_name,
-            'family_state_code': bearer_claims.family_state_code,
-            'enabled_features': bearer_claims.enabled_features,
-            'student_id': bearer_claims.student_id,
-            'ui_preferences': bearer_claims.ui_preferences,
-        }
+        if db is None:
+            async with AsyncSessionLocal() as session_db:
+                claims = await _resolve_bearer_session_claims(session_db, bearer_claims)
+        else:
+            claims = await _resolve_bearer_session_claims(db, bearer_claims)
         request.state.session = claims
         return claims
 
@@ -307,8 +376,36 @@ def _auth_session_from_bearer_claims(claims: SessionClaims) -> AuthSession:
     )
 
 
+def _auth_session_from_membership_row(
+    user: User,
+    membership: FamilyMembership,
+    family: Family,
+    state_code: str | None,
+    enabled_features: dict[str, bool] | None,
+    preferences: UserPreference | None,
+    *,
+    auth_provider: str,
+    app_roles: list[str],
+) -> AuthSession:
+    return AuthSession(
+        user_id=user.id,
+        family_id=family.id,
+        email=user.email,
+        display_name=user.display_name,
+        auth_provider=auth_provider,
+        family_role=membership.role.value,
+        app_roles=app_roles,
+        is_owner=membership.is_owner,
+        family_name=family.name,
+        family_state_code=(state_code or 'CUSTOM').upper(),
+        enabled_features=enabled_features or {},
+        student_id=membership.student_id,
+        ui_preferences=serialize_user_preferences(preferences),
+    )
+
+
 async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db)) -> AuthSession:
-    claims = await resolve_request_session_claims(request)
+    claims = await resolve_request_session_claims(request, db=db)
     if not claims:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
 
@@ -318,39 +415,24 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
-    stmt = (
-        select(User, FamilyMembership, Family, FamilySettings.state_code, FamilySettings.enabled_features, UserPreference)
-        .join(FamilyMembership, FamilyMembership.user_id == User.id)
-        .join(Family, Family.id == FamilyMembership.family_id)
-        .outerjoin(FamilySettings, FamilySettings.family_id == Family.id)
-        .outerjoin(UserPreference, UserPreference.user_id == User.id)
-        .where(
-            User.id == claims['user_id'],
-            User.is_active.is_(True),
-            FamilyMembership.family_id == claims['family_id'],
-            FamilyMembership.accepted_at.is_not(None),
-        )
+    row = await _get_authenticated_membership_row(
+        db,
+        user_id=claims['user_id'],
+        family_id=claims['family_id'],
     )
-    result = await db.execute(stmt)
-    row = result.one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
     user, membership, family, state_code, enabled_features, preferences = row
     try:
-        return AuthSession(
-            user_id=user.id,
-            family_id=family.id,
-            email=user.email,
-            display_name=user.display_name,
+        return _auth_session_from_membership_row(
+            user,
+            membership,
+            family,
+            state_code,
+            enabled_features,
+            preferences,
             auth_provider=user.auth_provider,
-            family_role=membership.role.value,
-            app_roles=claims.get('app_roles', []),
-            is_owner=membership.is_owner,
-            family_name=family.name,
-            family_state_code=(state_code or 'CUSTOM').upper(),
-            enabled_features=enabled_features or {},
-            student_id=membership.student_id,
-            ui_preferences=serialize_user_preferences(preferences),
+            app_roles=list(claims.get('app_roles', [])),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc

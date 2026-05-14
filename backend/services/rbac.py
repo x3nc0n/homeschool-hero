@@ -45,37 +45,6 @@ _TEACHER_CAPABILITIES = {
     *_READ_CAPABILITIES,
 }
 
-_ROLE_CAPABILITIES: dict[FamilyRole, set[Capability]] = {
-    FamilyRole.parent: {
-        Capability.manage_family,
-        Capability.manage_household,
-        Capability.manage_platform,
-        Capability.manage_curriculum,
-        Capability.manage_submissions,
-        Capability.manage_grading,
-        Capability.manage_invitations,
-        Capability.manage_security,
-        *_READ_CAPABILITIES,
-    },
-    FamilyRole.co_parent: {
-        Capability.manage_family,
-        Capability.manage_household,
-        Capability.manage_platform,
-        Capability.manage_curriculum,
-        Capability.manage_submissions,
-        Capability.manage_grading,
-        Capability.manage_invitations,
-        *_READ_CAPABILITIES,
-    },
-    FamilyRole.tutor: {
-        Capability.manage_curriculum,
-        Capability.manage_submissions,
-        Capability.manage_grading,
-        *_READ_CAPABILITIES,
-    },
-    FamilyRole.student_viewer: set(_READ_CAPABILITIES),
-}
-
 _FAMILY_ROLE_CAPABILITIES: dict[FamilyRole, set[Capability]] = {
     FamilyRole.parent: {
         Capability.manage_household,
