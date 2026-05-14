@@ -72,9 +72,11 @@ from backend.security import (
     get_request_ip,
     is_secure_request,
     require_csrf,
+    resolve_request_session_claims,
+    session_can_rotate,
     session_needs_rotation,
+    session_uses_csrf,
     set_session_cookies,
-    verify_session_token,
 )
 
 API_PREFIX = settings.api_prefix.rstrip('/')
@@ -398,8 +400,22 @@ def create_app() -> FastAPI:
                 async with AsyncSessionLocal() as db:
                     maintenance_status = await get_maintenance_status(db)
             if _is_api_path(path) and not is_public:
-                token = request.cookies.get(settings.session_cookie_name)
-                session = verify_session_token(token)
+                try:
+                    session = await resolve_request_session_claims(request)
+                except HTTPException as exc:
+                    response = JSONResponse(
+                        status_code=exc.status_code,
+                        content=build_error_payload(
+                            exc.detail,
+                            locale=_get_request_locale(request),
+                            requested_locale=request.headers.get('accept-language'),
+                            fallback_code='auth_required' if exc.status_code == 401 else 'forbidden',
+                            fallback_message='Authentication required' if exc.status_code == 401 else 'Forbidden',
+                        ),
+                        headers=exc.headers,
+                    )
+                    _apply_transport_headers(request, response)
+                    return response
             maintenance_bypass_paths = {
                 f'{API_PREFIX}/auth/login',
                 f'{API_PREFIX}/auth/oidc/login',
@@ -446,7 +462,7 @@ def create_app() -> FastAPI:
                     )
                     _apply_transport_headers(request, response)
                     return response
-                if request.method.upper() not in SAFE_METHODS:
+                if request.method.upper() not in SAFE_METHODS and session_uses_csrf(session):
                     try:
                         require_csrf(request, session)
                     except HTTPException as exc:
@@ -495,7 +511,7 @@ def create_app() -> FastAPI:
 
             response = await call_next(request)
             _apply_transport_headers(request, response)
-            if session and response.status_code < 500 and session_needs_rotation(session):
+            if session and session_can_rotate(session) and response.status_code < 500 and session_needs_rotation(session):
                 set_session_cookies(
                     response,
                     request,

@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     role_mapping_admin_raw: str = Field('Admin', alias='ROLE_MAPPING_ADMIN')
     role_mapping_teacher_raw: str = Field('Teacher', alias='ROLE_MAPPING_TEACHER')
     role_mapping_student_raw: str = Field('Student', alias='ROLE_MAPPING_STUDENT')
+    jwt_enabled: bool = Field(False, alias='JWT_ENABLED')
+    jwt_jwks_url: str = Field('', alias='JWT_JWKS_URL')
+    jwt_issuer: str = Field('', alias='JWT_ISSUER')
+    jwt_audience: str = Field('', alias='JWT_AUDIENCE')
+    jwt_secret: str = Field('', alias='JWT_SECRET')
+    jwt_algorithm: str = Field('RS256', alias='JWT_ALGORITHM')
 
     bootstrap_owner_email: str = Field('owner@homeschool-hero.local', alias='BOOTSTRAP_OWNER_EMAIL')
     bootstrap_owner_display_name: str = Field('Family Owner', alias='BOOTSTRAP_OWNER_DISPLAY_NAME')

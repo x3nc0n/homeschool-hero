@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, status
 
 from backend.models import FamilyRole
 from backend.security import AuthSession, get_auth_session
-from backend.services.rbac import Capability, _ROLE_CAPABILITIES, expand_capability_aliases
+from backend.services.rbac import AppRole, Capability, expand_capability_aliases, normalize_app_role_names
 
 
 def role_from_auth(auth: AuthSession) -> FamilyRole:
@@ -16,6 +16,39 @@ def role_from_auth(auth: AuthSession) -> FamilyRole:
 def has_capability(auth: AuthSession, capability: Capability) -> bool:
     required_capabilities = expand_capability_aliases(capability)
     return any(required.value in auth.effective_capabilities for required in required_capabilities)
+
+
+def has_app_role(auth: AuthSession, app_role: AppRole) -> bool:
+    return app_role.value in auth.app_roles
+
+
+def require_any_role(*roles: str | AppRole, action: str = 'access this resource') -> Callable[[AuthSession], AuthSession]:
+    normalized_roles = normalize_app_role_names(roles)
+    if not normalized_roles:
+        raise ValueError('require_any_role requires at least one application role')
+
+    async def dependency(auth: AuthSession = Depends(get_auth_session)) -> AuthSession:
+        if not any(has_app_role(auth, role) for role in normalized_roles):
+            expected = ', '.join(role.value for role in normalized_roles)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"App roles '{', '.join(auth.app_roles) or 'none'}' are not allowed to {action}; expected one of: {expected}.",
+            )
+        return auth
+
+    return dependency
+
+
+def require_admin(*, action: str = 'access admin resources') -> Callable[[AuthSession], AuthSession]:
+    return require_any_role(AppRole.admin, action=action)
+
+
+def require_teacher(*, action: str = 'access teacher resources') -> Callable[[AuthSession], AuthSession]:
+    return require_any_role(AppRole.teacher, action=action)
+
+
+def require_student(*, action: str = 'access student resources') -> Callable[[AuthSession], AuthSession]:
+    return require_any_role(AppRole.student, action=action)
 
 
 def require_capabilities(*capabilities: Capability, action: str) -> Callable[[AuthSession], AuthSession]:

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
+import jwt
 import pytest
 
 from backend.config import settings
 from backend.security import AuthSession, resolve_external_app_roles
 from backend.services.authorization import Capability, has_capability
-from tests.contracts import ASSIGNMENTS, AUTH, GRADES, INVITATIONS, STUDENTS, assignment_payload, student_payload
+from tests.contracts import ASSIGNMENTS, AUTH, BACKUPS, GRADES, INVITATIONS, STUDENTS, assignment_payload, student_payload
 from tests.helpers import response_id, sync_csrf_header
 
 
@@ -184,3 +187,43 @@ def test_external_teacher_role_is_narrower_than_parent_membership_without_admin(
 
     assert has_capability(auth, Capability.manage_household)
     assert not has_capability(auth, Capability.manage_platform)
+
+
+@pytest.mark.asyncio
+async def test_bearer_token_takes_precedence_over_cookie_session(authorized_client, secondary_client, seeded_student, monkeypatch):
+    monkeypatch.setattr(settings, 'jwt_enabled', True, raising=False)
+    monkeypatch.setattr(settings, 'jwt_secret', 'authz-jwt-secret-with-32-char-minimum', raising=False)
+    monkeypatch.setattr(settings, 'jwt_jwks_url', '', raising=False)
+    monkeypatch.setattr(settings, 'jwt_algorithm', 'HS256', raising=False)
+    monkeypatch.setattr(settings, 'jwt_issuer', 'https://issuer.example.test', raising=False)
+    monkeypatch.setattr(settings, 'jwt_audience', 'homeschool-hero-tests', raising=False)
+
+    me = await authorized_client.get(AUTH['me'])
+    family_id = me.json()['family']['id']
+    student_id = response_id(seeded_student)
+    secondary_client.cookies.update(authorized_client.cookies)
+    sync_csrf_header(secondary_client)
+
+    now = datetime.now(timezone.utc)
+    token = jwt.encode(
+        {
+            'iss': settings.jwt_issuer,
+            'aud': settings.jwt_audience,
+            'sub': '7777',
+            'user_id': 7777,
+            'family_id': family_id,
+            'family_role': 'student_viewer',
+            'student_id': student_id,
+            'email': 'student-bearer@example.com',
+            'name': 'Student Bearer',
+            'roles': ['Student'],
+            'iat': int(now.timestamp()),
+            'nbf': int((now - timedelta(seconds=30)).timestamp()),
+            'exp': int((now + timedelta(hours=1)).timestamp()),
+        },
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+
+    response = await secondary_client.get(BACKUPS['config'], headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 403, response.text

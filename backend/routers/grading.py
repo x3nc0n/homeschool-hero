@@ -14,7 +14,7 @@ from backend.models import AuditAction, Grade, GradedBy, GradingJob, GradingJobS
 from backend.schemas.grading import GradingJobRead
 from backend.security import AuthSession
 from backend.services.audit import log_event
-from backend.services.authorization import Capability, require_capabilities
+from backend.services.authorization import require_teacher
 from backend.services.grading_pipeline import transition_job
 from backend.services.notifications import create_grading_complete_notifications
 
@@ -159,7 +159,7 @@ class ReviewRejectPayload(BaseModel):
 async def list_grading_jobs(
     status_filter: GradingJobStatus | None = Query(default=None, alias='status'),
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='view grading jobs')),
+    auth: AuthSession = Depends(require_teacher(action='view grading jobs')),
 ) -> list[GradingJobRead]:
     stmt = (
         select(GradingJob)
@@ -178,7 +178,7 @@ async def list_grading_jobs(
 @router.get('/review-queue', response_model=list[GradingJobRead])
 async def review_queue(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='review grading jobs')),
+    auth: AuthSession = Depends(require_teacher(action='review grading jobs')),
 ) -> list[GradingJobRead]:
     jobs = (
         await db.execute(
@@ -205,7 +205,7 @@ async def submit_review(
     payload: ReviewDecisionPayload,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='review grading jobs')),
+    auth: AuthSession = Depends(require_teacher(action='review grading jobs')),
 ) -> GradingJobRead:
     job = await _load_job(job_id, auth.family_id, db)
     if job.status != GradingJobStatus.review_needed:
@@ -300,7 +300,7 @@ async def approve_review(
     payload: ReviewApprovePayload,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='review grading jobs')),
+    auth: AuthSession = Depends(require_teacher(action='review grading jobs')),
 ) -> GradingJobRead:
     return await submit_review(
         job_id,
@@ -322,7 +322,7 @@ async def reject_review(
     payload: ReviewRejectPayload,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='review grading jobs')),
+    auth: AuthSession = Depends(require_teacher(action='review grading jobs')),
 ) -> GradingJobRead:
     return await submit_review(
         job_id,

@@ -2,6 +2,9 @@
 
 ## Learnings
 
+- 2026-05-14T09:30:46-05:00 — Provider-agnostic route guards now live in `backend/services/authorization.py`, where `require_admin`, `require_teacher`, `require_student`, and `require_any_role` enforce app-role checks consistently for cookie sessions and stateless JWT bearer tokens while preserving 401 for missing/expired auth and 403 for role failures.
+- 2026-05-14T09:30:46-05:00 — JWT bearer auth is opt-in through `JWT_ENABLED` and validates against either `JWT_SECRET` or `JWT_JWKS_URL` (never both), caches JWKS for 5 minutes, and requires issuer, audience, expiration, and family context so API clients can build `AuthSession` without a stored DB session.
+
 ### OIDC and SAML Role Extraction Completion (2026-05-14T14:30:46Z)
 - **Issues:** #100 (OIDC role extraction) and #101 (SAML role extraction) implemented
 - **Test results:** 231 passed / 31 skipped; 4 RBAC tests unskipped

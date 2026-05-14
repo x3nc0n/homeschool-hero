@@ -162,6 +162,22 @@ def _validate_auth_config(config: Settings) -> dict[str, str]:
     return {'auth_provider': provider, 'auth_auto_provision_mode': auto_provision_mode}
 
 
+def _validate_jwt_config(config: Settings) -> None:
+    if not config.jwt_enabled:
+        return
+
+    has_jwks = bool(config.jwt_jwks_url.strip())
+    has_secret = bool(config.jwt_secret.strip())
+    if has_jwks == has_secret:
+        raise StartupValidationError('JWT auth requires exactly one of JWT_JWKS_URL or JWT_SECRET when JWT_ENABLED=true.')
+    if not config.jwt_issuer.strip():
+        raise StartupValidationError('JWT auth requires JWT_ISSUER when JWT_ENABLED=true.')
+    if not config.jwt_audience.strip():
+        raise StartupValidationError('JWT auth requires JWT_AUDIENCE when JWT_ENABLED=true.')
+    if not config.jwt_algorithm.strip():
+        raise StartupValidationError('JWT auth requires JWT_ALGORITHM when JWT_ENABLED=true.')
+
+
 def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
     errors: list[str] = []
     database_summary: dict[str, str] = {}
@@ -192,6 +208,11 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
 
     try:
         auth_summary = _validate_auth_config(config)
+    except StartupValidationError as exc:
+        errors.append(str(exc))
+
+    try:
+        _validate_jwt_config(config)
     except StartupValidationError as exc:
         errors.append(str(exc))
 

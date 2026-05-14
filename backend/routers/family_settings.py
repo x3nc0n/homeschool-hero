@@ -7,7 +7,7 @@ from backend.database import get_db
 from backend.models import FamilySettings
 from backend.schemas.family_settings import FamilyFeatureSettingsRead, FamilyFeatureSettingsUpdate
 from backend.security import AuthSession
-from backend.services.authorization import Capability, require_capabilities
+from backend.services.authorization import require_admin
 
 router = APIRouter(prefix='/family-settings', tags=['family-settings'])
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix='/family-settings', tags=['family-settings'])
 async def update_family_features(
     payload: FamilyFeatureSettingsUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='update family feature settings')),
+    auth: AuthSession = Depends(require_admin(action='update family feature settings')),
 ) -> FamilyFeatureSettingsRead:
     family_settings = await db.get(FamilySettings, auth.family_id)
     if family_settings is None:

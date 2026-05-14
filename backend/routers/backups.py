@@ -9,7 +9,7 @@ from backend.models import AuditAction, BackupJob
 from backend.schemas.backups import BackupConfigRead, BackupJobRead, BackupStatusRead, BackupTriggerRequest
 from backend.security import AuthSession, get_family_record
 from backend.services.audit import log_event
-from backend.services.authorization import Capability, require_capabilities
+from backend.services.authorization import require_admin
 from backend.services.backup_service import (
     create_backup_job,
     get_backup_configuration,
@@ -33,7 +33,7 @@ async def trigger_backup(
     payload: BackupTriggerRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage backups')),
+    auth: AuthSession = Depends(require_admin(action='manage backups')),
 ) -> BackupJob:
     job = await create_backup_job(
         db,
@@ -64,7 +64,7 @@ async def trigger_backup(
 
 @router.get('/config', response_model=BackupConfigRead)
 async def backup_config(
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage backups')),
+    auth: AuthSession = Depends(require_admin(action='manage backups')),
 ) -> BackupConfigRead:
     _ = auth
     return BackupConfigRead.model_validate(get_backup_configuration())
@@ -73,7 +73,7 @@ async def backup_config(
 @router.get('/status', response_model=BackupStatusRead)
 async def backup_status(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage backups')),
+    auth: AuthSession = Depends(require_admin(action='manage backups')),
 ) -> BackupStatusRead:
     payload = await get_backup_status(db, family_id=auth.family_id)
     return BackupStatusRead(
@@ -91,7 +91,7 @@ async def backup_status(
 @router.get('', response_model=list[BackupJobRead])
 async def list_backups(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage backups')),
+    auth: AuthSession = Depends(require_admin(action='manage backups')),
 ) -> list[BackupJob]:
     return await list_backup_jobs(db, family_id=auth.family_id)
 
@@ -100,6 +100,6 @@ async def list_backups(
 async def get_backup(
     job_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage backups')),
+    auth: AuthSession = Depends(require_admin(action='manage backups')),
 ) -> BackupJob:
     return await _get_job_or_404(db, job_id, auth.family_id)

@@ -39,7 +39,7 @@ from backend.schemas.curriculum import (
     ResourceUpsert,
 )
 from backend.security import AuthSession, get_family_record
-from backend.services.authorization import Capability, require_capabilities
+from backend.services.authorization import AppRole, Capability, require_any_role, require_capabilities, require_teacher
 from backend.validation import sanitize_filename
 
 router = APIRouter(tags=['curriculum'])
@@ -210,7 +210,7 @@ def _remove_resource_file(file_path: str | None) -> None:
 async def list_curriculum_packages(
     school_year_id: int | None = Query(default=None, ge=1),
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view curriculum packages')),
+    auth: AuthSession = Depends(require_any_role(AppRole.teacher, AppRole.student, action='view curriculum packages')),
 ) -> list[CurriculumPackage]:
     stmt = select(CurriculumPackage).options(*_package_options()).where(CurriculumPackage.family_id == auth.family_id)
     if school_year_id is not None:
@@ -224,7 +224,7 @@ async def list_curriculum_packages(
 async def create_curriculum_package(
     payload: CurriculumPackageCreate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage curriculum packages')),
+    auth: AuthSession = Depends(require_teacher(action='manage curriculum packages')),
 ) -> CurriculumPackage:
     await _ensure_package_dependencies(
         db,
@@ -253,7 +253,7 @@ async def create_curriculum_package(
 async def get_curriculum_package(
     package_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view curriculum packages')),
+    auth: AuthSession = Depends(require_any_role(AppRole.teacher, AppRole.student, action='view curriculum packages')),
 ) -> CurriculumPackage:
     return await _get_package_or_404(db, package_id, auth.family_id)
 
@@ -263,7 +263,7 @@ async def update_curriculum_package(
     package_id: int,
     payload: CurriculumPackageUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage curriculum packages')),
+    auth: AuthSession = Depends(require_teacher(action='manage curriculum packages')),
 ) -> CurriculumPackage:
     package = await _get_package_or_404(db, package_id, auth.family_id)
     await _ensure_package_dependencies(
@@ -292,7 +292,7 @@ async def update_curriculum_package(
 async def delete_curriculum_package(
     package_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage curriculum packages')),
+    auth: AuthSession = Depends(require_teacher(action='manage curriculum packages')),
 ) -> None:
     package = await _get_package_or_404(db, package_id, auth.family_id)
     await db.delete(package)
@@ -304,7 +304,7 @@ async def clone_curriculum_package(
     package_id: int,
     payload: CloneCurriculumPackageRequest,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='clone curriculum packages')),
+    auth: AuthSession = Depends(require_teacher(action='clone curriculum packages')),
 ) -> CurriculumPackage:
     source = await _get_package_or_404(db, package_id, auth.family_id)
     target_year = await get_family_record(db, SchoolYear, payload.target_school_year_id, auth.family_id)
@@ -506,7 +506,7 @@ async def link_resource_to_lesson(
     lesson_id: int,
     resource_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='link resources to lessons')),
+    auth: AuthSession = Depends(require_teacher(action='link resources to lessons')),
 ) -> None:
     lesson = await _get_lesson_or_404(db, lesson_id, auth.family_id)
     resource = await _get_resource_or_404(db, resource_id, auth.family_id)
@@ -522,7 +522,7 @@ async def unlink_resource_from_lesson(
     resource_id: int,
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(
-        require_capabilities(Capability.manage_curriculum, action='unlink resources from lessons')
+        require_teacher(action='unlink resources from lessons')
     ),
 ) -> None:
     lesson = await _get_lesson_or_404(db, lesson_id, auth.family_id)

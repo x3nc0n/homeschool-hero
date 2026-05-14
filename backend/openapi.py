@@ -12,9 +12,10 @@ API_VERSION = '0.1.0'
 API_SUMMARY = 'Family-scoped API for homeschool planning, assessment, reporting, and administration.'
 API_DESCRIPTION = (
     'Homeschool Hero provides authenticated family workflows for roster management, assignments, '
-    'grading, attendance, compliance, notifications, exports, and academic reports. The API uses a '
-    'signed session cookie for authentication, requires an `X-CSRF-Token` header on mutating requests, '
-    'and returns a consistent JSON error envelope for validation and authorization failures.'
+    'grading, attendance, compliance, notifications, exports, and academic reports. The API supports '
+    'either a signed session cookie or an Authorization bearer token for authentication, requires an '
+    '`X-CSRF-Token` header on mutating cookie-authenticated requests, and returns a consistent JSON error '
+    'envelope for validation and authorization failures.'
 )
 
 TAG_METADATA = [
@@ -213,9 +214,15 @@ def configure_openapi(
                     'in': 'header',
                     'name': 'X-CSRF-Token',
                     'description': (
-                        f'CSRF token header required for POST, PUT, PATCH, and DELETE requests. '
-                        f'Use the value stored in the `{csrf_cookie_name}` cookie.'
+                        f'CSRF token header required for POST, PUT, PATCH, and DELETE requests when using '
+                        f'the `{csrf_cookie_name}` session cookie path.'
                     ),
+                },
+                'BearerAuth': {
+                    'type': 'http',
+                    'scheme': 'bearer',
+                    'bearerFormat': 'JWT',
+                    'description': 'Stateless JWT bearer token validated with the configured secret or JWKS endpoint.',
                 },
             }
         )
@@ -274,9 +281,9 @@ def _decorate_operation(
         operation.pop('security', None)
     else:
         if method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
-            operation['security'] = [{'SessionCookieAuth': [], 'CsrfHeaderAuth': []}]
+            operation['security'] = [{'SessionCookieAuth': [], 'CsrfHeaderAuth': []}, {'BearerAuth': []}]
         else:
-            operation['security'] = [{'SessionCookieAuth': []}]
+            operation['security'] = [{'SessionCookieAuth': []}, {'BearerAuth': []}]
 
     request_body = operation.get('requestBody', {})
     for media in request_body.get('content', {}).values():
@@ -388,11 +395,11 @@ def _description_for_operation(path: str, method: str, tag: str) -> str:
         )
     elif method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
         auth_line = (
-            'This operation requires a valid Homeschool Hero session cookie and the current CSRF token in the '
-            '`X-CSRF-Token` header.'
+            'This operation requires either a valid Homeschool Hero session cookie plus the current '
+            '`X-CSRF-Token` header, or a valid JWT bearer token.'
         )
     else:
-        auth_line = 'This operation requires a valid Homeschool Hero session cookie.'
+        auth_line = 'This operation requires either a valid Homeschool Hero session cookie or a valid JWT bearer token.'
 
     workflow_notes = {
         'auth': 'Use these endpoints to bootstrap the first owner account, establish sessions, and hand off to OIDC or SAML sign-in when external identity is enabled.',
