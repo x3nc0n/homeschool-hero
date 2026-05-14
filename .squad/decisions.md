@@ -221,6 +221,14 @@
 - **Decision:** Extract external role evidence at the protocol boundary and store normalized app-role names on `ExternalIdentity.roles` before provisioning. For OIDC, read the configurable `OIDC_ROLES_CLAIM`, fall back to `OIDC_GROUPS_CLAIM` only when the roles claim is absent or empty, map fallback groups through `OIDC_GROUP_ROLE_MAP`, and ignore Entra groups overage indicators with a warning. For SAML, read the configurable `SAML_ROLE_ATTRIBUTE` first, then the common Microsoft and generic role/group attribute names, and normalize all collected values through the shared external-role mapping layer.
 - **Impact:** The auth router can now pass provider-normalized app roles directly into session construction, preserving external `admin`/`teacher`/`student` intent through `AuthSession.app_roles`. Unknown external values stay fail-safe by logging and being skipped, while startup validation now catches invalid `OIDC_GROUP_ROLE_MAP` JSON before the app boots.
 
+### Ray Provider-Agnostic RBAC Enforcement + JWT Bearer Validation (2026-05-14)
+- **Date:** 2026-05-14T09:30:46-05:00
+- **Author:** Ray
+- **Related issues:** #102, #103
+- **Context:** Unified RBAC architecture and local/OIDC/SAML role extraction exist, but route enforcement lacked provider-neutral gates and JWT bearer validation for stateless API clients.
+- **Decision:** (1) Add explicit app-role dependencies: `require_admin()`, `require_teacher()`, `require_student()`, `require_any_role(*roles)`; (2) Resolve auth source: bearer token first (if `JWT_ENABLED`), then signed cookie; (3) Preserve 401 (missing/invalid credentials) vs 403 (valid auth, lacks required role); (4) JWT validation: symmetric `JWT_SECRET` or asymmetric `JWT_JWKS_URL` (5-min cache), validate issuer/audience/expiration/family; (5) Build bearer-backed `AuthSession` directly from claims, no session record required.
+- **Impact:** Local, OIDC, SAML, and JWT bearer share same RBAC surface. Maintenance, backup, grading, curriculum, and read flows enforce app-role intent. Operators configure either `JWT_SECRET` or `JWT_JWKS_URL` when `JWT_ENABLED=true`.
+
 ## Governance
 
 - All meaningful changes require team consensus
