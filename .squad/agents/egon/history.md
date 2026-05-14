@@ -2,6 +2,12 @@
 
 ## Learnings
 
+- 2026-05-14T13:57:23-00:00 — Scribe processed spawn manifest outcomes. Merged RBAC triage (#98–#103 dependency ordering) and unified model decision (AppRole layer, FamilyRole persistence, capability enforcement) from inbox to decisions.md. Orchestration log recorded. 4 inbox files cleared. decisions.md: 16723 → 18843 bytes (+2120).
+
+- 2026-05-14T08:57:23-05:00 — Triaged RBAC gaps across local auth, OIDC, SAML 2.0, and bearer-token access without duplicating #97. Created 6 coordinated issues with dependency chain: #98 (unified model) → #99 (external role mapping) → #100, #101 (OIDC/SAML extraction) → #102 (unified deps) → #103 (bearer tokens). All fail-closed on missing mappings.
+
+- 2026-05-14T08:57:23-05:00 — Authored the unified RBAC architecture decision for issue #98 in `docs/architecture/rbac-unified-model.md` and summarized it in `.squad/decisions/inbox/egon-rbac-unified-model.md`. Decision: keep `FamilyMembership`/`FamilyRole` as the persisted family-scope model, add normalized `AppRole` values (`admin`, `teacher`, `student`) for external identity claims, and split legacy `manage_family` into household-vs-platform capability buckets so Entra `Admin` remains IT-only without breaking local-auth families.
+
 - 2026-05-09T15:27:13-05:00 — Authored comprehensive Azure PaaS architecture proposal (`docs/azure-architecture.md`). Key decisions: ACA over AKS for compute, zone-redundant PostgreSQL Flexible Server, Azure AI Document Intelligence replacing Tesseract, Azure OpenAI replacing Ollama for cloud deployments, Bicep for IaC, active-passive multi-region with Front Door Premium. Five architecture decision records written to inbox. Estimated costs: ~$45/month dev, ~$700/month prod single-region, ~$866/month multi-region. Proposed `Spaidoso/homeschool-hero-azure` repo structure with Bicep modules and 5-phase implementation plan.
 
 - 2026-05-09T15:34:18-05:00 — Scribe merged 5 Azure architecture decisions (AZ-01 through AZ-05) and 1 frontend decision (VP-01) from inbox to decisions.md. Wrote orchestration log and session log. Post-merge decisions.md: 22,216 bytes.

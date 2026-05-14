@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-05-14T13:57:23-00:00 — Scribe processed spawn manifest outcomes. RBAC test scaffolding outcome recorded: 34 skipped test cases in backend/tests/test_rbac_unified.py covering local session, OIDC, SAML access matrices, role extraction, external role mapping, conflict resolution, JWT bearer semantics, and FamilyRole/cookie backward compatibility. Tests anchor to provider-agnostic behavior and serve as acceptance spec for Egon/Ray on issues #97–#103.
+
 - Project: homeschool-hero — open-source homeschool platform for families
 - User: John
 - Critical test areas: grading accuracy (auto-grade must be reliable), file processing (various formats/quality), grade calculations
@@ -82,3 +84,4 @@
 - Security triage outcome: 4 issues closed (fixes on main from prior); #22 assigned to Ray, #23-25 assigned to Winston for test code quality remediation
 - **Policy reminder:** Patch-only auto-merge; major version bumps require planned migration work and explicit team sign-off
 - 2026-05-09T13:37:25.539-05:00 — Student documentation was created at `docs/student-guide.md`.
+- 2026-05-14T08:57:23-05:00 — Added `backend/tests/test_rbac_unified.py` as a skipped spec suite for unified RBAC coverage across local sessions, OIDC, SAML, role mapping, conflict resolution, and backward compatibility.

@@ -170,6 +170,40 @@
 - **Decision:** In the initial `Spaidoso/homeschool-hero-azure` scaffold, model PostgreSQL private access with a delegated `db` subnet and the PostgreSQL private DNS zone, while keeping the reusable private-endpoint module for Blob, Key Vault, Redis, Azure OpenAI, and Document Intelligence.
 - **Impact:** The scaffold stays aligned with the architecture's private-networking intent while remaining compatible with the supported Azure Flexible Server deployment model and allowing `az bicep build` validation to pass across the repo.
 
+### User Directive: RBAC Hardening for OIDC and SAML (2026-05-14)
+- **By:** John (via Copilot)
+- **What:** RBAC model must be shored up for OIDC and SAML 2.0 authentication protocols. Likely applies to local auth too, but the complexity lives on the SSO protocol side (role extraction from tokens/assertions, mapping external roles to internal capabilities).
+- **Why:** User request — captured for team memory.
+
+### Egon RBAC Triage (2026-05-14)
+- **Author:** Egon
+- **Context:** Triaged RBAC gaps across local auth, OIDC, SAML 2.0, and bearer-token access without duplicating issue #97.
+- **Decision:** Created 6 issues with dependency ordering:
+  1. #98 — Define a unified RBAC model across local auth, OIDC, and SAML
+  2. #99 — Add configurable external role mapping for IdP-authenticated users
+  3. #100 — Extract and normalize RBAC claims from OIDC tokens
+  4. #101 — Extract and normalize RBAC attributes from SAML assertions
+  5. #102 — Build provider-agnostic RBAC dependencies and enforce 401/403 semantics
+  6. #103 — Add JWT bearer token validation for API clients with shared RBAC enforcement
+- **Dependency order:** #98 (unified model) → #99 (mapping config) → #100, #101 (external role extraction) → #102 (unified deps) → #103 (bearer token).
+- **Notes:** #97 remains the Entra-specific contract and should be referenced, not duplicated. Main tension is reconciling `Admin/Teacher/Student` with existing `FamilyRole` + capability model. External role assertions fail closed when no valid mapping exists.
+- **Impact:** Provides architectural structure for SSO integration work across all three protocol families.
+
+### Egon RBAC Unified Model Architecture (2026-05-14)
+- **Author:** Egon
+- **Context:** Issue #98 defining the canonical role model and conflict-resolution rules for OIDC, SAML, and local auth.
+- **Decision:** Keep `FamilyMembership` and `FamilyRole` as the persisted family-scoping model, add a normalized `AppRole` layer (`admin`, `teacher`, `student`) for OIDC/SAML/JWT claims, and keep capabilities as the canonical enforcement surface. `Admin` must not map to the current `parent` bundle; instead, split legacy `manage_family` into household-vs-platform capability buckets so SSO `Admin` stays IT-configuration-only while local-auth families remain backward compatible.
+- **Key rules:** `FamilyRole`, `is_owner`, and `student_id` stay authoritative for family scope. IdP app roles stay authoritative for external-role intent. When they conflict, the narrower result wins. Local auth synthesizes app roles from stored family role to avoid breaking existing families.
+- **Reference:** `docs/architecture/rbac-unified-model.md` (created by Egon during task execution).
+- **Impact:** Provides canonical architecture for issue #98 implementation and downstream issues #99-#103.
+
+### Winston RBAC Test Scaffolding (2026-05-14)
+- **Author:** Winston
+- **Context:** Egon defining the unified RBAC architecture; team needs executable test expectations in place now.
+- **Decision:** Anchor provisional RBAC spec tests to provider-agnostic behavior rather than concrete implementation details. Cover the same access matrix for local sessions, OIDC, and SAML, plus role extraction, external role mapping, precedence conflicts, JWT bearer semantics, and backward compatibility with `FamilyRole` and cookie sessions. Keep the suite fully skipped until unified RBAC contracts land so it documents expectations without destabilizing CI.
+- **Implementation:** 34 skipped test cases in `backend/tests/test_rbac_unified.py`.
+- **Impact:** Egon and Ray have a concrete acceptance-test checklist for issues #97-#103 before implementation is complete. Winston can later replace skipped bodies with real setup/assertions without redefining the intended security behavior.
+
 ## Governance
 
 - All meaningful changes require team consensus
