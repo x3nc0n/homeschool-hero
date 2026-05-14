@@ -6,6 +6,8 @@
 
 - 2026-05-14T13:57:23-00:00 — Scribe processed spawn manifest outcomes. RBAC test scaffolding outcome recorded: 34 skipped test cases in backend/tests/test_rbac_unified.py covering local session, OIDC, SAML access matrices, role extraction, external role mapping, conflict resolution, JWT bearer semantics, and FamilyRole/cookie backward compatibility. Tests anchor to provider-agnostic behavior and serve as acceptance spec for Egon/Ray on issues #97–#103.
 
+
+- 2026-05-14T22:32:06Z — Orchestrated Tully JWT security hardening completion (PR #104 critical/important fixes): all 4 findings fixed (family-injection, is_owner claims, dead code, fail-closed default), 273 tests passed/2 skipped, committed and pushed.
 - Project: homeschool-hero — open-source homeschool platform for families
 - User: John
 - Critical test areas: grading accuracy (auto-grade must be reliable), file processing (various formats/quality), grade calculations
@@ -87,3 +89,4 @@
 - **Policy reminder:** Patch-only auto-merge; major version bumps require planned migration work and explicit team sign-off
 - 2026-05-09T13:37:25.539-05:00 — Student documentation was created at `docs/student-guide.md`.
 - 2026-05-14T08:57:23-05:00 — Added `backend/tests/test_rbac_unified.py` as a skipped spec suite for unified RBAC coverage across local sessions, OIDC, SAML, role mapping, conflict resolution, and backward compatibility.
+

@@ -229,6 +229,12 @@
 - **Decision:** (1) Add explicit app-role dependencies: `require_admin()`, `require_teacher()`, `require_student()`, `require_any_role(*roles)`; (2) Resolve auth source: bearer token first (if `JWT_ENABLED`), then signed cookie; (3) Preserve 401 (missing/invalid credentials) vs 403 (valid auth, lacks required role); (4) JWT validation: symmetric `JWT_SECRET` or asymmetric `JWT_JWKS_URL` (5-min cache), validate issuer/audience/expiration/family; (5) Build bearer-backed `AuthSession` directly from claims, no session record required.
 - **Impact:** Local, OIDC, SAML, and JWT bearer share same RBAC surface. Maintenance, backup, grading, curriculum, and read flows enforce app-role intent. Operators configure either `JWT_SECRET` or `JWT_JWKS_URL` when `JWT_ENABLED=true`.
 
+### Tully JWT Bearer Security Hardening (2026-05-14)
+- **Author:** Tully
+- **Context:** Egon rejected PR #104 because bearer-token authorization trusted family context and owner status from JWT input instead of canonical family membership data.
+- **Decision:** Rehydrate every bearer-backed family session from the database before authorization. Bearer requests now require an accepted `FamilyMembership` for the authenticated user and selected family, reject forged `X-Family-Id` values with 403, ignore `is_owner` claims in JWT payloads, and fail closed to `student_viewer` when family-role claims are absent. Remove the dead `_ROLE_CAPABILITIES` table so RBAC has one canonical capability source.
+- **Impact:** JWT, OIDC, SAML, and local flows now follow the architecture rule that family scope and owner semantics are database-backed, while test coverage explicitly guards against family-header injection and owner-claim escalation.
+
 ## Governance
 
 - All meaningful changes require team consensus
