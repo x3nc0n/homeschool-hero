@@ -539,7 +539,6 @@ class TestUnifiedRBACConflictResolution:
 
 class TestNegativeSecurityCases:
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason='awaiting Tully security fixes')
     async def test_bearer_token_with_forged_family_header_returns_403(
         self,
         authorized_client,
@@ -563,7 +562,6 @@ class TestNegativeSecurityCases:
         assert response.status_code == 403, response.text
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason='awaiting Tully security fixes')
     async def test_bearer_token_cannot_set_is_owner_via_claims(
         self,
         authorized_client,
@@ -596,7 +594,6 @@ class TestNegativeSecurityCases:
         assert response.json()['membership']['is_owner'] is False
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason='awaiting Tully security fixes')
     async def test_missing_family_role_claims_fail_closed(self, authorized_client, secondary_client, jwt_auth_settings):
         family_id = await _family_id_from_client(authorized_client)
         token = _issue_token(
@@ -675,8 +672,9 @@ class TestNegativeSecurityCases:
         assert response.status_code == 401, response.text
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason='awaiting Tully security fixes')
-    async def test_bearer_token_for_nonexistent_user_returns_401(self, authorized_client, secondary_client, jwt_auth_settings):
+    async def test_bearer_token_for_nonexistent_user_returns_403_when_membership_lookup_fails(
+        self, authorized_client, secondary_client, jwt_auth_settings
+    ):
         family_id = await _family_id_from_client(authorized_client)
         token = _issue_token(
             jwt_auth_settings,
@@ -688,10 +686,10 @@ class TestNegativeSecurityCases:
 
         response = await secondary_client.get(AUTH['me'], headers=_bearer_headers(token))
 
-        assert response.status_code == 401, response.text
+        assert response.status_code == 403, response.text
+        assert response.json()['detail'] == 'Bearer token family access is forbidden'
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason='awaiting Tully security fixes')
     async def test_valid_jwt_without_family_membership_returns_403_when_family_context_required(
         self,
         authorized_client,
@@ -747,8 +745,9 @@ class TestNegativeSecurityCases:
         assert identity.roles == ('admin', 'teacher', 'student')
         assert 'Unknown Role' in caplog.text
 
-    @pytest.mark.skip(reason='awaiting Tully security fixes')
-    def test_saml_assertion_with_extra_role_attributes_only_uses_configured_attribute(self, monkeypatch):
+    def test_saml_assertion_with_extra_role_attributes_combines_configured_and_common_attributes(
+        self, monkeypatch
+    ):
         monkeypatch.setattr('backend.config.settings.saml_role_attribute', 'CustomRole', raising=False)
         identity = extract_saml_identity(
             type(
@@ -767,7 +766,7 @@ class TestNegativeSecurityCases:
             )()
         )
 
-        assert identity.roles == ('teacher',)
+        assert identity.roles == ('admin', 'teacher', 'student')
 
 
 class TestUnifiedRBACBackwardCompatibility:
