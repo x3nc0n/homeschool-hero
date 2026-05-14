@@ -641,6 +641,19 @@ AUTH_AUTO_PROVISION_MODE=default_family
 AUTH_DEFAULT_FAMILY_NAME=SSO Users
 ```
 
+Entra bearer-token API access:
+
+```env
+JWT_ENABLED=true
+JWT_JWKS_URL=https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys
+JWT_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0
+JWT_AUDIENCE=<auth-client-id-or-api-uri>
+JWT_TENANT_ID=<tenant-id>
+JWT_ALGORITHM=RS256
+```
+
+Bearer callers must send `X-Family-Id`, and Homeschool Hero uses the Entra `roles` claim for RBAC while treating `groups` only as optional supporting data.
+
 ### Secrets and credential handling
 
 - never keep production secrets in `.env.example`

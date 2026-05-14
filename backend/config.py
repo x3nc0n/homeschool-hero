@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     jwt_jwks_url: str = Field('', alias='JWT_JWKS_URL')
     jwt_issuer: str = Field('', alias='JWT_ISSUER')
     jwt_audience: str = Field('', alias='JWT_AUDIENCE')
+    jwt_tenant_id: str = Field('', alias='JWT_TENANT_ID')
     jwt_secret: str = Field('', alias='JWT_SECRET')
     jwt_algorithm: str = Field('RS256', alias='JWT_ALGORITHM')
 

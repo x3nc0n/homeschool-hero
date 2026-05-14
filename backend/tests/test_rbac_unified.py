@@ -8,6 +8,7 @@ import pytest
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal
+from backend.models import User
 from backend.security import AuthSession, resolve_external_app_roles
 from backend.services.auth_oidc import extract_identity as extract_oidc_identity
 from backend.services.auth_provisioning import ExternalIdentity, provision_external_identity
@@ -101,6 +102,48 @@ def _bearer_headers(token: str, *, family_id_header: int | None = None) -> dict[
     if family_id_header is not None:
         headers['X-Family-Id'] = str(family_id_header)
     return headers
+
+
+def _issue_entra_token(
+    jwt_auth_settings: dict[str, str],
+    *,
+    tenant_id: str,
+    object_id: str,
+    email: str,
+    roles: list[str],
+    display_name: str = 'Entra User',
+    expires_in_seconds: int = 3600,
+    issuer: str | None = None,
+    audience: str | None = None,
+    secret: str | None = None,
+    extra_claims: dict[str, object] | None = None,
+) -> str:
+    now = datetime.now(timezone.utc)
+    claims: dict[str, object] = {
+        'iss': issuer or settings.jwt_issuer or jwt_auth_settings['issuer'],
+        'aud': audience or settings.jwt_audience or jwt_auth_settings['audience'],
+        'sub': f'entra-subject-{object_id}',
+        'tid': tenant_id,
+        'oid': object_id,
+        'preferred_username': email,
+        'name': display_name,
+        'roles': roles,
+        'iat': int(now.timestamp()),
+        'nbf': int((now - timedelta(seconds=30)).timestamp()),
+        'exp': int((now + timedelta(seconds=expires_in_seconds)).timestamp()),
+    }
+    if extra_claims:
+        claims.update(extra_claims)
+    return jwt.encode(claims, secret or jwt_auth_settings['secret'], algorithm=jwt_auth_settings['algorithm'])
+
+
+async def _link_user_to_external_identity(*, user_id: int, provider: str, external_id: str) -> None:
+    async with AsyncSessionLocal() as db:
+        user = await db.get(User, user_id)
+        assert user is not None
+        user.auth_provider = provider
+        user.external_id = external_id
+        await db.commit()
 
 
 async def _create_bearer_member(
@@ -535,6 +578,112 @@ class TestUnifiedRBACConflictResolution:
             )
         assert provisioned.created_default_family_membership is True
         assert provisioned.family.name == 'SSO Users'
+
+
+class TestEntraBearerRBAC:
+    @pytest.mark.asyncio
+    async def test_entra_bearer_token_resolves_oidc_user_by_object_id_and_family_header(
+        self,
+        authorized_client,
+        secondary_client,
+        create_family_user,
+        jwt_auth_settings,
+        monkeypatch,
+    ):
+        tenant_id = 'b9735550-cbce-4703-9c6e-e0e51de71a0d'
+        monkeypatch.setattr(settings, 'jwt_tenant_id', tenant_id, raising=False)
+        monkeypatch.setattr(settings, 'jwt_issuer', f'https://login.microsoftonline.com/{tenant_id}/v2.0', raising=False)
+        family_id = await _family_id_from_client(authorized_client)
+        user = await create_family_user(
+            family_name='Test Family',
+            family_id=family_id,
+            email='entra-teacher@example.com',
+            password='strongpass-entra',
+            display_name='Entra Teacher',
+            role='tutor',
+        )
+        await _link_user_to_external_identity(user_id=user['user_id'], provider='oidc', external_id='entra-oid-1')
+        token = _issue_entra_token(
+            jwt_auth_settings,
+            tenant_id=tenant_id,
+            object_id='entra-oid-1',
+            email='entra-teacher@example.com',
+            display_name='Entra Teacher',
+            roles=['Teacher'],
+        )
+
+        response = await secondary_client.get(TEACHER_ROUTE, headers=_bearer_headers(token, family_id_header=family_id))
+
+        assert response.status_code == 200, response.text
+
+    @pytest.mark.asyncio
+    async def test_entra_bearer_token_rejects_wrong_tenant_id(
+        self,
+        authorized_client,
+        secondary_client,
+        jwt_auth_settings,
+        monkeypatch,
+    ):
+        tenant_id = 'b9735550-cbce-4703-9c6e-e0e51de71a0d'
+        monkeypatch.setattr(settings, 'jwt_tenant_id', tenant_id, raising=False)
+        monkeypatch.setattr(settings, 'jwt_issuer', f'https://login.microsoftonline.com/{tenant_id}/v2.0', raising=False)
+        family_id = await _family_id_from_client(authorized_client)
+        token = _issue_entra_token(
+            jwt_auth_settings,
+            tenant_id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+            object_id='entra-oid-2',
+            email='entra-user@example.com',
+            roles=['Teacher'],
+        )
+
+        response = await secondary_client.get(TEACHER_ROUTE, headers=_bearer_headers(token, family_id_header=family_id))
+
+        assert response.status_code == 401, response.text
+        assert response.json()['detail'] == 'Bearer token tenant is invalid'
+
+    @pytest.mark.asyncio
+    async def test_entra_groups_overage_keeps_roles_claim_authoritative(
+        self,
+        authorized_client,
+        secondary_client,
+        create_family_user,
+        jwt_auth_settings,
+        monkeypatch,
+        caplog,
+    ):
+        tenant_id = 'b9735550-cbce-4703-9c6e-e0e51de71a0d'
+        monkeypatch.setattr(settings, 'jwt_tenant_id', tenant_id, raising=False)
+        monkeypatch.setattr(settings, 'jwt_issuer', f'https://login.microsoftonline.com/{tenant_id}/v2.0', raising=False)
+        caplog.set_level(logging.WARNING)
+        family_id = await _family_id_from_client(authorized_client)
+        user = await create_family_user(
+            family_name='Test Family',
+            family_id=family_id,
+            email='entra-student@example.com',
+            password='strongpass-entra-student',
+            display_name='Entra Student',
+            role='student_viewer',
+            student_name='Entra Student',
+        )
+        await _link_user_to_external_identity(user_id=user['user_id'], provider='oidc', external_id='entra-oid-3')
+        token = _issue_entra_token(
+            jwt_auth_settings,
+            tenant_id=tenant_id,
+            object_id='entra-oid-3',
+            email='entra-student@example.com',
+            display_name='Entra Student',
+            roles=['Student'],
+            extra_claims={
+                'groups': ['entra-admin-group'],
+                '_claim_names': {'groups': 'src1'},
+                '_claim_sources': {'src1': {'endpoint': 'https://graph.example/groups'}},
+            },
+        )
+
+        response = await secondary_client.get(ADMIN_ROUTE, headers=_bearer_headers(token, family_id_header=family_id))
+
+        assert response.status_code == 403, response.text
+        assert 'groups overage' in caplog.text
 
 
 class TestNegativeSecurityCases:

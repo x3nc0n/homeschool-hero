@@ -85,6 +85,50 @@ def test_startup_validation_requires_saml_settings(tmp_path: Path) -> None:
     )
     with pytest.raises(StartupValidationError) as excinfo:
         validate_runtime_config(config)
+    assert 'SAML auth requires these settings' in str(excinfo.value)
+
+
+def test_startup_validation_requires_entra_tenant_id_for_entra_jwt(tmp_path: Path) -> None:
+    config = settings.model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': True,
+            'jwt_enabled': True,
+            'jwt_jwks_url': 'https://login.microsoftonline.com/common/discovery/v2.0/keys',
+            'jwt_secret': '',
+            'jwt_issuer': 'https://login.microsoftonline.com/b9735550-cbce-4703-9c6e-e0e51de71a0d/v2.0',
+            'jwt_audience': 'api://homeschool-hero',
+            'jwt_algorithm': 'RS256',
+            'jwt_tenant_id': '',
+        }
+    )
+
+    with pytest.raises(StartupValidationError) as excinfo:
         validate_runtime_config(config)
-    assert 'SAML auth requires these settings' in str(excinfo.value)
-    assert 'SAML auth requires these settings' in str(excinfo.value)
+
+    assert 'JWT auth requires JWT_TENANT_ID for Microsoft Entra ID bearer validation.' in str(excinfo.value)
+
+
+def test_startup_validation_requires_entra_v2_issuer_match(tmp_path: Path) -> None:
+    config = settings.model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': True,
+            'jwt_enabled': True,
+            'jwt_jwks_url': 'https://login.microsoftonline.com/b9735550-cbce-4703-9c6e-e0e51de71a0d/discovery/v2.0/keys',
+            'jwt_secret': '',
+            'jwt_issuer': 'https://login.microsoftonline.com/common/v2.0',
+            'jwt_audience': 'api://homeschool-hero',
+            'jwt_algorithm': 'RS256',
+            'jwt_tenant_id': 'b9735550-cbce-4703-9c6e-e0e51de71a0d',
+        }
+    )
+
+    with pytest.raises(StartupValidationError) as excinfo:
+        validate_runtime_config(config)
+
+    assert 'JWT_ISSUER must match the Entra v2.0 issuer for JWT_TENANT_ID.' in str(excinfo.value)

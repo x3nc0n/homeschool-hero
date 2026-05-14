@@ -12,6 +12,8 @@
 - 2026-05-14T17:32:06-05:00 — `backend/security.py` now rehydrates bearer sessions from the database before authorization, so `FamilyMembership` stays authoritative for `family_role`, `is_owner`, and `student_id` and invalid `X-Family-Id` values fail with 403.
 - 2026-05-14T17:32:06-05:00 — `backend/services/auth_jwt.py` must fail closed when family-role claims are missing; the safe fallback is `student_viewer`, while effective bearer authorization still depends on DB-backed membership context.
 - 2026-05-14T17:32:06-05:00 — Unified RBAC capability logic lives in `backend/services/rbac.py`, and stale capability tables should be removed once superseded to avoid conflicting security behavior.
+- 2026-05-14T18:25:38.883-05:00 — Entra bearer validation now lives in `backend/services/auth_jwt.py` + `backend/startup.py`: require `JWT_TENANT_ID`, enforce the tenant-scoped v2.0 issuer contract, and keep Entra `roles` authoritative while `groups` remain supporting-only data.
+- 2026-05-14T18:25:38.883-05:00 — `backend/security.py` resolves Entra bearer callers by linked OIDC `external_id` first and normalized email second, with `X-Family-Id` selecting which accepted family membership is rehydrated for RBAC.
 
 ### JWT Bearer Security Hardening Completion (2026-05-14T22:32:06Z)
 - Fixed all 4 critical/important security findings from PR #104 review:
