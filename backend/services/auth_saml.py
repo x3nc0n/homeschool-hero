@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Any
 
 from fastapi import Request
 
 from backend.config import settings
-from backend.security import normalize_email
+from backend.security import normalize_email, resolve_external_app_roles
 from backend.services.auth_provisioning import ExternalIdentity
+
+logger = logging.getLogger(__name__)
+
+_COMMON_ROLE_ATTRIBUTES = (
+    'http://schemas.microsoft.com/ws/2008/06/identity/claims/role',
+    'Role',
+    'role',
+    'http://schemas.xmlsoap.org/claims/Group',
+)
 
 try:
     from onelogin.saml2.auth import OneLogin_Saml2_Auth
@@ -100,6 +110,49 @@ def _first_attribute(attributes: Mapping[str, list[str]], *keys: str) -> str | N
     return None
 
 
+def _attribute_values(attributes: Mapping[str, list[str]], *keys: str) -> tuple[str, ...]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        raw_values = attributes.get(key)
+        if not isinstance(raw_values, list):
+            continue
+        for raw_value in raw_values:
+            if not isinstance(raw_value, str):
+                continue
+            candidate = raw_value.strip()
+            if candidate and candidate not in seen:
+                values.append(candidate)
+                seen.add(candidate)
+    return tuple(values)
+
+
+def _role_attribute_names() -> tuple[str, ...]:
+    configured = (settings.saml_role_attribute or '').strip()
+    names = [configured] if configured else []
+    for candidate in _COMMON_ROLE_ATTRIBUTES:
+        if candidate not in names:
+            names.append(candidate)
+    return tuple(names)
+
+
+def _extract_roles(attributes: Mapping[str, list[str]]) -> tuple[str, ...]:
+    external_roles = _attribute_values(attributes, *_role_attribute_names())
+    if not external_roles:
+        return ()
+
+    unmapped = sorted(
+        {
+            role
+            for role in external_roles
+            if role.strip() and role.strip().casefold() not in settings.external_role_mappings
+        }
+    )
+    if unmapped:
+        logger.warning('SAML assertion contained unmapped role values: %s', ', '.join(unmapped))
+    return tuple(resolve_external_app_roles(list(external_roles)))
+
+
 def extract_identity(auth: OneLogin_Saml2_Auth) -> ExternalIdentity:
     attributes = auth.get_attributes()
     email = _first_attribute(
@@ -131,6 +184,7 @@ def extract_identity(auth: OneLogin_Saml2_Auth) -> ExternalIdentity:
         external_id=external_id,
         email=normalize_email(email),
         display_name=display_name,
+        roles=_extract_roles(attributes),
     )
 
 

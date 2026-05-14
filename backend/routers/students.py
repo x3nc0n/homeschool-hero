@@ -8,7 +8,14 @@ from backend.models.calendar import SchoolYear
 from backend.models.schedule import Schedule
 from backend.schemas.students import StudentCreate, StudentRead, StudentUpdate
 from backend.security import AuthSession, get_family_record
-from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.authorization import (
+    AppRole,
+    Capability,
+    ensure_student_scope,
+    get_student_scope_id,
+    require_any_role,
+    require_capabilities,
+)
 
 router = APIRouter(prefix='/students', tags=['students'])
 
@@ -16,7 +23,7 @@ router = APIRouter(prefix='/students', tags=['students'])
 @router.get('', response_model=list[StudentRead])
 async def list_students(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.read_students, action='view students')),
+    auth: AuthSession = Depends(require_any_role(AppRole.teacher, AppRole.student, action='view students')),
 ) -> list[Student]:
     stmt = select(Student).where(Student.family_id == auth.family_id).order_by(Student.name)
     if auth.role == 'student_viewer':
@@ -67,7 +74,7 @@ async def create_student(
 async def get_student(
     student_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.read_students, action='view students')),
+    auth: AuthSession = Depends(require_any_role(AppRole.teacher, AppRole.student, action='view students')),
 ) -> Student:
     student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:

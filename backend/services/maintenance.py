@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
 from backend.models import FamilyMembership, FamilyRole, MaintenanceMode
 from backend.security import AuthSession, SessionClaims
+from backend.services.rbac import AppRole
 
 ADMIN_BYPASS_ROLES = {FamilyRole.parent, FamilyRole.co_parent}
 
@@ -51,8 +52,12 @@ def _role_can_bypass(role: FamilyRole | str, *, is_owner: bool = False) -> bool:
     return normalized in ADMIN_BYPASS_ROLES
 
 
+def _app_roles_can_bypass(app_roles: list[str] | tuple[str, ...] | None) -> bool:
+    return bool(app_roles and AppRole.admin.value in app_roles)
+
+
 def auth_can_bypass_maintenance(auth: AuthSession) -> bool:
-    return _role_can_bypass(auth.role, is_owner=auth.is_owner)
+    return _app_roles_can_bypass(auth.app_roles) or _role_can_bypass(auth.role, is_owner=auth.is_owner)
 
 
 def membership_can_bypass_maintenance(membership: FamilyMembership) -> bool:
@@ -149,6 +154,10 @@ async def set_maintenance_schedule(
 async def session_can_bypass_maintenance(db: AsyncSession, claims: SessionClaims | None) -> bool:
     if claims is None:
         return False
+    if _app_roles_can_bypass(claims.get('app_roles')):
+        return True
+    if claims.get('auth_type') == 'bearer' and claims.get('family_role'):
+        return _role_can_bypass(claims['family_role'], is_owner=bool(claims.get('is_owner', False)))
     result = await db.execute(
         select(FamilyMembership.role, FamilyMembership.is_owner)
         .where(

@@ -16,7 +16,7 @@ from backend.schemas.restore import (
 )
 from backend.security import AuthSession
 from backend.services.audit import log_event
-from backend.services.authorization import Capability, require_capabilities
+from backend.services.authorization import require_admin
 from backend.services.restore_service import (
     cleanup_retained_backups,
     execute_restore,
@@ -76,7 +76,7 @@ async def _record_restore_audit(
 @router.get('/backups', response_model=list[AvailableBackupRead])
 async def available_backups(
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage restores')),
+    auth: AuthSession = Depends(require_admin(action='manage restores')),
 ) -> list[AvailableBackupRead]:
     return [_backup_to_schema(item) for item in await list_available_backups(db, family_id=auth.family_id)]
 
@@ -86,7 +86,7 @@ async def validate_restore_backup(
     backup_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage restores')),
+    auth: AuthSession = Depends(require_admin(action='manage restores')),
 ) -> RestoreValidationRead:
     result = await validate_backup(db, family_id=auth.family_id, user_id=auth.user_id, backup_id=backup_id)
     await log_event(
@@ -110,7 +110,7 @@ async def execute_restore_backup(
     payload: RestoreExecuteRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage restores')),
+    auth: AuthSession = Depends(require_admin(action='manage restores')),
 ) -> RestoreExecutionRead:
     try:
         result = await execute_restore(
@@ -154,7 +154,7 @@ async def execute_selective_restore(
     payload: SelectiveRestoreRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage restores')),
+    auth: AuthSession = Depends(require_admin(action='manage restores')),
 ) -> RestoreExecutionRead:
     try:
         result = await selective_restore(
@@ -194,7 +194,7 @@ async def execute_selective_restore(
 
 @router.get('/retention', response_model=RetentionPolicyRead)
 async def current_retention_policy(
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage restores')),
+    auth: AuthSession = Depends(require_admin(action='manage restores')),
 ) -> RetentionPolicyRead:
     _ = auth
     return RetentionPolicyRead(**get_retention_policy())
@@ -205,7 +205,7 @@ async def save_retention_policy(
     payload: RetentionPolicyRead,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage restores')),
+    auth: AuthSession = Depends(require_admin(action='manage restores')),
 ) -> RetentionPolicyRead:
     before = get_retention_policy()
     updated = update_retention_policy(retention_days=payload.retention_days, retention_count=payload.retention_count)
@@ -228,7 +228,7 @@ async def save_retention_policy(
 async def cleanup_restore_backups(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage restores')),
+    auth: AuthSession = Depends(require_admin(action='manage restores')),
 ) -> RetentionCleanupRead:
     result = await cleanup_retained_backups()
     await log_event(

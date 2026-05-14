@@ -11,14 +11,17 @@ def test_openapi_schema_exposes_metadata_examples_and_security(app) -> None:
     assert payload['info']['version'] == '0.1.0'
     assert payload['info']['contact']['url'].endswith('/homeschool-hero')
     assert payload['info']['license']['name'] == 'See repository'
-    assert {'SessionCookieAuth', 'CsrfHeaderAuth'} <= set(payload['components']['securitySchemes'])
+    assert {'SessionCookieAuth', 'CsrfHeaderAuth', 'BearerAuth'} <= set(payload['components']['securitySchemes'])
     assert payload['components']['schemas']['ErrorResponse']['example']['error']['code'] == 'validation_error'
     assert payload['components']['schemas']['LoginRequest']['example']['email'] == 'parent@example.com'
     assert payload['paths']['/api/students']['get']['tags'] == ['students']
     assert payload['paths']['/api/students']['get']['responses']['401']['content']['application/json']['schema']['$ref'].endswith(
         '/ErrorResponse'
     )
-    assert payload['paths']['/api/students']['post']['security'] == [{'SessionCookieAuth': [], 'CsrfHeaderAuth': []}]
+    assert payload['paths']['/api/students']['post']['security'] == [
+        {'SessionCookieAuth': [], 'CsrfHeaderAuth': []},
+        {'BearerAuth': []},
+    ]
     assert payload['paths']['/api/auth/login']['post'].get('security') is None
 
 

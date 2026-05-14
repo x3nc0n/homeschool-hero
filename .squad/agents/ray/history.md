@@ -2,6 +2,24 @@
 
 ## Learnings
 
+- 2026-05-14T09:30:46-05:00 — Provider-agnostic route guards now live in `backend/services/authorization.py`, where `require_admin`, `require_teacher`, `require_student`, and `require_any_role` enforce app-role checks consistently for cookie sessions and stateless JWT bearer tokens while preserving 401 for missing/expired auth and 403 for role failures.
+- 2026-05-14T09:30:46-05:00 — JWT bearer auth is opt-in through `JWT_ENABLED` and validates against either `JWT_SECRET` or `JWT_JWKS_URL` (never both), caches JWKS for 5 minutes, and requires issuer, audience, expiration, and family context so API clients can build `AuthSession` without a stored DB session.
+
+### Provider-Agnostic RBAC Enforcement + JWT Bearer Validation (2026-05-14T14:30:46Z)
+- **Issues:** #102 (RBAC enforcement) and #103 (JWT bearer validation) implemented
+- **Test results:** 262 passed / 1 skipped; PR #104 updated to cover issues #98–#103; frontend build passes
+- **Summary:** Ray completed unified RBAC route enforcement and JWT bearer token support. Provider-neutral app-role dependency functions (`require_admin()`, `require_teacher()`, `require_student()`, `require_any_role()`) now enforce consistently across local, OIDC, SAML, and JWT bearer sessions. Authentication source resolution prioritizes bearer tokens (if `JWT_ENABLED`) over cookie sessions. JWT validation supports symmetric (`JWT_SECRET`) and asymmetric (`JWT_JWKS_URL` with 5-minute JWKS cache) modes, validates issuer/audience/expiration/family context, and builds stateless `AuthSession` from claims for API-only clients without stored session records. Consistent 401 (missing/expired auth) vs 403 (valid auth, insufficient role) status semantics enforced across all providers.
+
+## RBAC Implementation Summary (Issues #98–#103, 2026-05-14)
+- **#98 (Unified Model):** Egon defined canonical role model with `FamilyRole`/`FamilyMembership` persisted, `AppRole` normalized (`admin`/`teacher`/`student`), capabilities as enforcement surface, narrower-wins precedence when IdP roles conflict with family roles.
+- **#99 (External Role Mapping):** Environment-driven external role mappings (`ROLE_MAPPING_ADMIN`, `ROLE_MAPPING_TEACHER`, `ROLE_MAPPING_STUDENT`) enable configurable external → app-role translation with comma-separated alias support.
+- **#100 (OIDC Role Extraction):** OIDC login normalizes IdP roles via `OIDC_ROLES_CLAIM` (primary) or `OIDC_GROUPS_CLAIM` fallback with `OIDC_GROUP_ROLE_MAP` mapping; stores normalized app-role names on `ExternalIdentity.roles`.
+- **#101 (SAML Role Extraction):** SAML login reads `SAML_ROLE_ATTRIBUTE` (configurable), falls back to Microsoft/generic role/group attributes, normalizes through shared external-role mapping layer, stores on `ExternalIdentity.roles`.
+- **#102 (RBAC Enforcement):** Provider-neutral app-role dependency decorators enforce at route level; app roles derive from persisted family role (local auth) or extracted from IdP (OIDC/SAML/JWT); effective capabilities computed by combining family-role base + app-role grants.
+- **#103 (JWT Bearer Validation):** Stateless JWT bearer token validation with configurable symmetric/asymmetric signing, issuer/audience/expiration/family validation, no stored session required for API clients.
+
+- 2026-05-14T09:30:46-05:00 — OIDC and SAML role extraction now normalize IdP claims straight into `ExternalIdentity.roles`, including OIDC `groups` fallback via `OIDC_GROUP_ROLE_MAP` and SAML attribute selection via `SAML_ROLE_ATTRIBUTE`, so external sessions can preserve provider-issued app roles without re-mapping in the auth router.
+- 2026-05-14T08:57:23-05:00 — Unified RBAC now computes effective capabilities from both persisted `FamilyRole` and normalized app roles, with `manage_family` preserved as a compatibility alias over the new `manage_household` and `manage_platform` split.
 - 2026-05-09T14:53:01-05:00 — Demo mode now hangs off `DEMO_MODE` in backend settings and seeds only on fresh databases during startup, keeping existing families untouched while giving fresh clones a fully populated Oklahoma K-12 experience.
 - 2026-05-09T14:53:01-05:00 — The demo seed approach creates one K-12 student cohort with per-student subjects, Oklahoma-aligned curriculum packages, realistic Q1/Q2 assignments/grades, and ~60 instructional days of attendance so the UI is immediately rich after first boot.
 - 2026-05-09T15:19:46-05:00 — The CI Trivy SARIF failure was caused by the container-checks image build dying before Trivy ran: `docker build` was missing the configured Buildx builder, and the real Buildx path exposed invalid backslash patterns in `.dockerignore`; fixing it meant targeting the setup-buildx builder with `docker buildx build --load`, normalizing `.dockerignore` to forward slashes, and keeping Trivy on `trivyignores`.

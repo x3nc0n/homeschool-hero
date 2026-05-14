@@ -170,6 +170,71 @@
 - **Decision:** In the initial `Spaidoso/homeschool-hero-azure` scaffold, model PostgreSQL private access with a delegated `db` subnet and the PostgreSQL private DNS zone, while keeping the reusable private-endpoint module for Blob, Key Vault, Redis, Azure OpenAI, and Document Intelligence.
 - **Impact:** The scaffold stays aligned with the architecture's private-networking intent while remaining compatible with the supported Azure Flexible Server deployment model and allowing `az bicep build` validation to pass across the repo.
 
+### User Directive: RBAC Hardening for OIDC and SAML (2026-05-14)
+- **By:** John (via Copilot)
+- **What:** RBAC model must be shored up for OIDC and SAML 2.0 authentication protocols. Likely applies to local auth too, but the complexity lives on the SSO protocol side (role extraction from tokens/assertions, mapping external roles to internal capabilities).
+- **Why:** User request — captured for team memory.
+
+### Egon RBAC Triage (2026-05-14)
+- **Author:** Egon
+- **Context:** Triaged RBAC gaps across local auth, OIDC, SAML 2.0, and bearer-token access without duplicating issue #97.
+- **Decision:** Created 6 issues with dependency ordering:
+  1. #98 — Define a unified RBAC model across local auth, OIDC, and SAML
+  2. #99 — Add configurable external role mapping for IdP-authenticated users
+  3. #100 — Extract and normalize RBAC claims from OIDC tokens
+  4. #101 — Extract and normalize RBAC attributes from SAML assertions
+  5. #102 — Build provider-agnostic RBAC dependencies and enforce 401/403 semantics
+  6. #103 — Add JWT bearer token validation for API clients with shared RBAC enforcement
+- **Dependency order:** #98 (unified model) → #99 (mapping config) → #100, #101 (external role extraction) → #102 (unified deps) → #103 (bearer token).
+- **Notes:** #97 remains the Entra-specific contract and should be referenced, not duplicated. Main tension is reconciling `Admin/Teacher/Student` with existing `FamilyRole` + capability model. External role assertions fail closed when no valid mapping exists.
+- **Impact:** Provides architectural structure for SSO integration work across all three protocol families.
+
+### Egon RBAC Unified Model Architecture (2026-05-14)
+- **Author:** Egon
+- **Context:** Issue #98 defining the canonical role model and conflict-resolution rules for OIDC, SAML, and local auth.
+- **Decision:** Keep `FamilyMembership` and `FamilyRole` as the persisted family-scoping model, add a normalized `AppRole` layer (`admin`, `teacher`, `student`) for OIDC/SAML/JWT claims, and keep capabilities as the canonical enforcement surface. `Admin` must not map to the current `parent` bundle; instead, split legacy `manage_family` into household-vs-platform capability buckets so SSO `Admin` stays IT-configuration-only while local-auth families remain backward compatible.
+- **Key rules:** `FamilyRole`, `is_owner`, and `student_id` stay authoritative for family scope. IdP app roles stay authoritative for external-role intent. When they conflict, the narrower result wins. Local auth synthesizes app roles from stored family role to avoid breaking existing families.
+- **Reference:** `docs/architecture/rbac-unified-model.md` (created by Egon during task execution).
+- **Impact:** Provides canonical architecture for issue #98 implementation and downstream issues #99-#103.
+
+### Winston RBAC Test Scaffolding (2026-05-14)
+- **Author:** Winston
+- **Context:** Egon defining the unified RBAC architecture; team needs executable test expectations in place now.
+- **Decision:** Anchor provisional RBAC spec tests to provider-agnostic behavior rather than concrete implementation details. Cover the same access matrix for local sessions, OIDC, and SAML, plus role extraction, external role mapping, precedence conflicts, JWT bearer semantics, and backward compatibility with `FamilyRole` and cookie sessions. Keep the suite fully skipped until unified RBAC contracts land so it documents expectations without destabilizing CI.
+- **Implementation:** 34 skipped test cases in `backend/tests/test_rbac_unified.py`.
+- **Impact:** Egon and Ray have a concrete acceptance-test checklist for issues #97-#103 before implementation is complete. Winston can later replace skipped bodies with real setup/assertions without redefining the intended security behavior.
+
+### Ray RBAC Implementation (2026-05-14)
+- **Date:** 2026-05-14T08:57:23-05:00
+- **Author:** Ray
+- **Related issues:** #98, #99
+- **Context:** The accepted unified RBAC architecture requires backend authorization to separate persisted family membership from provider-neutral application roles while preserving local-auth compatibility.
+- **Decision:** Implement Phase 1 with a provider-neutral `AppRole` layer (`admin`, `teacher`, `student`), environment-driven external role mappings (`ROLE_MAPPING_ADMIN`, `ROLE_MAPPING_TEACHER`, `ROLE_MAPPING_STUDENT`), and effective capability calculation that combines family-role capabilities with app-role grants using narrower-wins precedence.
+- **Details:** Keep `FamilyRole` canonical for invitations, ownership, and student scoping. Split legacy `manage_family` into `manage_household` and `manage_platform`, while preserving `manage_family` as a compatibility alias for existing route guards. Synthesize app roles for local auth from family roles to preserve current behavior. Accept multiple external aliases per app role through comma-separated settings and deny explicitly supplied unmapped external roles. Store normalized `app_roles` and computed `effective_capabilities` on `AuthSession` so route enforcement reads one effective capability set.
+- **Impact:** Local cookie-session authorization remains backward compatible, external role normalization is configurable for upcoming OIDC/SAML extraction work, and future route migration can move from `manage_family` to explicit household/platform checks without breaking current callers.
+
+### Ray OIDC/SAML Role Extraction (2026-05-14)
+- **Date:** 2026-05-14T09:30:46-05:00
+- **Author:** Ray
+- **Related issues:** #100, #101
+- **Context:** The unified RBAC model and configurable external role mapping already exist, but the OIDC and SAML login flows were still provisioning identities without extracting provider role evidence into normalized app roles.
+- **Decision:** Extract external role evidence at the protocol boundary and store normalized app-role names on `ExternalIdentity.roles` before provisioning. For OIDC, read the configurable `OIDC_ROLES_CLAIM`, fall back to `OIDC_GROUPS_CLAIM` only when the roles claim is absent or empty, map fallback groups through `OIDC_GROUP_ROLE_MAP`, and ignore Entra groups overage indicators with a warning. For SAML, read the configurable `SAML_ROLE_ATTRIBUTE` first, then the common Microsoft and generic role/group attribute names, and normalize all collected values through the shared external-role mapping layer.
+- **Impact:** The auth router can now pass provider-normalized app roles directly into session construction, preserving external `admin`/`teacher`/`student` intent through `AuthSession.app_roles`. Unknown external values stay fail-safe by logging and being skipped, while startup validation now catches invalid `OIDC_GROUP_ROLE_MAP` JSON before the app boots.
+
+### Ray Provider-Agnostic RBAC Enforcement + JWT Bearer Validation (2026-05-14)
+- **Date:** 2026-05-14T09:30:46-05:00
+- **Author:** Ray
+- **Related issues:** #102, #103
+- **Context:** Unified RBAC architecture and local/OIDC/SAML role extraction exist, but route enforcement lacked provider-neutral gates and JWT bearer validation for stateless API clients.
+- **Decision:** (1) Add explicit app-role dependencies: `require_admin()`, `require_teacher()`, `require_student()`, `require_any_role(*roles)`; (2) Resolve auth source: bearer token first (if `JWT_ENABLED`), then signed cookie; (3) Preserve 401 (missing/invalid credentials) vs 403 (valid auth, lacks required role); (4) JWT validation: symmetric `JWT_SECRET` or asymmetric `JWT_JWKS_URL` (5-min cache), validate issuer/audience/expiration/family; (5) Build bearer-backed `AuthSession` directly from claims, no session record required.
+- **Impact:** Local, OIDC, SAML, and JWT bearer share same RBAC surface. Maintenance, backup, grading, curriculum, and read flows enforce app-role intent. Operators configure either `JWT_SECRET` or `JWT_JWKS_URL` when `JWT_ENABLED=true`.
+
+### Tully JWT Bearer Security Hardening (2026-05-14)
+- **Author:** Tully
+- **Context:** Egon rejected PR #104 because bearer-token authorization trusted family context and owner status from JWT input instead of canonical family membership data.
+- **Decision:** Rehydrate every bearer-backed family session from the database before authorization. Bearer requests now require an accepted `FamilyMembership` for the authenticated user and selected family, reject forged `X-Family-Id` values with 403, ignore `is_owner` claims in JWT payloads, and fail closed to `student_viewer` when family-role claims are absent. Remove the dead `_ROLE_CAPABILITIES` table so RBAC has one canonical capability source.
+- **Impact:** JWT, OIDC, SAML, and local flows now follow the architecture rule that family scope and owner semantics are database-backed, while test coverage explicitly guards against family-header injection and owner-claim escalation.
+
 ## Governance
 
 - All meaningful changes require team consensus

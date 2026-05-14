@@ -31,7 +31,15 @@ from backend.schemas.grades import (
 )
 from backend.security import AuthSession, get_family_record
 from backend.services.audit import log_event
-from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
+from backend.services.authorization import (
+    AppRole,
+    Capability,
+    ensure_student_scope,
+    get_student_scope_id,
+    require_any_role,
+    require_capabilities,
+    require_teacher,
+)
 from backend.services.cache import invalidate_gradebook_cache
 from backend.services.gradebook import ensure_default_grade_scale, map_percent_to_grade
 from backend.services.notifications import create_grading_complete_notifications
@@ -72,7 +80,7 @@ async def list_grades(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grades')),
+    auth: AuthSession = Depends(require_any_role(AppRole.teacher, AppRole.student, action='view grades')),
 ) -> GradeListResponse:
     scoped_student_id = student_id
     if auth.role == 'student_viewer':
@@ -105,7 +113,7 @@ async def create_grade(
     payload: GradeCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_grading, action='manage grades')),
+    auth: AuthSession = Depends(require_teacher(action='manage grades')),
 ) -> Grade:
     submission = await get_family_record(db, Submission, payload.submission_id, auth.family_id)
     if not submission:
@@ -270,7 +278,7 @@ async def grade_history(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.read_grades, action='view grade history')),
+    auth: AuthSession = Depends(require_any_role(AppRole.teacher, AppRole.student, action='view grade history')),
 ) -> GradeHistoryResponse:
     scoped_student_id = student_id
     if auth.role == 'student_viewer':
