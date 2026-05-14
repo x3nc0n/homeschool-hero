@@ -20,6 +20,7 @@ class ExternalIdentity:
     external_id: str
     email: str
     display_name: str
+    roles: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

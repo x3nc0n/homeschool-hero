@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from tests.contracts import ASSIGNMENTS, AUTH, GRADES, INVITATIONS, STUDENTS, assignment_payload, bootstrap_payload, student_payload
+from backend.config import settings
+from backend.security import AuthSession, resolve_external_app_roles
+from backend.services.authorization import Capability, has_capability
+from tests.contracts import ASSIGNMENTS, AUTH, GRADES, INVITATIONS, STUDENTS, assignment_payload, student_payload
 from tests.helpers import response_id, sync_csrf_header
 
 
@@ -131,3 +134,53 @@ async def test_tenant_isolation_blocks_cross_family_reads_for_same_role(authoriz
 
     detail = await tertiary_client.get(ASSIGNMENTS['detail'].format(assignment_id=assignment_id))
     assert detail.status_code == 404, detail.text
+
+
+def test_local_auth_session_synthesizes_app_roles_and_effective_capabilities() -> None:
+    auth = AuthSession(
+        user_id=1,
+        family_id=1,
+        email='owner@example.com',
+        display_name='Owner',
+        auth_provider='local',
+        role='parent',
+        is_owner=True,
+        family_name='Test Family',
+    )
+
+    assert auth.family_role == 'parent'
+    assert auth.app_roles == ['admin', 'teacher']
+    assert has_capability(auth, Capability.manage_family)
+    assert Capability.manage_platform.value in auth.effective_capabilities
+    assert Capability.manage_household.value in auth.effective_capabilities
+
+
+def test_external_role_mapping_supports_aliases_and_fails_closed(monkeypatch) -> None:
+    original_teacher = settings.role_mapping_teacher_raw
+    original_admin = settings.role_mapping_admin_raw
+    original_student = settings.role_mapping_student_raw
+    monkeypatch.setattr(settings, 'role_mapping_teacher_raw', 'Teacher,Instructor,Educator')
+    monkeypatch.setattr(settings, 'role_mapping_admin_raw', original_admin)
+    monkeypatch.setattr(settings, 'role_mapping_student_raw', original_student)
+
+    assert resolve_external_app_roles(['Instructor']) == ['teacher']
+    assert resolve_external_app_roles(['Unknown Role']) == []
+
+    monkeypatch.setattr(settings, 'role_mapping_teacher_raw', original_teacher)
+
+
+def test_external_teacher_role_is_narrower_than_parent_membership_without_admin() -> None:
+    auth = AuthSession(
+        user_id=1,
+        family_id=1,
+        email='external@example.com',
+        display_name='External Parent',
+        auth_provider='oidc',
+        family_role='parent',
+        app_roles=['teacher'],
+        is_owner=True,
+        family_name='Test Family',
+    )
+
+    assert has_capability(auth, Capability.manage_household)
+    assert not has_capability(auth, Capability.manage_platform)

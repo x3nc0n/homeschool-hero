@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, TypedDict, TypeVar
+from typing import Any, TypeVar, TypedDict
 
 import bcrypt
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -13,20 +13,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import Family, FamilyMembership, FamilySettings, User, UserPreference
+from backend.models import Family, FamilyMembership, FamilyRole, FamilySettings, User, UserPreference
 from backend.services.preferences import serialize_user_preferences
+from backend.services.rbac import (
+    capability_names,
+    derive_effective_capabilities,
+    normalize_app_role_names,
+    normalize_external_app_roles,
+    synthesize_app_roles,
+    validate_app_role_assignment,
+)
 
 serializer = URLSafeTimedSerializer(settings.secret_key, salt='homeschool-session')
 ModelT = TypeVar('ModelT')
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 
 
-class SessionClaims(TypedDict):
+class SessionClaims(TypedDict, total=False):
     user_id: int
     family_id: int
     csrf: str
     sid: str
     issued_at: int
+    app_roles: list[str]
 
 
 @dataclass(slots=True)
@@ -36,13 +45,35 @@ class AuthSession:
     email: str
     display_name: str
     auth_provider: str
-    role: str
-    is_owner: bool
-    family_name: str
+    role: str = ''
+    family_role: str = ''
+    app_roles: list[str] = field(default_factory=list)
+    is_owner: bool = False
+    family_name: str = ''
     family_state_code: str = 'CUSTOM'
     enabled_features: dict[str, bool] | None = None
     student_id: int | None = None
     ui_preferences: dict[str, str] | None = None
+    effective_capabilities: set[str] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        family_role_value = self.family_role or self.role
+        family_role = FamilyRole(family_role_value)
+        self.family_role = family_role.value
+        self.role = family_role.value
+
+        normalized_app_roles = normalize_app_role_names(self.app_roles or synthesize_app_roles(family_role))
+        validate_app_role_assignment(family_role=family_role, app_roles=normalized_app_roles)
+        self.app_roles = [app_role.value for app_role in normalized_app_roles]
+        if not self.effective_capabilities:
+            effective_capabilities = derive_effective_capabilities(
+                family_role=family_role,
+                app_roles=normalized_app_roles,
+                is_owner=self.is_owner,
+            )
+            self.effective_capabilities = capability_names(effective_capabilities)
+        else:
+            self.effective_capabilities = {capability.strip() for capability in self.effective_capabilities if capability.strip()}
 
 
 def normalize_email(email: str) -> str:
@@ -57,18 +88,31 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
 
-def _build_session_claims(user_id: int, family_id: int) -> SessionClaims:
-    return {
+def resolve_external_app_roles(external_roles: list[str] | tuple[str, ...]) -> list[str]:
+    return [
+        app_role.value
+        for app_role in normalize_external_app_roles(
+            external_roles,
+            external_role_mappings=settings.external_role_mappings,
+        )
+    ]
+
+
+def _build_session_claims(user_id: int, family_id: int, *, app_roles: list[str] | None = None) -> SessionClaims:
+    claims: SessionClaims = {
         'user_id': user_id,
         'family_id': family_id,
         'csrf': secrets.token_urlsafe(24),
         'sid': secrets.token_urlsafe(24),
         'issued_at': int(datetime.now(timezone.utc).timestamp()),
     }
+    if app_roles:
+        claims['app_roles'] = list(app_roles)
+    return claims
 
 
-def create_session_token(user_id: int, family_id: int) -> tuple[str, SessionClaims]:
-    claims = _build_session_claims(user_id, family_id)
+def create_session_token(user_id: int, family_id: int, *, app_roles: list[str] | None = None) -> tuple[str, SessionClaims]:
+    claims = _build_session_claims(user_id, family_id, app_roles=app_roles)
     return serializer.dumps(claims), claims
 
 
@@ -84,8 +128,15 @@ def is_secure_request(request: Request | None = None) -> bool:
     return request.url.scheme == 'https'
 
 
-def set_session_cookies(response: Response, request: Request | None, *, user_id: int, family_id: int) -> SessionClaims:
-    token, claims = create_session_token(user_id=user_id, family_id=family_id)
+def set_session_cookies(
+    response: Response,
+    request: Request | None,
+    *,
+    user_id: int,
+    family_id: int,
+    app_roles: list[str] | None = None,
+) -> SessionClaims:
+    token, claims = create_session_token(user_id=user_id, family_id=family_id, app_roles=app_roles)
     secure = is_secure_request(request)
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -136,13 +187,20 @@ def verify_session_token(token: str | None) -> SessionClaims | None:
         return None
     if not isinstance(issued_at, int):
         return None
-    return {
+
+    claims: SessionClaims = {
         'user_id': user_id,
         'family_id': family_id,
         'csrf': csrf,
         'sid': session_id,
         'issued_at': issued_at,
     }
+    app_roles = data.get('app_roles')
+    if app_roles is not None:
+        if not isinstance(app_roles, list) or not all(isinstance(role, str) and role.strip() for role in app_roles):
+            return None
+        claims['app_roles'] = [role.strip().lower() for role in app_roles]
+    return claims
 
 
 def session_needs_rotation(claims: SessionClaims) -> bool:
@@ -198,20 +256,24 @@ async def get_auth_session(request: Request, db: AsyncSession = Depends(get_db))
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication required')
     user, membership, family, state_code, enabled_features, preferences = row
-    return AuthSession(
-        user_id=user.id,
-        family_id=family.id,
-        email=user.email,
-        display_name=user.display_name,
-        auth_provider=user.auth_provider,
-        role=membership.role.value,
-        is_owner=membership.is_owner,
-        family_name=family.name,
-        family_state_code=(state_code or 'CUSTOM').upper(),
-        enabled_features=enabled_features or {},
-        student_id=membership.student_id,
-        ui_preferences=serialize_user_preferences(preferences),
-    )
+    try:
+        return AuthSession(
+            user_id=user.id,
+            family_id=family.id,
+            email=user.email,
+            display_name=user.display_name,
+            auth_provider=user.auth_provider,
+            family_role=membership.role.value,
+            app_roles=claims.get('app_roles', []),
+            is_owner=membership.is_owner,
+            family_name=family.name,
+            family_state_code=(state_code or 'CUSTOM').upper(),
+            enabled_features=enabled_features or {},
+            student_id=membership.student_id,
+            ui_preferences=serialize_user_preferences(preferences),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
 async def get_family_record(

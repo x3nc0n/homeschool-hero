@@ -2,6 +2,7 @@
 
 ## Learnings
 
+- 2026-05-14T08:57:23-05:00 — Unified RBAC now computes effective capabilities from both persisted `FamilyRole` and normalized app roles, with `manage_family` preserved as a compatibility alias over the new `manage_household` and `manage_platform` split.
 - 2026-05-09T14:53:01-05:00 — Demo mode now hangs off `DEMO_MODE` in backend settings and seeds only on fresh databases during startup, keeping existing families untouched while giving fresh clones a fully populated Oklahoma K-12 experience.
 - 2026-05-09T14:53:01-05:00 — The demo seed approach creates one K-12 student cohort with per-student subjects, Oklahoma-aligned curriculum packages, realistic Q1/Q2 assignments/grades, and ~60 instructional days of attendance so the UI is immediately rich after first boot.
 - 2026-05-09T15:19:46-05:00 — The CI Trivy SARIF failure was caused by the container-checks image build dying before Trivy ran: `docker build` was missing the configured Buildx builder, and the real Buildx path exposed invalid backslash patterns in `.dockerignore`; fixing it meant targeting the setup-buildx builder with `docker buildx build --load`, normalizing `.dockerignore` to forward slashes, and keeping Trivy on `trivyignores`.

@@ -1,64 +1,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from enum import Enum
 
 from fastapi import Depends, HTTPException, status
 
 from backend.models import FamilyRole
 from backend.security import AuthSession, get_auth_session
-
-
-class Capability(str, Enum):
-    manage_family = 'manage_family'
-    manage_curriculum = 'manage_curriculum'
-    manage_submissions = 'manage_submissions'
-    manage_grading = 'manage_grading'
-    manage_invitations = 'manage_invitations'
-    manage_security = 'manage_security'
-    read_students = 'read_students'
-    read_curriculum = 'read_curriculum'
-    read_submissions = 'read_submissions'
-    read_grades = 'read_grades'
-
-
-_ROLE_CAPABILITIES: dict[FamilyRole, set[Capability]] = {
-    FamilyRole.parent: set(Capability),
-    FamilyRole.co_parent: {
-        Capability.manage_family,
-        Capability.manage_curriculum,
-        Capability.manage_submissions,
-        Capability.manage_grading,
-        Capability.manage_invitations,
-        Capability.read_students,
-        Capability.read_curriculum,
-        Capability.read_submissions,
-        Capability.read_grades,
-    },
-    FamilyRole.tutor: {
-        Capability.manage_curriculum,
-        Capability.manage_submissions,
-        Capability.manage_grading,
-        Capability.read_students,
-        Capability.read_curriculum,
-        Capability.read_submissions,
-        Capability.read_grades,
-    },
-    FamilyRole.student_viewer: {
-        Capability.read_students,
-        Capability.read_curriculum,
-        Capability.read_submissions,
-        Capability.read_grades,
-    },
-}
+from backend.services.rbac import Capability, _ROLE_CAPABILITIES, expand_capability_aliases
 
 
 def role_from_auth(auth: AuthSession) -> FamilyRole:
-    return FamilyRole(auth.role)
+    return FamilyRole(auth.family_role)
 
 
 def has_capability(auth: AuthSession, capability: Capability) -> bool:
-    return capability in _ROLE_CAPABILITIES[role_from_auth(auth)]
+    required_capabilities = expand_capability_aliases(capability)
+    return any(required.value in auth.effective_capabilities for required in required_capabilities)
 
 
 def require_capabilities(*capabilities: Capability, action: str) -> Callable[[AuthSession], AuthSession]:
@@ -75,7 +32,7 @@ def require_capabilities(*capabilities: Capability, action: str) -> Callable[[Au
 
 
 def ensure_student_scope(auth: AuthSession, student_id: int, *, action: str) -> None:
-    if auth.role != FamilyRole.student_viewer.value:
+    if auth.family_role != FamilyRole.student_viewer.value:
         return
     if auth.student_id is None:
         raise HTTPException(
@@ -90,7 +47,7 @@ def ensure_student_scope(auth: AuthSession, student_id: int, *, action: str) -> 
 
 
 def get_student_scope_id(auth: AuthSession) -> int:
-    if auth.role != FamilyRole.student_viewer.value:
+    if auth.family_role != FamilyRole.student_viewer.value:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Student scope is not required for this role')
     if auth.student_id is None:
         raise HTTPException(
