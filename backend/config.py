@@ -1,3 +1,5 @@
+import json
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -33,9 +35,16 @@ class Settings(BaseSettings):
     oidc_client_id: str | None = Field(default=None, alias='OIDC_CLIENT_ID')
     oidc_client_secret: str | None = Field(default=None, alias='OIDC_CLIENT_SECRET')
     oidc_discovery_url: str | None = Field(default=None, alias='OIDC_DISCOVERY_URL')
+    oidc_roles_claim: str = Field('roles', alias='OIDC_ROLES_CLAIM')
+    oidc_groups_claim: str = Field('groups', alias='OIDC_GROUPS_CLAIM')
+    oidc_group_role_map: str = Field('', alias='OIDC_GROUP_ROLE_MAP')
     saml_metadata_url: str | None = Field(default=None, alias='SAML_METADATA_URL')
     saml_entity_id: str | None = Field(default=None, alias='SAML_ENTITY_ID')
     saml_acs_url: str | None = Field(default=None, alias='SAML_ACS_URL')
+    saml_role_attribute: str = Field(
+        'http://schemas.microsoft.com/ws/2008/06/identity/claims/role',
+        alias='SAML_ROLE_ATTRIBUTE',
+    )
     auth_auto_provision_mode: str = Field('default_family', alias='AUTH_AUTO_PROVISION_MODE')
     auth_default_family_name: str = Field('SSO Users', alias='AUTH_DEFAULT_FAMILY_NAME')
     role_mapping_admin_raw: str = Field('Admin', alias='ROLE_MAPPING_ADMIN')
@@ -124,6 +133,24 @@ class Settings(BaseSettings):
                 if existing is not None and existing != app_role:
                     raise ValueError(f"External role '{candidate}' is mapped to both '{existing}' and '{app_role}'.")
                 mappings[candidate] = app_role
+        return mappings
+
+    @property
+    def oidc_group_role_mappings(self) -> dict[str, str]:
+        raw_value = self.oidc_group_role_map.strip()
+        if not raw_value:
+            return {}
+        parsed = json.loads(raw_value)
+        if not isinstance(parsed, dict):
+            raise ValueError('OIDC_GROUP_ROLE_MAP must be a JSON object mapping groups to role names.')
+
+        mappings: dict[str, str] = {}
+        for raw_group, raw_role in parsed.items():
+            if not isinstance(raw_group, str) or not raw_group.strip():
+                raise ValueError('OIDC_GROUP_ROLE_MAP keys must be non-empty strings.')
+            if not isinstance(raw_role, str) or not raw_role.strip():
+                raise ValueError('OIDC_GROUP_ROLE_MAP values must be non-empty strings.')
+            mappings[raw_group.strip()] = raw_role.strip()
         return mappings
 
 

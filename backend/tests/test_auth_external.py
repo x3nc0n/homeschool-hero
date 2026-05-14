@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 from fastapi.responses import RedirectResponse
 
 from backend.config import settings
-from tests.contracts import AUTH, INVITATIONS, bootstrap_payload
+from backend.services.auth_oidc import extract_identity as extract_oidc_identity
+from backend.services.auth_saml import extract_identity as extract_saml_identity
+from tests.contracts import AUTH, BACKUPS, INVITATIONS, bootstrap_payload
 
 
 def _set_auth_settings(monkeypatch, **updates) -> None:
@@ -13,11 +17,18 @@ def _set_auth_settings(monkeypatch, **updates) -> None:
         'oidc_client_id': None,
         'oidc_client_secret': None,
         'oidc_discovery_url': None,
+        'oidc_roles_claim': 'roles',
+        'oidc_groups_claim': 'groups',
+        'oidc_group_role_map': '',
         'saml_metadata_url': None,
         'saml_entity_id': None,
         'saml_acs_url': None,
+        'saml_role_attribute': 'http://schemas.microsoft.com/ws/2008/06/identity/claims/role',
         'auth_auto_provision_mode': 'default_family',
         'auth_default_family_name': 'SSO Test Family',
+        'role_mapping_admin_raw': 'Admin',
+        'role_mapping_teacher_raw': 'Teacher',
+        'role_mapping_student_raw': 'Student',
     }
     defaults.update(updates)
     for key, value in defaults.items():
@@ -69,6 +80,83 @@ class _FakeSamlAuth:
 
     def get_nameid(self) -> str:
         return self._name_id
+
+
+def test_oidc_extract_identity_maps_roles_claim_and_warns_for_unmapped(caplog, monkeypatch):
+    _set_auth_settings(monkeypatch)
+    caplog.set_level(logging.WARNING)
+
+    identity = extract_oidc_identity(
+        {
+            'sub': 'oidc-user',
+            'email': 'oidc@example.com',
+            'name': 'OIDC User',
+            'roles': ['Teacher', 'Unknown Role', 'Admin'],
+        }
+    )
+
+    assert identity.roles == ('admin', 'teacher')
+    assert 'Unknown Role' in caplog.text
+
+
+def test_oidc_extract_identity_falls_back_to_groups_claim(monkeypatch):
+    _set_auth_settings(
+        monkeypatch,
+        oidc_group_role_map='{"group-admin": "Admin", "group-student": "Student"}',
+    )
+
+    identity = extract_oidc_identity(
+        {
+            'sub': 'oidc-user',
+            'email': 'oidc@example.com',
+            'name': 'OIDC User',
+            'groups': ['group-student', 'ignored-group'],
+        }
+    )
+
+    assert identity.roles == ('student',)
+
+
+def test_oidc_extract_identity_ignores_groups_fallback_when_overage_is_signaled(caplog, monkeypatch):
+    _set_auth_settings(
+        monkeypatch,
+        oidc_group_role_map='{"group-admin": "Admin"}',
+    )
+    caplog.set_level(logging.WARNING)
+
+    identity = extract_oidc_identity(
+        {
+            'sub': 'oidc-user',
+            'email': 'oidc@example.com',
+            'name': 'OIDC User',
+            '_claim_names': {'groups': 'src1'},
+            '_claim_sources': {'src1': {'endpoint': 'https://graph.example/groups'}},
+        }
+    )
+
+    assert identity.roles == ()
+    assert 'groups overage' in caplog.text
+
+
+def test_saml_extract_identity_collects_and_maps_role_attributes(caplog, monkeypatch):
+    _set_auth_settings(monkeypatch)
+    caplog.set_level(logging.WARNING)
+
+    identity = extract_saml_identity(
+        _FakeSamlAuth(
+            attributes={
+                'email': ['saml@example.com'],
+                'displayName': ['SAML User'],
+                'http://schemas.microsoft.com/ws/2008/06/identity/claims/role': ['Teacher', 'Unknown Role'],
+                'Role': ['Admin'],
+                'role': ['Student'],
+            },
+            name_id='saml-subject',
+        )
+    )
+
+    assert identity.roles == ('admin', 'teacher', 'student')
+    assert 'Unknown Role' in caplog.text
 
 
 @pytest.mark.asyncio
@@ -192,6 +280,45 @@ async def test_oidc_callback_respects_reject_mode(async_client, monkeypatch):
 
     me = await async_client.get(AUTH['me'])
     assert me.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_persists_normalized_app_roles_in_session(async_client, monkeypatch, create_family_user):
+    user = await create_family_user(
+        family_name='OIDC Tutor Family',
+        email='platform-admin@example.com',
+        password='strongpass789',
+        display_name='Platform Admin',
+        role='tutor',
+    )
+    _set_auth_settings(
+        monkeypatch,
+        auth_provider='oidc',
+        oidc_client_id='client-id',
+        oidc_client_secret='client-secret',
+        oidc_discovery_url='https://idp.example/.well-known/openid-configuration',
+    )
+    monkeypatch.setattr(
+        'backend.services.auth_oidc.create_oauth_client',
+        lambda: _FakeOAuth(
+            {
+                'sub': 'platform-admin-oidc',
+                'email': 'platform-admin@example.com',
+                'name': 'Platform Admin',
+                'roles': ['Admin'],
+            }
+        ),
+    )
+    monkeypatch.setattr('backend.services.auth_oidc._ensure_oidc_enabled', lambda: None)
+
+    response = await async_client.get(f"{AUTH['oidc_callback']}?code=test-code&state=test-state")
+
+    assert response.status_code == 302
+    assert response.headers['location'] == '/'
+
+    backup_config = await async_client.get(BACKUPS['config'])
+    assert backup_config.status_code == 200, backup_config.text
+    assert user['email'] == 'platform-admin@example.com'
 
 
 @pytest.mark.asyncio

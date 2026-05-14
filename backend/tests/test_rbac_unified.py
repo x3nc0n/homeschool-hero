@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
+from backend.config import settings
+from backend.services.auth_oidc import extract_identity as extract_oidc_identity
+from backend.services.auth_saml import extract_identity as extract_saml_identity
 from tests.contracts import BACKUPS, CURRICULUM, GRADES, STUDENTS
 
 SKIP_REASON = 'Awaiting RBAC implementation'
@@ -79,23 +84,70 @@ class TestUnifiedRBACStatusCodes:
         pass
 
 
-@pytest.mark.skip(reason=SKIP_REASON)
 class TestUnifiedRBACRoleExtraction:
-    def test_oidc_roles_claim_maps_to_internal_role(self):
+    def test_oidc_roles_claim_maps_to_internal_role(self, monkeypatch):
         """Validates OIDC `roles` claims are normalized into the unified internal RBAC role model."""
-        pass
+        monkeypatch.setattr(settings, 'oidc_roles_claim', 'roles', raising=False)
+        identity = extract_oidc_identity(
+            {
+                'sub': 'oidc-user',
+                'email': 'oidc@example.com',
+                'name': 'OIDC User',
+                'roles': ['Teacher'],
+            }
+        )
+        assert identity.roles == ('teacher',)
 
-    def test_oidc_groups_claim_is_used_as_fallback_when_roles_claim_missing(self):
+    def test_oidc_groups_claim_is_used_as_fallback_when_roles_claim_missing(self, monkeypatch):
         """Validates OIDC group claims can be used as a configured fallback when no `roles` claim is present."""
-        pass
+        monkeypatch.setattr(
+            'backend.config.settings.oidc_group_role_map',
+            '{"entra-admins": "Admin"}',
+            raising=False,
+        )
+        identity = extract_oidc_identity(
+            {
+                'sub': 'oidc-user',
+                'email': 'oidc@example.com',
+                'name': 'OIDC User',
+                'groups': ['entra-admins'],
+            }
+        )
+        assert identity.roles == ('admin',)
 
-    def test_saml_role_attribute_maps_to_internal_role(self):
+    def test_saml_role_attribute_maps_to_internal_role(self, monkeypatch):
         """Validates SAML assertion role attributes are normalized into the unified internal RBAC role model."""
-        pass
+        monkeypatch.setattr('backend.config.settings.saml_role_attribute', 'CustomRole', raising=False)
+        identity = extract_saml_identity(
+            type(
+                'SamlAuthStub',
+                (),
+                {
+                    'get_attributes': lambda self: {
+                        'email': ['saml@example.com'],
+                        'displayName': ['SAML User'],
+                        'CustomRole': ['Student'],
+                    },
+                    'get_nameid': lambda self: 'saml-user',
+                },
+            )()
+        )
+        assert identity.roles == ('student',)
 
-    def test_missing_external_role_claim_fails_closed(self):
+    def test_missing_external_role_claim_fails_closed(self, caplog):
         """Validates missing OIDC or SAML role evidence results in deny-by-default behavior unless a safe default is explicitly configured."""
-        pass
+        caplog.set_level(logging.WARNING)
+        identity = extract_oidc_identity(
+            {
+                'sub': 'oidc-user',
+                'email': 'oidc@example.com',
+                'name': 'OIDC User',
+                '_claim_names': {'groups': 'src1'},
+                '_claim_sources': {'src1': {'endpoint': 'https://graph.example/groups'}},
+            }
+        )
+        assert identity.roles == ()
+        assert 'groups overage' in caplog.text
 
 
 @pytest.mark.skip(reason=SKIP_REASON)

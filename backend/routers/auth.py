@@ -27,7 +27,6 @@ from backend.security import (
     get_auth_session,
     get_login_membership,
     hash_password,
-    resolve_external_app_roles,
     set_session_cookies,
     verify_password,
 )
@@ -298,14 +297,7 @@ async def _complete_external_login(
     maintenance = await get_maintenance_status(db)
     if maintenance.active and not membership_can_bypass_maintenance(provisioned.membership):
         return _redirect_to_login_error(maintenance.message)
-    app_roles: list[str] | None = None
-    if identity.roles:
-        app_roles = resolve_external_app_roles(list(identity.roles))
-        if not app_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail='No configured application role mapping matched the external identity roles.',
-            )
+    app_roles = list(identity.roles) if identity.roles else None
     response = _redirect_to_app()
     _set_session_cookie(
         response,

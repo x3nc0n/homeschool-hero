@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Any
 
 from fastapi import Request
 
 from backend.config import settings
-from backend.security import normalize_email
+from backend.security import normalize_email, resolve_external_app_roles
 from backend.services.auth_provisioning import ExternalIdentity
+
+logger = logging.getLogger(__name__)
 
 try:
     from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -55,6 +58,79 @@ def _coalesce_claim(claims: Mapping[str, object], *names: str) -> str | None:
     return None
 
 
+def _claim_values(claims: Mapping[str, object], *names: str) -> tuple[str, ...]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        raw_value = claims.get(name)
+        items: list[str] = []
+        if isinstance(raw_value, str):
+            items = [raw_value]
+        elif isinstance(raw_value, list | tuple | set):
+            items = [item for item in raw_value if isinstance(item, str)]
+        for item in items:
+            candidate = item.strip()
+            if candidate and candidate not in seen:
+                values.append(candidate)
+                seen.add(candidate)
+    return tuple(values)
+
+
+def _warn_unmapped_roles(external_roles: tuple[str, ...], *, source: str) -> None:
+    unmapped = sorted(
+        {
+            role
+            for role in external_roles
+            if role.strip() and role.strip().casefold() not in settings.external_role_mappings
+        }
+    )
+    if unmapped:
+        logger.warning('OIDC %s contained unmapped role values: %s', source, ', '.join(unmapped))
+
+
+def _normalize_external_roles(external_roles: tuple[str, ...], *, source: str) -> tuple[str, ...]:
+    if not external_roles:
+        return ()
+    _warn_unmapped_roles(external_roles, source=source)
+    return tuple(resolve_external_app_roles(list(external_roles)))
+
+
+def _groups_overage_detected(claims: Mapping[str, object]) -> bool:
+    claim_names = claims.get('_claim_names')
+    if not isinstance(claim_names, Mapping):
+        return False
+
+    groups_claim = (settings.oidc_groups_claim or 'groups').strip() or 'groups'
+    source_name = claim_names.get(groups_claim) or claim_names.get('groups')
+    if not isinstance(source_name, str) or not source_name.strip():
+        return False
+
+    claim_sources = claims.get('_claim_sources')
+    if isinstance(claim_sources, Mapping) and source_name.strip() not in claim_sources:
+        return False
+    return True
+
+
+def _roles_from_groups(claims: Mapping[str, object]) -> tuple[str, ...]:
+    groups_claim = (settings.oidc_groups_claim or 'groups').strip() or 'groups'
+    if _groups_overage_detected(claims):
+        logger.warning('OIDC groups overage detected; skipping groups fallback and relying on roles claim only.')
+        return ()
+
+    groups = _claim_values(claims, groups_claim, 'groups')
+    if not groups:
+        return ()
+
+    configured_group_roles = settings.oidc_group_role_mappings
+    casefold_group_roles = {group.casefold(): role for group, role in configured_group_roles.items()}
+    external_roles = [
+        casefold_group_roles[group.casefold()]
+        for group in groups
+        if group.casefold() in casefold_group_roles
+    ]
+    return _normalize_external_roles(tuple(external_roles), source=f'{groups_claim} fallback')
+
+
 def extract_identity(claims: Mapping[str, object]) -> ExternalIdentity:
     email = _coalesce_claim(claims, 'email', 'preferred_username', 'upn', 'unique_name')
     if not email:
@@ -70,11 +146,20 @@ def extract_identity(claims: Mapping[str, object]) -> ExternalIdentity:
         family_name = _coalesce_claim(claims, 'family_name')
         display_name = ' '.join(part for part in (given_name, family_name) if part) or email.split('@', 1)[0]
 
+    roles_claim = (settings.oidc_roles_claim or 'roles').strip() or 'roles'
+    roles = _normalize_external_roles(
+        _claim_values(claims, roles_claim, 'roles'),
+        source=f'{roles_claim} claim',
+    )
+    if not roles:
+        roles = _roles_from_groups(claims)
+
     return ExternalIdentity(
         provider='oidc',
         external_id=external_id,
         email=normalize_email(email),
         display_name=display_name,
+        roles=roles,
     )
 
 

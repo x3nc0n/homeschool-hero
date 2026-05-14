@@ -136,6 +136,10 @@ def _validate_auth_config(config: Settings) -> dict[str, str]:
         ]
         if missing:
             raise StartupValidationError('OIDC auth requires these settings: ' + ', '.join(missing))
+        try:
+            _ = config.oidc_group_role_mappings
+        except ValueError as exc:
+            raise StartupValidationError(str(exc)) from exc
 
     if provider == 'saml':
         missing = [
