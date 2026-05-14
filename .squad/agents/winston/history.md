@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-05-14T17:32:06-05:00 — Verified 11 RBAC negative-security cases in `backend/tests/test_rbac_unified.py`; five currently enforce today’s behavior and six bearer/SAML hardening gaps stay explicit as skipped tests awaiting Tully’s security fixes so the suite fails closed once backend validation catches up.
+
 - 2026-05-14T13:57:23-00:00 — Scribe processed spawn manifest outcomes. RBAC test scaffolding outcome recorded: 34 skipped test cases in backend/tests/test_rbac_unified.py covering local session, OIDC, SAML access matrices, role extraction, external role mapping, conflict resolution, JWT bearer semantics, and FamilyRole/cookie backward compatibility. Tests anchor to provider-agnostic behavior and serve as acceptance spec for Egon/Ray on issues #97–#103.
 
 - Project: homeschool-hero — open-source homeschool platform for families
