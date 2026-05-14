@@ -2,6 +2,12 @@
 
 ## Learnings
 
+### OIDC and SAML Role Extraction Completion (2026-05-14T14:30:46Z)
+- **Issues:** #100 (OIDC role extraction) and #101 (SAML role extraction) implemented
+- **Test results:** 231 passed / 31 skipped; 4 RBAC tests unskipped
+- **PR:** #104 updated with role extraction work
+- **Summary:** OIDC and SAML role extraction now normalize IdP claims straight into `ExternalIdentity.roles`, including OIDC `groups` fallback via `OIDC_GROUP_ROLE_MAP` and SAML attribute selection via `SAML_ROLE_ATTRIBUTE`, so external sessions can preserve provider-issued app roles without re-mapping in the auth router. Both protocols have configurable role mapping; unknown external values fail-safe with logging; startup validation catches invalid JSON configs.
+
 - 2026-05-14T09:30:46-05:00 — OIDC and SAML role extraction now normalize IdP claims straight into `ExternalIdentity.roles`, including OIDC `groups` fallback via `OIDC_GROUP_ROLE_MAP` and SAML attribute selection via `SAML_ROLE_ATTRIBUTE`, so external sessions can preserve provider-issued app roles without re-mapping in the auth router.
 - 2026-05-14T08:57:23-05:00 — Unified RBAC now computes effective capabilities from both persisted `FamilyRole` and normalized app roles, with `manage_family` preserved as a compatibility alias over the new `manage_household` and `manage_platform` split.
 - 2026-05-09T14:53:01-05:00 — Demo mode now hangs off `DEMO_MODE` in backend settings and seeds only on fresh databases during startup, keeping existing families untouched while giving fresh clones a fully populated Oklahoma K-12 experience.

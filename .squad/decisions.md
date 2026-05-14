@@ -204,6 +204,23 @@
 - **Implementation:** 34 skipped test cases in `backend/tests/test_rbac_unified.py`.
 - **Impact:** Egon and Ray have a concrete acceptance-test checklist for issues #97-#103 before implementation is complete. Winston can later replace skipped bodies with real setup/assertions without redefining the intended security behavior.
 
+### Ray RBAC Implementation (2026-05-14)
+- **Date:** 2026-05-14T08:57:23-05:00
+- **Author:** Ray
+- **Related issues:** #98, #99
+- **Context:** The accepted unified RBAC architecture requires backend authorization to separate persisted family membership from provider-neutral application roles while preserving local-auth compatibility.
+- **Decision:** Implement Phase 1 with a provider-neutral `AppRole` layer (`admin`, `teacher`, `student`), environment-driven external role mappings (`ROLE_MAPPING_ADMIN`, `ROLE_MAPPING_TEACHER`, `ROLE_MAPPING_STUDENT`), and effective capability calculation that combines family-role capabilities with app-role grants using narrower-wins precedence.
+- **Details:** Keep `FamilyRole` canonical for invitations, ownership, and student scoping. Split legacy `manage_family` into `manage_household` and `manage_platform`, while preserving `manage_family` as a compatibility alias for existing route guards. Synthesize app roles for local auth from family roles to preserve current behavior. Accept multiple external aliases per app role through comma-separated settings and deny explicitly supplied unmapped external roles. Store normalized `app_roles` and computed `effective_capabilities` on `AuthSession` so route enforcement reads one effective capability set.
+- **Impact:** Local cookie-session authorization remains backward compatible, external role normalization is configurable for upcoming OIDC/SAML extraction work, and future route migration can move from `manage_family` to explicit household/platform checks without breaking current callers.
+
+### Ray OIDC/SAML Role Extraction (2026-05-14)
+- **Date:** 2026-05-14T09:30:46-05:00
+- **Author:** Ray
+- **Related issues:** #100, #101
+- **Context:** The unified RBAC model and configurable external role mapping already exist, but the OIDC and SAML login flows were still provisioning identities without extracting provider role evidence into normalized app roles.
+- **Decision:** Extract external role evidence at the protocol boundary and store normalized app-role names on `ExternalIdentity.roles` before provisioning. For OIDC, read the configurable `OIDC_ROLES_CLAIM`, fall back to `OIDC_GROUPS_CLAIM` only when the roles claim is absent or empty, map fallback groups through `OIDC_GROUP_ROLE_MAP`, and ignore Entra groups overage indicators with a warning. For SAML, read the configurable `SAML_ROLE_ATTRIBUTE` first, then the common Microsoft and generic role/group attribute names, and normalize all collected values through the shared external-role mapping layer.
+- **Impact:** The auth router can now pass provider-normalized app roles directly into session construction, preserving external `admin`/`teacher`/`student` intent through `AuthSession.app_roles`. Unknown external values stay fail-safe by logging and being skipped, while startup validation now catches invalid `OIDC_GROUP_ROLE_MAP` JSON before the app boots.
+
 ## Governance
 
 - All meaningful changes require team consensus
