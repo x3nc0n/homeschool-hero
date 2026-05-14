@@ -48,6 +48,21 @@ AUTH_DEFAULT_FAMILY_NAME=John Family
 
 Entra often returns `preferred_username` instead of `email`; Homeschool Hero accepts either.
 
+### Entra bearer-token API access
+
+For production API bearer tokens issued by Microsoft Entra ID, configure JWT validation against the tenant-specific JWKS endpoint and require the tenant ID explicitly:
+
+```env
+JWT_ENABLED=true
+JWT_JWKS_URL=https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys
+JWT_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0
+JWT_AUDIENCE=<auth-client-id-or-api-uri>
+JWT_TENANT_ID=<tenant-id>
+JWT_ALGORITHM=RS256
+```
+
+Homeschool Hero treats the Entra `roles` claim as authoritative for RBAC, accepts `groups` only as supporting data, and still requires `X-Family-Id` on bearer requests so the app can rehydrate the caller's family membership before authorization.
+
 ## SAML 2.0 configuration
 
 Required when `AUTH_PROVIDER=saml`:

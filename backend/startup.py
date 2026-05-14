@@ -26,6 +26,7 @@ _VALID_MIGRATION_MODES = {'apply', 'warn'}
 _VALID_AUTH_PROVIDERS = {'local', 'oidc', 'saml'}
 _VALID_AUTO_PROVISION_MODES = {'default_family', 'reject'}
 _MIGRATION_FILENAME_RE = re.compile(r'^\d{8}_\d{6}_[a-z0-9_]+\.py$')
+_ENTRA_ISSUER_PREFIX = 'https://login.microsoftonline.com/'
 
 
 @dataclass(slots=True)
@@ -162,6 +163,14 @@ def _validate_auth_config(config: Settings) -> dict[str, str]:
     return {'auth_provider': provider, 'auth_auto_provision_mode': auto_provision_mode}
 
 
+def _looks_like_entra_url(value: str) -> bool:
+    return value.strip().startswith(_ENTRA_ISSUER_PREFIX)
+
+
+def _expected_entra_issuer(tenant_id: str) -> str:
+    return f'{_ENTRA_ISSUER_PREFIX}{tenant_id}/v2.0'
+
+
 def _validate_jwt_config(config: Settings) -> None:
     if not config.jwt_enabled:
         return
@@ -176,6 +185,20 @@ def _validate_jwt_config(config: Settings) -> None:
         raise StartupValidationError('JWT auth requires JWT_AUDIENCE when JWT_ENABLED=true.')
     if not config.jwt_algorithm.strip():
         raise StartupValidationError('JWT auth requires JWT_ALGORITHM when JWT_ENABLED=true.')
+
+    tenant_id = config.jwt_tenant_id.strip()
+    if not tenant_id:
+        if _looks_like_entra_url(config.jwt_issuer) or _looks_like_entra_url(config.jwt_jwks_url):
+            raise StartupValidationError('JWT auth requires JWT_TENANT_ID for Microsoft Entra ID bearer validation.')
+        return
+
+    expected_issuer = _expected_entra_issuer(tenant_id)
+    if config.jwt_issuer.strip().rstrip('/') != expected_issuer:
+        raise StartupValidationError('JWT_ISSUER must match the Entra v2.0 issuer for JWT_TENANT_ID.')
+
+    jwks_url = config.jwt_jwks_url.strip()
+    if jwks_url and f'/{tenant_id}/' not in jwks_url:
+        raise StartupValidationError('JWT_JWKS_URL must reference the configured Entra tenant when JWT_TENANT_ID is set.')
 
 
 def validate_runtime_config(config: Settings = settings) -> dict[str, object]:

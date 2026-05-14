@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any
@@ -15,6 +16,8 @@ from jwt.algorithms import RSAAlgorithm
 from backend.config import settings
 from backend.models import FamilyRole
 from backend.services.rbac import normalize_external_app_roles
+
+logger = logging.getLogger(__name__)
 
 _JWKS_CACHE_TTL_SECONDS = 300.0
 _FAMILY_ID_HEADER = 'x-family-id'
@@ -38,12 +41,16 @@ class JWTAuthenticationError(HTTPException):
 
 @dataclass(slots=True)
 class BearerSessionClaims:
-    user_id: int
     family_id: int
     email: str
     display_name: str
     app_roles: list[str]
     family_role: str
+    user_id: int | None = None
+    external_id_candidates: tuple[str, ...] = ()
+    tenant_id: str | None = None
+    groups: tuple[str, ...] = ()
+    groups_overage: bool = False
     auth_provider: str = 'jwt'
     family_name: str = ''
     family_state_code: str = 'CUSTOM'
@@ -171,11 +178,13 @@ def _build_bearer_claims(raw_claims: dict[str, Any], *, request: Request) -> Bea
             detail='Bearer token is missing family context',
         )
 
+    tenant_id = _validate_tenant_id(raw_claims)
     user_id = _claim_int(raw_claims.get('user_id')) or _claim_int(raw_claims.get('uid')) or _claim_int(raw_claims.get('sub'))
-    if user_id is None:
+    external_id_candidates = _external_id_candidates(raw_claims)
+    if user_id is None and not external_id_candidates:
         raise JWTAuthenticationError(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail='Bearer token is missing a numeric user identifier',
+            detail='Bearer token is missing a stable subject identifier',
         )
 
     email = _claim_string(raw_claims.get('email')) or _claim_string(raw_claims.get('preferred_username')) or _claim_string(raw_claims.get('sub'))
@@ -186,18 +195,24 @@ def _build_bearer_claims(raw_claims: dict[str, Any], *, request: Request) -> Bea
         )
     normalized_email = normalize_email(email)
 
+    groups, groups_overage = _extract_groups(raw_claims)
     display_name = _claim_string(raw_claims.get('name')) or _claim_string(raw_claims.get('display_name')) or normalized_email
     family_role = _resolve_family_role(raw_claims, app_roles)
     family_state_code = (_claim_string(raw_claims.get('family_state_code')) or 'CUSTOM').upper()
+    auth_provider = _claim_string(raw_claims.get('auth_provider')) or ('oidc' if tenant_id or _claim_string(raw_claims.get('oid')) else 'jwt')
 
     return BearerSessionClaims(
-        user_id=user_id,
         family_id=family_id,
         email=normalized_email,
         display_name=display_name,
         app_roles=app_roles,
         family_role=family_role,
-        auth_provider=_claim_string(raw_claims.get('auth_provider')) or 'jwt',
+        user_id=user_id,
+        external_id_candidates=external_id_candidates,
+        tenant_id=tenant_id,
+        groups=groups,
+        groups_overage=groups_overage,
+        auth_provider=auth_provider,
         family_name=_claim_string(raw_claims.get('family_name')) or '',
         family_state_code=family_state_code,
         is_owner=False,
@@ -236,6 +251,18 @@ def _claim_string(value: Any) -> str | None:
     return None
 
 
+def _claim_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        candidate = value.strip().lower()
+        if candidate in {'true', '1', 'yes'}:
+            return True
+        if candidate in {'false', '0', 'no'}:
+            return False
+    return None
+
+
 def _claim_int(value: Any) -> int | None:
     if isinstance(value, bool):
         return None
@@ -268,6 +295,62 @@ def _claim_string_dict(value: Any) -> dict[str, str] | None:
             if candidate:
                 payload[key] = candidate
     return payload or None
+
+
+def _validate_tenant_id(raw_claims: dict[str, Any]) -> str | None:
+    expected_tenant_id = settings.jwt_tenant_id.strip()
+    if not expected_tenant_id:
+        return _claim_string(raw_claims.get('tid'))
+
+    actual_tenant_id = _claim_string(raw_claims.get('tid'))
+    if actual_tenant_id is None:
+        raise JWTAuthenticationError(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Bearer token is missing tenant context',
+        )
+    if actual_tenant_id.casefold() != expected_tenant_id.casefold():
+        raise JWTAuthenticationError(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Bearer token tenant is invalid',
+        )
+    return actual_tenant_id
+
+
+def _external_id_candidates(raw_claims: dict[str, Any]) -> tuple[str, ...]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for claim_name in ('oid', 'sub'):
+        candidate = _claim_string(raw_claims.get(claim_name))
+        if candidate and candidate not in seen:
+            candidates.append(candidate)
+            seen.add(candidate)
+    return tuple(candidates)
+
+
+def _groups_overage_detected(raw_claims: dict[str, Any]) -> bool:
+    hasgroups = _claim_bool(raw_claims.get('hasgroups'))
+    if hasgroups is True:
+        return True
+
+    claim_names = raw_claims.get('_claim_names')
+    if not isinstance(claim_names, dict):
+        return False
+
+    source_name = claim_names.get('groups')
+    if not isinstance(source_name, str) or not source_name.strip():
+        return False
+
+    claim_sources = raw_claims.get('_claim_sources')
+    if isinstance(claim_sources, dict) and source_name.strip() not in claim_sources:
+        return False
+    return True
+
+
+def _extract_groups(raw_claims: dict[str, Any]) -> tuple[tuple[str, ...], bool]:
+    if _groups_overage_detected(raw_claims):
+        logger.warning('Bearer token groups overage detected; keeping roles claim authoritative for RBAC.')
+        return (), True
+    return tuple(_claim_values(raw_claims.get('groups'))), False
 
 
 def _resolve_family_role(raw_claims: dict[str, Any], app_roles: list[str]) -> str:

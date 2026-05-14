@@ -278,6 +278,41 @@ async def _get_authenticated_membership_row(
     return result.one_or_none()
 
 
+async def _get_authenticated_membership_row_by_identity(
+    db: AsyncSession,
+    *,
+    family_id: int,
+    email: str,
+    external_id_candidates: tuple[str, ...] = (),
+) -> tuple[User, FamilyMembership, Family, str | None, dict[str, bool] | None, UserPreference | None] | None:
+    base_stmt = (
+        select(User, FamilyMembership, Family, FamilySettings.state_code, FamilySettings.enabled_features, UserPreference)
+        .join(FamilyMembership, FamilyMembership.user_id == User.id)
+        .join(Family, Family.id == FamilyMembership.family_id)
+        .outerjoin(FamilySettings, FamilySettings.family_id == Family.id)
+        .outerjoin(UserPreference, UserPreference.user_id == User.id)
+        .where(
+            User.is_active.is_(True),
+            FamilyMembership.family_id == family_id,
+            FamilyMembership.accepted_at.is_not(None),
+        )
+    )
+
+    for external_id in external_id_candidates:
+        result = await db.execute(
+            base_stmt.where(
+                User.auth_provider == 'oidc',
+                User.external_id == external_id,
+            )
+        )
+        row = result.one_or_none()
+        if row is not None:
+            return row
+
+    result = await db.execute(base_stmt.where(User.email == normalize_email(email)))
+    return result.one_or_none()
+
+
 def _session_claims_from_membership_row(
     user: User,
     membership: FamilyMembership,
@@ -314,11 +349,20 @@ async def _resolve_bearer_session_claims(
     db: AsyncSession,
     bearer_claims: BearerSessionClaims,
 ) -> SessionClaims:
-    row = await _get_authenticated_membership_row(
-        db,
-        user_id=bearer_claims.user_id,
-        family_id=bearer_claims.family_id,
-    )
+    row = None
+    if bearer_claims.user_id is not None:
+        row = await _get_authenticated_membership_row(
+            db,
+            user_id=bearer_claims.user_id,
+            family_id=bearer_claims.family_id,
+        )
+    else:
+        row = await _get_authenticated_membership_row_by_identity(
+            db,
+            family_id=bearer_claims.family_id,
+            email=bearer_claims.email,
+            external_id_candidates=bearer_claims.external_id_candidates,
+        )
     if row is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Bearer token family access is forbidden')
     user, membership, family, state_code, enabled_features, preferences = row
