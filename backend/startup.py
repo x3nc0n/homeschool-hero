@@ -115,7 +115,7 @@ def _validate_upload_dir(config: Settings) -> str:
 
 
 def _validate_auth_config(config: Settings) -> dict[str, str]:
-    provider = (config.auth_provider or 'local').strip().lower() or 'local'
+    provider = config.normalized_auth_provider
     if provider not in _VALID_AUTH_PROVIDERS:
         raise StartupValidationError(
             f"AUTH_PROVIDER must be one of {', '.join(sorted(_VALID_AUTH_PROVIDERS))}; got '{config.auth_provider}'."
@@ -125,7 +125,8 @@ def _validate_auth_config(config: Settings) -> dict[str, str]:
     if auto_provision_mode not in _VALID_AUTO_PROVISION_MODES:
         raise StartupValidationError('AUTH_AUTO_PROVISION_MODE must be one of default_family or reject.')
 
-    if provider == 'oidc':
+    oidc_requested = provider == 'oidc' or bool((config.oidc_client_id or '').strip())
+    if oidc_requested:
         missing = [
             name
             for name, value in {
@@ -142,7 +143,10 @@ def _validate_auth_config(config: Settings) -> dict[str, str]:
         except ValueError as exc:
             raise StartupValidationError(str(exc)) from exc
 
-    if provider == 'saml':
+    saml_requested = provider == 'saml' or any(
+        (value or '').strip() for value in (config.saml_metadata_url, config.saml_entity_id, config.saml_acs_url)
+    )
+    if saml_requested:
         missing = [
             name
             for name, value in {

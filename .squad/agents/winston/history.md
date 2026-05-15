@@ -2,6 +2,10 @@
 
 ## Learnings
 
+- 2026-05-15T10:06:44-05:00 — Breakglass local auth must be enforced at `POST /api/auth/login`, not just hidden in capabilities; `AUTH_BREAKGLASS_LOCAL` now defaults to true and the SSO-only path is covered by a 403 regression test in `backend/tests/test_multi_provider_auth.py`.
+
+- 2026-05-15T07:10:40.494-05:00 — Added `backend/tests/test_multi_provider_auth.py` for multi-provider capability and breakglass auth coverage; 4 tests pass against current behavior and 7 are intentionally skipped until Ray/Tully land the pending implementation.
+
 - 2026-05-14T17:32:06-05:00 — Verified 11 RBAC negative-security cases in `backend/tests/test_rbac_unified.py`; five currently enforce today’s behavior and six bearer/SAML hardening gaps stay explicit as skipped tests awaiting Tully’s security fixes so the suite fails closed once backend validation catches up.
 
 - 2026-05-14T13:57:23-00:00 — Scribe processed spawn manifest outcomes. RBAC test scaffolding outcome recorded: 34 skipped test cases in backend/tests/test_rbac_unified.py covering local session, OIDC, SAML access matrices, role extraction, external role mapping, conflict resolution, JWT bearer semantics, and FamilyRole/cookie backward compatibility. Tests anchor to provider-agnostic behavior and serve as acceptance spec for Egon/Ray on issues #97–#103.

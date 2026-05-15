@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -40,6 +41,7 @@ from backend.services.notifications import create_security_alert_for_user
 from backend.services.preferences import DEFAULT_USER_PREFERENCES, serialize_user_preferences
 
 router = APIRouter(prefix='/auth', tags=['auth'])
+logger = logging.getLogger(__name__)
 
 
 def _set_session_cookie(
@@ -144,6 +146,14 @@ def _redirect_to_app() -> RedirectResponse:
     return RedirectResponse(url='/', status_code=status.HTTP_302_FOUND)
 
 
+def _is_breakglass_local_login() -> bool:
+    return settings.auth_breakglass_local and settings.normalized_auth_provider in {'oidc', 'saml'}
+
+
+def _local_login_disabled() -> bool:
+    return not settings.auth_breakglass_local and settings.normalized_auth_provider != 'local'
+
+
 @router.get('/bootstrap', response_model=BootstrapStatusResponse)
 async def bootstrap_status(db: AsyncSession = Depends(get_db)) -> BootstrapStatusResponse:
     return BootstrapStatusResponse(bootstrap_required=await bootstrap_required(db))
@@ -199,6 +209,9 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
 
 @router.post('/login', response_model=LoginResponse)
 async def login(payload: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)) -> LoginResponse:
+    if _local_login_disabled():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Local login is disabled for this deployment')
+
     maintenance = await get_maintenance_status(db)
     membership_row = await get_login_membership(db, email=payload.email, family_id=payload.family_id)
     if maintenance.active and (membership_row is None or not membership_can_bypass_maintenance(membership_row[1])):
@@ -219,6 +232,8 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid email or password')
 
     await _reset_failed_login(db, user)
+    if _is_breakglass_local_login():
+        logger.warning("Breakglass local login used while AUTH_PROVIDER=%s", settings.auth_provider)
     _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
     auth = AuthSession(
         user_id=user.id,

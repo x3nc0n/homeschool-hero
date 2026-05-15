@@ -7,13 +7,16 @@ from fastapi.responses import RedirectResponse
 
 from backend.config import settings
 from backend.services.auth_oidc import extract_identity as extract_oidc_identity
+from backend.services.auth_oidc import _ensure_oidc_enabled
 from backend.services.auth_saml import extract_identity as extract_saml_identity
+from backend.services.auth_saml import _ensure_saml_enabled
 from tests.contracts import AUTH, BACKUPS, INVITATIONS, bootstrap_payload
 
 
 def _set_auth_settings(monkeypatch, **updates) -> None:
     defaults = {
         'auth_provider': 'local',
+        'auth_breakglass_local': True,
         'oidc_client_id': None,
         'oidc_client_secret': None,
         'oidc_discovery_url': None,
@@ -52,6 +55,19 @@ class _FakeOIDCApp:
 class _FakeOAuth:
     def __init__(self, claims: dict[str, str]) -> None:
         self.oidc = _FakeOIDCApp(claims)
+
+
+class _FailingOIDCApp:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    async def authorize_access_token(self, _request):
+        raise self._exc
+
+
+class _FailingOAuth:
+    def __init__(self, exc: Exception) -> None:
+        self.oidc = _FailingOIDCApp(exc)
 
 
 class _FakeSamlAuth:
@@ -177,6 +193,73 @@ async def test_local_auth_still_works_when_provider_is_local(async_client, monke
 
 
 @pytest.mark.asyncio
+async def test_local_login_remains_available_when_provider_is_oidc(async_client, monkeypatch):
+    _set_auth_settings(monkeypatch, auth_provider='local')
+
+    registered = await async_client.post(AUTH['register'], json=bootstrap_payload())
+    assert registered.status_code == 201, registered.text
+
+    await async_client.post(AUTH['logout'])
+    _set_auth_settings(monkeypatch, auth_provider='oidc')
+
+    login = await async_client.post(
+        AUTH['login'],
+        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+    )
+
+    assert login.status_code == 200, login.text
+    assert login.json()['user']['auth_provider'] == 'local'
+
+
+@pytest.mark.asyncio
+async def test_breakglass_local_login_logs_warning_when_sso_provider_enabled(async_client, monkeypatch, caplog):
+    _set_auth_settings(monkeypatch, auth_provider='local')
+
+    registered = await async_client.post(AUTH['register'], json=bootstrap_payload())
+    assert registered.status_code == 201, registered.text
+
+    await async_client.post(AUTH['logout'])
+    _set_auth_settings(monkeypatch, auth_provider='saml', auth_breakglass_local=True)
+    caplog.set_level(logging.WARNING)
+
+    login = await async_client.post(
+        AUTH['login'],
+        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+    )
+
+    assert login.status_code == 200, login.text
+    assert 'Breakglass local login used while AUTH_PROVIDER=saml' in caplog.text
+
+
+def test_oidc_enablement_does_not_require_oidc_to_be_primary(monkeypatch):
+    _set_auth_settings(
+        monkeypatch,
+        auth_provider='local',
+        oidc_client_id='client-id',
+        oidc_client_secret='client-secret',
+        oidc_discovery_url='https://idp.example/.well-known/openid-configuration',
+    )
+    monkeypatch.setattr('backend.services.auth_oidc.AUTHLIB_AVAILABLE', True)
+
+    _ensure_oidc_enabled()
+
+
+
+def test_saml_enablement_does_not_require_saml_to_be_primary(monkeypatch):
+    _set_auth_settings(
+        monkeypatch,
+        auth_provider='local',
+        saml_metadata_url='https://idp.example/metadata',
+        saml_entity_id='https://app.example/api/auth/saml/metadata',
+        saml_acs_url='https://app.example/api/auth/saml/acs',
+    )
+    monkeypatch.setattr('backend.services.auth_saml.SAML_TOOLKIT_AVAILABLE', True)
+
+    _ensure_saml_enabled()
+
+
+
+@pytest.mark.asyncio
 async def test_oidc_login_redirects_to_identity_provider(async_client, monkeypatch):
     _set_auth_settings(
         monkeypatch,
@@ -195,6 +278,27 @@ async def test_oidc_login_redirects_to_identity_provider(async_client, monkeypat
 
     assert response.status_code == 302
     assert response.headers['location'].startswith('https://idp.example/authorize')
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_redirects_to_login_when_token_exchange_fails(async_client, monkeypatch):
+    _set_auth_settings(
+        monkeypatch,
+        auth_provider='oidc',
+        oidc_client_id='client-id',
+        oidc_client_secret='client-secret',
+        oidc_discovery_url='https://idp.example/.well-known/openid-configuration',
+    )
+    monkeypatch.setattr(
+        'backend.services.auth_oidc.create_oauth_client',
+        lambda: _FailingOAuth(RuntimeError('token endpoint unavailable')),
+    )
+    monkeypatch.setattr('backend.services.auth_oidc._ensure_oidc_enabled', lambda: None)
+
+    response = await async_client.get(f"{AUTH['oidc_callback']}?code=test-code&state=test-state")
+
+    assert response.status_code == 302
+    assert response.headers['location'].startswith('/login?error=OIDC%20sign-in%20failed')
 
 
 @pytest.mark.asyncio
