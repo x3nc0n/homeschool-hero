@@ -76,7 +76,9 @@ async def authenticate_bearer_token(request: Request) -> BearerSessionClaims | N
 
 async def _decode_token(token: str) -> dict[str, Any]:
     try:
-        key = await _resolve_signing_key(token)
+        header = jwt.get_unverified_header(token)
+        _validate_critical_headers(header)
+        key = await _resolve_signing_key(token, header=header)
         required_claims = ['exp']
         if settings.jwt_issuer.strip():
             required_claims.append('iss')
@@ -102,7 +104,18 @@ async def _decode_token(token: str) -> dict[str, Any]:
         raise JWTAuthenticationError(status_code=status.HTTP_401_UNAUTHORIZED, detail='Bearer token is invalid') from exc
 
 
-async def _resolve_signing_key(token: str) -> str | bytes | Any:
+def _validate_critical_headers(header: dict[str, Any]) -> None:
+    critical_headers = header.get('crit')
+    if critical_headers is None:
+        return
+    if not isinstance(critical_headers, list):
+        raise JWTAuthenticationError(status_code=status.HTTP_401_UNAUTHORIZED, detail='Bearer token is invalid')
+    if any(not isinstance(item, str) or not item.strip() for item in critical_headers):
+        raise JWTAuthenticationError(status_code=status.HTTP_401_UNAUTHORIZED, detail='Bearer token is invalid')
+    raise JWTAuthenticationError(status_code=status.HTTP_401_UNAUTHORIZED, detail='Bearer token is invalid')
+
+
+async def _resolve_signing_key(token: str, *, header: dict[str, Any] | None = None) -> str | bytes | Any:
     secret = settings.jwt_secret.strip()
     if secret:
         return secret
@@ -111,8 +124,8 @@ async def _resolve_signing_key(token: str) -> str | bytes | Any:
     if not jwks_url:
         raise JWTAuthenticationError(status_code=status.HTTP_401_UNAUTHORIZED, detail='JWT validation is not configured')
 
-    header = jwt.get_unverified_header(token)
-    kid = str(header.get('kid', '')).strip()
+    resolved_header = header or jwt.get_unverified_header(token)
+    kid = str(resolved_header.get('kid', '')).strip()
     jwks = await _get_jwks(jwks_url)
     keys = jwks.get('keys')
     if not isinstance(keys, list):
