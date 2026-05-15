@@ -158,6 +158,22 @@ def test_local_auth_session_synthesizes_app_roles_and_effective_capabilities() -
     assert Capability.manage_household.value in auth.effective_capabilities
 
 
+def test_student_viewer_session_includes_view_own_progress_capability() -> None:
+    auth = AuthSession(
+        user_id=2,
+        family_id=1,
+        email='student@example.com',
+        display_name='Student',
+        auth_provider='local',
+        role='student_viewer',
+        student_id=42,
+        family_name='Test Family',
+    )
+
+    assert auth.app_roles == ['student']
+    assert Capability.view_own_progress.value in auth.effective_capabilities
+
+
 def test_external_role_mapping_supports_aliases_and_fails_closed(monkeypatch) -> None:
     original_teacher = settings.role_mapping_teacher_raw
     original_admin = settings.role_mapping_admin_raw

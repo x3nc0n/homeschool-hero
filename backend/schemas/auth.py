@@ -70,6 +70,8 @@ class AuthSessionResponse(BaseModel):
     user: SessionUser
     family: SessionFamily
     membership: SessionMembership
+    app_roles: list[str] = Field(default_factory=list)
+    effective_capabilities: list[str] = Field(default_factory=list)
     ui_preferences: UserPreferencesRead
     message: str | None = None
 

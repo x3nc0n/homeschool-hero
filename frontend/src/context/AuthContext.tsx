@@ -51,7 +51,6 @@ const LEGACY_CAPABILITIES: Record<FamilyRole, string[]> = {
     'manage_submissions',
     'manage_grading',
     'manage_invitations',
-    'manage_security',
     'read_students',
     'read_curriculum',
     'read_submissions',
@@ -114,7 +113,15 @@ function getEffectiveCapabilities(session: AuthSession | null): string[] {
   }
 
   const familyRole = getRole(session)
-  return familyRole ? LEGACY_CAPABILITIES[familyRole] : []
+  if (!familyRole) {
+    return []
+  }
+
+  const fallbackCapabilities = [...LEGACY_CAPABILITIES[familyRole]]
+  if (familyRole === 'parent' && session?.membership.is_owner === true) {
+    fallbackCapabilities.push('manage_security')
+  }
+  return normalizeValues(fallbackCapabilities)
 }
 
 function getEnabledFeatures(session: AuthSession | null): Record<string, boolean> {
