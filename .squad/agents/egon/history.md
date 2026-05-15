@@ -2,6 +2,12 @@
 
 ## Learnings
 
+- 2026-05-15T14:09:23-05:00 — **PR #109 MERGED & v0.9.2 RELEASED.** Coordinator merged PR #109 (squash c131e4d) after Winston's fix (b1fd05c) and Tully's PyJWT hardening (720200f). All 300 backend tests passing. Frontend auth gating complete. Issue #105 (CVE-2026-32597) closed. Release tag v0.9.2 pushed.
+
+- 2026-05-15T14:09:23-05:00 — Re-reviewed PR #109 after Winston's fix commit b1fd05c. All 3 findings resolved: default corrected to `True`, 403 gate added to `POST /login`, naming confirmed clear. 300 tests pass, frontend build clean. Approved (posted as comment due to self-review restriction on repo).
+
+- 2026-05-15T07:43:55-05:00 — Reviewed PR #109 (multi-provider auth + breakglass local login). Rejected as-is because `AUTH_BREAKGLASS_LOCAL=false` only hides local auth in capability reporting while `POST /api/auth/login` still accepts local credentials, and the code default (`False`) conflicts with the PR’s stated/default-example `true` semantics.
+
 - 2026-05-14T13:57:23-00:00 — Scribe processed spawn manifest outcomes. Merged RBAC triage (#98–#103 dependency ordering) and unified model decision (AppRole layer, FamilyRole persistence, capability enforcement) from inbox to decisions.md. Orchestration log recorded. 4 inbox files cleared. decisions.md: 16723 → 18843 bytes (+2120).
 
 - 2026-05-14T08:57:23-05:00 — Triaged RBAC gaps across local auth, OIDC, SAML 2.0, and bearer-token access without duplicating #97. Created 6 coordinated issues with dependency chain: #98 (unified model) → #99 (external role mapping) → #100, #101 (OIDC/SAML extraction) → #102 (unified deps) → #103 (bearer tokens). All fail-closed on missing mappings.
@@ -73,3 +79,4 @@
 - **Venkman:** Reviewed 5 frontend dependency PRs; auto-merge on #20 (@types/node patch bump); closed #17–18 (React 19 major), #19 (router v7 major), #21 (tailwind v4 major) as requiring planned migration work
 - **Coordinator:** Closed security issues #22–25 (fixes already on main from prior round)
 - **Session outcome:** Dependency updates processed per team policy; major bumps held pending migration planning
+
