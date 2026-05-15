@@ -16,7 +16,7 @@ from tests.contracts import AUTH, BACKUPS, INVITATIONS, bootstrap_payload
 def _set_auth_settings(monkeypatch, **updates) -> None:
     defaults = {
         'auth_provider': 'local',
-        'auth_breakglass_local': False,
+        'auth_breakglass_local': True,
         'oidc_client_id': None,
         'oidc_client_secret': None,
         'oidc_discovery_url': None,

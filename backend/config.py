@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     auth_lockout_threshold: int = Field(5, alias='AUTH_LOCKOUT_THRESHOLD')
     auth_lockout_minutes: int = Field(15, alias='AUTH_LOCKOUT_MINUTES')
     auth_provider: str = Field('local', alias='AUTH_PROVIDER')
-    auth_breakglass_local: bool = Field(False, alias='AUTH_BREAKGLASS_LOCAL')
+    auth_breakglass_local: bool = Field(True, alias='AUTH_BREAKGLASS_LOCAL')
     oidc_client_id: str | None = Field(default=None, alias='OIDC_CLIENT_ID')
     oidc_client_secret: str | None = Field(default=None, alias='OIDC_CLIENT_SECRET')
     oidc_discovery_url: str | None = Field(default=None, alias='OIDC_DISCOVERY_URL')

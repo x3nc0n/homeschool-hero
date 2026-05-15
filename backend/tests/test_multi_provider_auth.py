@@ -11,7 +11,7 @@ from tests.contracts import AUTH
 def _set_auth_settings(monkeypatch, **updates) -> None:
     defaults = {
         'auth_provider': 'local',
-        'auth_breakglass_local': False,
+        'auth_breakglass_local': True,
         'oidc_client_id': None,
         'oidc_client_secret': None,
         'oidc_discovery_url': None,
@@ -105,7 +105,7 @@ async def test_local_login_works_when_auth_provider_oidc(authorized_client, seco
 
 
 @pytest.mark.asyncio
-async def test_local_login_still_works_when_breakglass_disabled(authorized_client, secondary_client, monkeypatch):
+async def test_local_login_returns_403_when_breakglass_disabled_for_sso(authorized_client, secondary_client, monkeypatch):
     _set_auth_settings(monkeypatch, auth_provider='oidc', oidc_client_id='client-id', auth_breakglass_local=False)
 
     login = await secondary_client.post(
@@ -113,7 +113,7 @@ async def test_local_login_still_works_when_breakglass_disabled(authorized_clien
         json={'email': 'owner@example.com', 'password': 'strongpass123'},
     )
 
-    assert login.status_code == 200, login.text
+    assert login.status_code == 403, login.text
 
 
 @pytest.mark.asyncio
