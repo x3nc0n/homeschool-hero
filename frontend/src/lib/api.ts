@@ -130,6 +130,7 @@ import { getCurrentLanguage } from '@/lib/locale'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 export const MAINTENANCE_EVENT = 'homeschool:maintenance'
+export const AUTH_EXPIRED_EVENT = 'homeschool:auth-expired'
 
 export class ApiError extends Error {
   status: number
@@ -164,6 +165,10 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return (await response.text()) as T
 }
 
+function shouldHandleAuthExpiry(path: string) {
+  return !['/auth/login', '/auth/register', '/auth/bootstrap'].includes(path)
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers || {})
   const isFormData = init?.body instanceof FormData
@@ -193,6 +198,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       message = payload?.detail || payload?.message || message
     } catch {
       // ignore parse issues
+    }
+    if (response.status === 401 && shouldHandleAuthExpiry(path)) {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { path, status: response.status } }))
     }
     if (response.status === 503 && payload?.error?.code === 'maintenance_mode') {
       window.dispatchEvent(

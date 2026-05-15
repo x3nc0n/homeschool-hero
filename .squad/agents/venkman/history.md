@@ -97,3 +97,9 @@
 - Formalized the resilience pattern fix as a team decision: backend returns partial dashboard data when optional sections fail, frontend renders profile with best-effort widget sections.
 - This pattern should be applied to future aggregated views instead of making the whole page depend on every widget succeeding.
 - Decision merged to decisions.md.
+
+### Frontend Entra/OIDC auth gating (2026-05-14T21:02:10.172-05:00)
+- `frontend/src/context/AuthContext.tsx` is now the single capability-first auth adapter: it exposes `appRoles`, `effectiveCapabilities`, `hasCapability`, and `hasRole`, while synthesizing legacy AppRole/capability fallbacks from `membership.role` for local auth sessions.
+- Route and navigation gating now key off capabilities/AppRoles in `frontend/src/App.tsx`, `frontend/src/components/layout/AppShell.tsx`, and tabbed hub pages (`CurriculumHubPage.tsx`, `DataManagementPage.tsx`, `GradebookPage.tsx`) instead of raw `FamilyRole` string checks.
+- The server-side OIDC flow remains backend-owned; the frontend just redirects to `/api/auth/oidc/login`, listens for `?error=` on `LoginPage.tsx`, and globally handles expired cookie sessions through `frontend/src/lib/api.ts` 401 dispatch plus AuthContext reset.
+- Frontend validation is `cd frontend && npm run lint && npm run build`; backend regression check is `cd backend && python -m pytest -q`.

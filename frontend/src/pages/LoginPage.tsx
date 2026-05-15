@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowRightCircle, Lock } from 'lucide-react'
@@ -10,6 +10,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
 
+function MicrosoftLogo() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg">
+      <path d="M1 1h10v10H1z" fill="#f25022" />
+      <path d="M12 1h10v10H12z" fill="#7fba00" />
+      <path d="M1 12h10v10H1z" fill="#00a4ef" />
+      <path d="M12 12h10v10H12z" fill="#ffb900" />
+    </svg>
+  )
+}
+
 export function LoginPage() {
   const { t } = useTranslation('auth')
   const { login, bootstrapRequired } = useAuth()
@@ -19,7 +30,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const providerError = searchParams.get('error') || ''
+  const providerError = useMemo(() => searchParams.get('error')?.trim() || '', [searchParams])
   const showLocalLogin = auth.local_enabled
   const showOidc = auth.oidc_enabled
   const showSaml = auth.saml_enabled
@@ -39,7 +50,8 @@ export function LoginPage() {
   }
 
   const handleExternalLogin = (provider: 'oidc' | 'saml') => {
-    window.location.href = api.getExternalAuthUrl(provider)
+    setError('')
+    window.location.assign(api.getExternalAuthUrl(provider))
   }
 
   return (
@@ -53,10 +65,20 @@ export function LoginPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
+            {providerError ? (
+              <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                <p className="font-medium">{t('login.providerErrorTitle')}</p>
+                <p>{providerError}</p>
+              </div>
+            ) : null}
             {showOidc ? (
-              <Button className="w-full" type="button" variant="outline" onClick={() => handleExternalLogin('oidc')}>
-                <ArrowRightCircle className="mr-2 h-4 w-4" />
-                {t('login.oidc')}
+              <Button
+                className="w-full justify-center gap-2 border-0 bg-[#0F6CBD] text-white hover:bg-[#115EA3] focus-visible:ring-[#0F6CBD]"
+                type="button"
+                onClick={() => handleExternalLogin('oidc')}
+              >
+                <MicrosoftLogo />
+                {t('login.microsoft')}
               </Button>
             ) : null}
             {showSaml ? (
@@ -94,14 +116,13 @@ export function LoginPage() {
                     required
                   />
                 </div>
-                {error ? <p className="text-sm text-destructive">{error}</p> : null}
+                {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
                 <Button className="w-full" type="submit" disabled={isSubmitting}>
                   <Lock className="mr-2 h-4 w-4" />
                   {isSubmitting ? t('login.submitting') : t('login.submit')}
                 </Button>
               </form>
             ) : null}
-            {providerError ? <p className="text-sm text-destructive">{providerError}</p> : null}
             {bootstrapRequired ? (
               <p className="text-sm text-muted-foreground">
                 {t('login.bootstrapPrompt')}{' '}

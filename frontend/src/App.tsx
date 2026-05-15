@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
-import type { FamilyRole, MaintenanceStatus } from '@/types/api'
+import type { MaintenanceStatus } from '@/types/api'
 import { AccessibilityEnhancer } from '@/components/common/AccessibilityEnhancer'
 import { AppShell } from '@/components/layout/AppShell'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
@@ -42,6 +42,13 @@ import { UploadPage } from '@/pages/UploadPage'
 import { MaintenancePage } from '@/pages/MaintenancePage'
 import { StatusPage } from '@/pages/StatusPage'
 
+const HOUSEHOLD_CAPABILITIES = ['manage_household', 'manage_family']
+const TEACHER_CAPABILITIES = ['manage_curriculum', 'manage_grading', 'manage_submissions']
+const STUDENT_CAPABILITIES = ['view_own_progress', 'read_grades', 'read_curriculum', 'read_submissions', 'read_students']
+const PLATFORM_CAPABILITIES = ['manage_platform']
+const SECURITY_CAPABILITIES = ['manage_security']
+const INVITATION_CAPABILITIES = ['manage_invitations']
+
 function LoadingScreen() {
   return (
     <main className="flex min-h-screen items-center justify-center text-muted-foreground">
@@ -56,9 +63,21 @@ function defaultRouteForRole() {
   return '/dashboard'
 }
 
-function RoleRoute({ allowedRoles, element, feature }: { allowedRoles: FamilyRole[]; element: JSX.Element; feature?: string }) {
-  const { role, isFeatureEnabled } = useAuth()
-  if (!role || !allowedRoles.includes(role)) {
+type AccessRouteProps = {
+  element: JSX.Element
+  feature?: string
+  anyCapabilities?: string[]
+  anyRoles?: string[]
+}
+
+function AccessRoute({ element, feature, anyCapabilities = [], anyRoles = [] }: AccessRouteProps) {
+  const { hasCapability, hasRole, isFeatureEnabled } = useAuth()
+  const hasAccess =
+    (anyCapabilities.length === 0 && anyRoles.length === 0) ||
+    anyCapabilities.some((capability) => hasCapability(capability)) ||
+    anyRoles.some((role) => hasRole(role))
+
+  if (!hasAccess) {
     return <Navigate to={defaultRouteForRole()} replace />
   }
   if (feature && !isFeatureEnabled(feature)) {
@@ -83,86 +102,68 @@ function ProtectedRoutes() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/students" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<StudentsPage />} />} />
+        <Route path="/students" element={<AccessRoute anyCapabilities={[...HOUSEHOLD_CAPABILITIES, 'manage_curriculum']} element={<StudentsPage />} />} />
         <Route
           path="/students/:studentId"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<StudentDetailPage />} />}
+          element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<StudentDetailPage />} />}
         />
-        <Route path="/subjects" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<SubjectsPage />} />} />
-        <Route path="/calendar" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<CalendarPage />} />} />
-        <Route
-          path="/attendance"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} feature="attendance" element={<AttendancePage />} />}
-        />
+        <Route path="/subjects" element={<AccessRoute anyCapabilities={TEACHER_CAPABILITIES} element={<SubjectsPage />} />} />
+        <Route path="/calendar" element={<AccessRoute anyCapabilities={TEACHER_CAPABILITIES} element={<CalendarPage />} />} />
+        <Route path="/attendance" element={<AccessRoute anyCapabilities={TEACHER_CAPABILITIES} feature="attendance" element={<AttendancePage />} />} />
         <Route
           path="/compliance"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} feature="compliance" element={<CompliancePage />} />}
+          element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} feature="compliance" element={<CompliancePage />} />}
         />
         <Route
           path="/compliance-reports"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} feature="compliance" element={<ComplianceReportsPage />} />}
+          element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} feature="compliance" element={<ComplianceReportsPage />} />}
         />
         <Route
           path="/planner"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} feature="planner" element={<PlannerPage />} />}
+          element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} feature="planner" element={<PlannerPage />} />}
         />
-        <Route path="/curriculum" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<CurriculumHubPage />} />} />
+        <Route path="/curriculum" element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<CurriculumHubPage />} />} />
         <Route
           path="/lesson-plans"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<Navigate to="/curriculum?tab=lesson-plans" replace />} />}
+          element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<Navigate to="/curriculum?tab=lesson-plans" replace />} />}
         />
-        <Route
-          path="/resources"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<Navigate to="/curriculum?tab=resources" replace />} />}
-        />
-        <Route
-          path="/imports"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<Navigate to="/data?tab=imports" replace />} />}
-        />
-        <Route
-          path="/exports"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<Navigate to="/data?tab=exports" replace />} />}
-        />
-        <Route
-          path="/settings/backups"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<Navigate to="/data?tab=backups" replace />} />}
-        />
-        <Route
-          path="/settings/restore"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<Navigate to="/data?tab=restore" replace />} />}
-        />
-        <Route path="/data" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<DataManagementPage />} />} />
+        <Route path="/resources" element={<AccessRoute anyCapabilities={TEACHER_CAPABILITIES} element={<Navigate to="/curriculum?tab=resources" replace />} />} />
+        <Route path="/imports" element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...PLATFORM_CAPABILITIES]} element={<Navigate to="/data?tab=imports" replace />} />} />
+        <Route path="/exports" element={<AccessRoute anyCapabilities={PLATFORM_CAPABILITIES} element={<Navigate to="/data?tab=exports" replace />} />} />
+        <Route path="/settings/backups" element={<AccessRoute anyCapabilities={PLATFORM_CAPABILITIES} element={<Navigate to="/data?tab=backups" replace />} />} />
+        <Route path="/settings/restore" element={<AccessRoute anyCapabilities={PLATFORM_CAPABILITIES} element={<Navigate to="/data?tab=restore" replace />} />} />
+        <Route path="/data" element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...PLATFORM_CAPABILITIES]} element={<DataManagementPage />} />} />
         <Route
           path="/portfolio"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} feature="portfolio" element={<PortfolioPage />} />}
+          element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} feature="portfolio" element={<PortfolioPage />} />}
         />
-        <Route path="/search" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<SearchPage />} />} />
-        <Route path="/assignments" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<AssignmentsPage />} />} />
-        <Route path="/upload" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<UploadPage />} />} />
-        <Route path="/grades" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<GradebookPage />} />} />
-        <Route path="/review" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<Navigate to="/grades?tab=review" replace />} />} />
-        <Route path="/quizzes" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} feature="quizzes" element={<QuizzesPage />} />} />
-        <Route path="/review/:reviewId" element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor']} element={<ReviewDetailPage />} />} />
+        <Route path="/search" element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<SearchPage />} />} />
+        <Route path="/assignments" element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<AssignmentsPage />} />} />
+        <Route path="/upload" element={<AccessRoute anyCapabilities={['manage_submissions']} element={<UploadPage />} />} />
+        <Route path="/grades" element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<GradebookPage />} />} />
+        <Route path="/review" element={<AccessRoute anyCapabilities={['manage_grading']} element={<Navigate to="/grades?tab=review" replace />} />} />
+        <Route path="/quizzes" element={<AccessRoute anyCapabilities={['manage_grading']} feature="quizzes" element={<QuizzesPage />} />} />
+        <Route path="/review/:reviewId" element={<AccessRoute anyCapabilities={['manage_grading']} element={<ReviewDetailPage />} />} />
         <Route
           path="/academic-records"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<AcademicRecordsPage />} />}
+          element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<AcademicRecordsPage />} />}
         />
         <Route
           path="/report-cards"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<Navigate to="/academic-records" replace />} />}
+          element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<Navigate to="/academic-records" replace />} />}
         />
         <Route
           path="/transcripts"
-          element={<RoleRoute allowedRoles={['parent', 'co-parent', 'tutor', 'student_viewer']} element={<Navigate to="/academic-records?tab=transcripts" replace />} />}
+          element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<Navigate to="/academic-records?tab=transcripts" replace />} />}
         />
-        <Route path="/invitations" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<InvitationsPage />} />} />
-        <Route path="/audit" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<AuditLogPage />} />} />
+        <Route path="/invitations" element={<AccessRoute anyCapabilities={INVITATION_CAPABILITIES} element={<InvitationsPage />} />} />
+        <Route path="/audit" element={<AccessRoute anyCapabilities={[...PLATFORM_CAPABILITIES, ...SECURITY_CAPABILITIES]} element={<AuditLogPage />} />} />
         <Route path="/notifications" element={<NotificationsPage />} />
-        <Route path="/settings/family" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<FamilySettingsPage />} />} />
+        <Route path="/settings/family" element={<AccessRoute anyCapabilities={HOUSEHOLD_CAPABILITIES} element={<FamilySettingsPage />} />} />
         <Route path="/settings/appearance" element={<AppearanceSettingsPage />} />
         <Route path="/notifications/preferences" element={<NotificationPreferencesPage />} />
         <Route path="/settings/notifications" element={<Navigate to="/notifications/preferences" replace />} />
-        <Route path="/settings/status" element={<RoleRoute allowedRoles={['parent', 'co-parent']} element={<StatusPage />} />} />
+        <Route path="/settings/status" element={<AccessRoute anyCapabilities={PLATFORM_CAPABILITIES} element={<StatusPage />} />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AppShell>
@@ -220,7 +221,7 @@ function AcceptInvitationRoute() {
 }
 
 function AppRoutes() {
-  const { role } = useAuth()
+  const { hasCapability } = useAuth()
   const [maintenance, setMaintenance] = useState<MaintenanceStatus | null>(null)
 
   useEffect(() => {
@@ -257,9 +258,9 @@ function AppRoutes() {
     return () => window.removeEventListener(MAINTENANCE_EVENT, handleMaintenance as EventListener)
   }, [])
 
-  const isAdmin = role === 'parent' || role === 'co-parent'
+  const canBypassMaintenance = hasCapability('manage_platform') || hasCapability('manage_security')
 
-  if (maintenance?.active && !isAdmin) {
+  if (maintenance?.active && !canBypassMaintenance) {
     return (
       <MaintenancePage
         maintenance={maintenance}

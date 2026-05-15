@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import type { AcceptInvitationPayload, AuthSession, FamilyRole, RegisterPayload, UserUiPreferences } from '@/types/api'
-import { api, ApiError } from '@/lib/api'
+import type { AcceptInvitationPayload, AppRole, AuthSession, FamilyRole, RegisterPayload, UserUiPreferences } from '@/types/api'
+import { api, ApiError, AUTH_EXPIRED_EVENT } from '@/lib/api'
 import { DEFAULT_UI_PREFERENCES } from '@/lib/theme'
 
 type AuthContextValue = {
@@ -10,8 +10,12 @@ type AuthContextValue = {
   userName: string
   familyName: string
   role: FamilyRole | null
+  appRoles: AppRole[]
+  effectiveCapabilities: string[]
   enabledFeatures: Record<string, boolean>
   isFeatureEnabled: (feature: string) => boolean
+  hasCapability: (capability: string) => boolean
+  hasRole: (role: string) => boolean
   studentId: number | null
   canEditStudents: boolean
   canManageCurriculum: boolean
@@ -31,6 +35,55 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
+const LEGACY_APP_ROLES: Record<FamilyRole, AppRole[]> = {
+  parent: ['admin', 'teacher'],
+  'co-parent': ['admin', 'teacher'],
+  tutor: ['teacher'],
+  student_viewer: ['student'],
+}
+
+const LEGACY_CAPABILITIES: Record<FamilyRole, string[]> = {
+  parent: [
+    'manage_family',
+    'manage_household',
+    'manage_platform',
+    'manage_curriculum',
+    'manage_submissions',
+    'manage_grading',
+    'manage_invitations',
+    'read_students',
+    'read_curriculum',
+    'read_submissions',
+    'read_grades',
+  ],
+  'co-parent': [
+    'manage_family',
+    'manage_household',
+    'manage_platform',
+    'manage_curriculum',
+    'manage_submissions',
+    'manage_grading',
+    'manage_invitations',
+    'read_students',
+    'read_curriculum',
+    'read_submissions',
+    'read_grades',
+  ],
+  tutor: ['manage_curriculum', 'manage_submissions', 'manage_grading', 'read_students', 'read_curriculum', 'read_submissions', 'read_grades'],
+  student_viewer: ['view_own_progress', 'read_students', 'read_curriculum', 'read_submissions', 'read_grades'],
+}
+
+const CAPABILITY_ALIASES: Record<string, string[]> = {
+  manage_family: ['manage_family', 'manage_household', 'manage_platform'],
+  manage_household: ['manage_household', 'manage_family'],
+  manage_grading: ['manage_grading', 'grade_assignments'],
+  view_own_progress: ['view_own_progress', 'read_grades', 'read_curriculum', 'read_submissions', 'read_students'],
+}
+
+function normalizeValues(values: string[] | undefined | null) {
+  return Array.from(new Set((values ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean)))
+}
+
 function getUserName(session: AuthSession | null) {
   return session?.user.display_name || 'Parent'
 }
@@ -43,6 +96,34 @@ function getRole(session: AuthSession | null): FamilyRole | null {
   return session?.membership.role || null
 }
 
+function getAppRoles(session: AuthSession | null): AppRole[] {
+  const configuredRoles = normalizeValues(session?.app_roles) as AppRole[]
+  if (configuredRoles.length) {
+    return configuredRoles
+  }
+
+  const familyRole = getRole(session)
+  return familyRole ? LEGACY_APP_ROLES[familyRole] : []
+}
+
+function getEffectiveCapabilities(session: AuthSession | null): string[] {
+  const configuredCapabilities = normalizeValues(session?.effective_capabilities)
+  if (configuredCapabilities.length) {
+    return configuredCapabilities
+  }
+
+  const familyRole = getRole(session)
+  if (!familyRole) {
+    return []
+  }
+
+  const fallbackCapabilities = [...LEGACY_CAPABILITIES[familyRole]]
+  if (familyRole === 'parent' && session?.membership.is_owner === true) {
+    fallbackCapabilities.push('manage_security')
+  }
+  return normalizeValues(fallbackCapabilities)
+}
+
 function getEnabledFeatures(session: AuthSession | null): Record<string, boolean> {
   return session?.family.enabled_features ?? {}
 }
@@ -52,11 +133,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null)
   const [bootstrapRequired, setBootstrapRequired] = useState(false)
 
+  const handleSessionExpired = useCallback(() => {
+    setSession(null)
+    setBootstrapRequired(false)
+    setLoading(false)
+  }, [])
+
   const refreshSession = useCallback(async () => {
     const currentSession = await api.me()
     setSession(currentSession)
     setBootstrapRequired(false)
   }, [])
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      handleSessionExpired()
+    }
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
+  }, [handleSessionExpired])
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -86,9 +182,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(() => {
     const role = getRole(session)
-    const isParentAdmin = role === 'parent' || role === 'co-parent'
-    const isTutor = role === 'tutor'
+    const appRoles = getAppRoles(session)
+    const effectiveCapabilities = getEffectiveCapabilities(session)
     const enabledFeatures = getEnabledFeatures(session)
+    const capabilitySet = new Set(effectiveCapabilities)
+    const roleSet = new Set(appRoles)
+    const hasCapability = (capability: string) => {
+      const candidates = CAPABILITY_ALIASES[capability] ?? [capability]
+      return candidates.some((candidate) => capabilitySet.has(candidate))
+    }
+    const hasRole = (appRole: string) => roleSet.has(appRole.trim().toLowerCase() as AppRole)
+
     return {
       isAuthenticated: Boolean(session?.authenticated),
       loading,
@@ -96,16 +200,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userName: getUserName(session),
       familyName: getFamilyName(session),
       role,
+      appRoles,
+      effectiveCapabilities,
       enabledFeatures,
       isFeatureEnabled: (feature: string) => enabledFeatures[feature] !== false,
+      hasCapability,
+      hasRole,
       studentId: session?.membership.student_id ?? null,
-      canEditStudents: isParentAdmin,
-      canManageCurriculum: isParentAdmin || isTutor,
-      canManageGrading: isParentAdmin || isTutor,
-      canManageInvitations: isParentAdmin,
-      canViewAuditLog: isParentAdmin,
-      canUploadSubmissions: isParentAdmin || isTutor,
-      canReviewQueue: isParentAdmin || isTutor,
+      canEditStudents: hasCapability('manage_household'),
+      canManageCurriculum: hasCapability('manage_curriculum'),
+      canManageGrading: hasCapability('manage_grading'),
+      canManageInvitations: hasCapability('manage_invitations'),
+      canViewAuditLog: hasCapability('manage_platform') || hasCapability('manage_security'),
+      canUploadSubmissions: hasCapability('manage_submissions'),
+      canReviewQueue: hasCapability('manage_grading'),
       uiPreferences: session?.ui_preferences ?? DEFAULT_UI_PREFERENCES,
       setUiPreferences: (preferences: UserUiPreferences) => {
         setSession((current) => (current ? { ...current, ui_preferences: preferences } : current))
@@ -126,13 +234,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setBootstrapRequired(false)
       },
       logout: async () => {
-        await api.logout()
-        setSession(null)
-        setBootstrapRequired(false)
+        try {
+          await api.logout()
+        } finally {
+          handleSessionExpired()
+        }
       },
       refreshSession,
     }
-  }, [bootstrapRequired, loading, refreshSession, session])
+  }, [bootstrapRequired, handleSessionExpired, loading, refreshSession, session])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

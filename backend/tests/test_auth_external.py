@@ -316,6 +316,11 @@ async def test_oidc_callback_persists_normalized_app_roles_in_session(async_clie
     assert response.status_code == 302
     assert response.headers['location'] == '/'
 
+    session = await async_client.get(AUTH['me'])
+    assert session.status_code == 200, session.text
+    assert session.json()['app_roles'] == ['admin']
+    assert 'manage_platform' in session.json()['effective_capabilities']
+
     backup_config = await async_client.get(BACKUPS['config'])
     assert backup_config.status_code == 200, backup_config.text
     assert user['email'] == 'platform-admin@example.com'

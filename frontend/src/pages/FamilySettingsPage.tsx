@@ -296,25 +296,31 @@ export function FamilySettingsPage() {
           <CardDescription>Choose which optional areas stay visible in navigation and available by route.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {featureDefinitions.map((feature) => (
-            <label key={feature.key} className="flex items-start justify-between gap-4 rounded-lg border p-4">
-              <div className="space-y-1">
-                <p className="font-medium">{feature.label}</p>
-                <p className="text-sm text-muted-foreground">{feature.description}</p>
+          {featureDefinitions.map((feature) => {
+            const inputId = `family-feature-${feature.key}`
+            return (
+              <div key={feature.key} className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                <div className="space-y-1">
+                  <Label htmlFor={inputId} className="font-medium">
+                    {feature.label}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">{feature.description}</p>
+                </div>
+                <input
+                  id={inputId}
+                  type="checkbox"
+                  className="mt-1 h-4 w-4"
+                  checked={featureSettings[feature.key]}
+                  disabled={savingFeatures}
+                  onChange={(event) => {
+                    const nextFeatures = { ...featureSettings, [feature.key]: event.target.checked }
+                    setFeatureSettings(nextFeatures)
+                    void saveFeatures(nextFeatures)
+                  }}
+                />
               </div>
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4"
-                checked={featureSettings[feature.key]}
-                disabled={savingFeatures}
-                onChange={(event) => {
-                  const nextFeatures = { ...featureSettings, [feature.key]: event.target.checked }
-                  setFeatureSettings(nextFeatures)
-                  void saveFeatures(nextFeatures)
-                }}
-              />
-            </label>
-          ))}
+            )
+          })}
         </CardContent>
       </Card>
 

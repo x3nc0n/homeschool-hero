@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { FamilyRole } from '@/types/api'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/context/AuthContext'
 import { BackupsPage } from './BackupsPage'
@@ -12,17 +11,17 @@ const TABS = ['imports', 'exports', 'backups', 'restore'] as const
 
 type TabValue = (typeof TABS)[number]
 
-const tabRoles: Record<TabValue, FamilyRole[]> = {
-  imports: ['parent', 'co-parent', 'tutor'],
-  exports: ['parent', 'co-parent'],
-  backups: ['parent', 'co-parent'],
-  restore: ['parent', 'co-parent'],
-}
-
 export default function DataManagementPage() {
-  const { role } = useAuth()
+  const { hasCapability } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const availableTabs = TABS.filter((tab) => (role ? tabRoles[tab].includes(role) : false))
+  const canManageImports = hasCapability('manage_curriculum') || hasCapability('manage_grading') || hasCapability('manage_platform')
+  const canManagePlatform = hasCapability('manage_platform')
+  const availableTabs = TABS.filter((tab) => {
+    if (tab === 'imports') {
+      return canManageImports
+    }
+    return canManagePlatform
+  })
   const fallbackTab = availableTabs[0] ?? 'imports'
   const requestedTab = searchParams.get('tab')
   const activeTab = availableTabs.includes(requestedTab as TabValue) ? (requestedTab as TabValue) : fallbackTab

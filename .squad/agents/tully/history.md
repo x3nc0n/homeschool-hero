@@ -24,3 +24,6 @@
 - All backend tests pass: 273 passed/2 skipped
 - Changes pushed to main branch
 - Decision recorded: "Tully JWT Bearer Security Hardening (2026-05-14)" in decisions.md
+- 2026-05-14T22:20:11.663-05:00 — `backend/schemas/auth.py` + `backend/routers/auth.py` must keep `/api/auth/me` aligned with `AuthSession` by returning canonical `app_roles` and `effective_capabilities`, or the frontend drops into legacy RBAC fallback.
+- 2026-05-14T22:20:11.663-05:00 — `frontend/src/context/AuthContext.tsx` legacy capability synthesis must mirror backend fail-closed ownership rules: only owner-parents inherit `manage_security` when RBAC fields are absent.
+- 2026-05-14T22:20:11.663-05:00 — `backend/services/rbac.py` is the canonical capability list; `view_own_progress` now belongs there for `student_viewer`/`student` access so frontend route guards and navigation can rely on a real backend-backed capability.

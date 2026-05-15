@@ -22,6 +22,8 @@ async def test_bootstrap_register_creates_owner_session(async_client):
     assert payload['family']['name'] == 'Test Family'
     assert payload['family']['enabled_features'] == {}
     assert payload['membership']['is_owner'] is True
+    assert payload['app_roles'] == ['admin', 'teacher']
+    assert 'manage_security' in payload['effective_capabilities']
 
     status_after = await async_client.get(AUTH['bootstrap'])
     assert status_after.status_code == 200, status_after.text

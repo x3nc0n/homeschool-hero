@@ -15,6 +15,7 @@ class Capability(str, Enum):
     manage_grading = 'manage_grading'
     manage_invitations = 'manage_invitations'
     manage_security = 'manage_security'
+    view_own_progress = 'view_own_progress'
     read_students = 'read_students'
     read_curriculum = 'read_curriculum'
     read_submissions = 'read_submissions'
@@ -35,6 +36,8 @@ _READ_CAPABILITIES = {
     Capability.read_submissions,
     Capability.read_grades,
 }
+
+_STUDENT_PROGRESS_CAPABILITIES = {Capability.view_own_progress}
 
 _TEACHER_CAPABILITIES = {
     Capability.manage_household,
@@ -68,13 +71,13 @@ _FAMILY_ROLE_CAPABILITIES: dict[FamilyRole, set[Capability]] = {
         Capability.manage_grading,
         *_READ_CAPABILITIES,
     },
-    FamilyRole.student_viewer: set(_READ_CAPABILITIES),
+    FamilyRole.student_viewer: {*_STUDENT_PROGRESS_CAPABILITIES, *_READ_CAPABILITIES},
 }
 
 _APP_ROLE_CAPABILITIES: dict[AppRole, set[Capability]] = {
     AppRole.admin: {Capability.manage_platform},
     AppRole.teacher: set(_TEACHER_CAPABILITIES),
-    AppRole.student: set(_READ_CAPABILITIES),
+    AppRole.student: {*_STUDENT_PROGRESS_CAPABILITIES, *_READ_CAPABILITIES},
 }
 
 _FAMILY_SCOPED_CAPABILITIES = {
@@ -83,6 +86,7 @@ _FAMILY_SCOPED_CAPABILITIES = {
     Capability.manage_submissions,
     Capability.manage_grading,
     Capability.manage_invitations,
+    *_STUDENT_PROGRESS_CAPABILITIES,
     *_READ_CAPABILITIES,
 }
 

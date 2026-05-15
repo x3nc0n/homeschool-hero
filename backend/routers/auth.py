@@ -129,6 +129,8 @@ def _session_response(auth: AuthSession, message: str | None = None) -> SessionR
             'enabled_features': auth.enabled_features or {},
         },
         membership={'role': auth.role, 'is_owner': auth.is_owner, 'student_id': auth.student_id},
+        app_roles=list(auth.app_roles),
+        effective_capabilities=sorted(auth.effective_capabilities),
         ui_preferences=auth.ui_preferences or DEFAULT_USER_PREFERENCES.model_dump(),
         message=message,
     )

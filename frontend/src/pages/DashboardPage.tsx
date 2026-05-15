@@ -105,7 +105,7 @@ function StudentSummaryCard({ summary }: { summary: DashboardStudentSummary }) {
 }
 
 export function DashboardPage() {
-  const { role } = useAuth()
+  const { hasRole } = useAuth()
   const { dashboard, loading, error, reload } = useDashboard()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
@@ -113,7 +113,7 @@ export function DashboardPage() {
   if (error) return <ErrorState message={error} onRetry={() => void reload()} />
   if (!dashboard) return <ErrorState message="Dashboard is unavailable." onRetry={() => void reload()} />
 
-  const isStudentView = role === 'student_viewer'
+  const isStudentView = hasRole('student')
   const toggleSection = (sectionKey: string) =>
     setCollapsed((current) => ({
       ...current,
