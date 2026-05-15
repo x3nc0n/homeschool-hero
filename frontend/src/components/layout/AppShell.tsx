@@ -26,7 +26,7 @@ import {
   X,
 } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import type { FamilyRole } from '@/types/api'
+import type { AppRole, FamilyRole } from '@/types/api'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/context/NotificationsContext'
 import { usePwa } from '@/context/PwaContext'
@@ -42,7 +42,8 @@ type NavItem = {
   to: string
   label: string
   icon: typeof LayoutDashboard
-  roles: FamilyRole[]
+  capabilities?: string[]
+  appRoles?: AppRole[]
   feature?: string
 }
 
@@ -55,39 +56,84 @@ const navGroups: NavGroup[] = [
   {
     label: 'Academics',
     items: [
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/students', label: 'Students', icon: Users, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/subjects', label: 'Subjects', icon: BookOpen, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/curriculum', label: 'Curriculum', icon: GraduationCap, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/calendar', label: 'Calendar', icon: Calendar, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/planner', label: 'Planner', icon: CalendarDays, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'], feature: 'planner' },
-      { to: '/attendance', label: 'Attendance', icon: UserCheck, roles: ['parent', 'co-parent', 'tutor'], feature: 'attendance' },
+      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/students', label: 'Students', icon: Users, capabilities: ['manage_household', 'manage_family', 'manage_curriculum'] },
+      { to: '/subjects', label: 'Subjects', icon: BookOpen, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'] },
+      {
+        to: '/curriculum',
+        label: 'Curriculum',
+        icon: GraduationCap,
+        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_curriculum', 'read_grades'],
+        appRoles: ['student'],
+      },
+      { to: '/calendar', label: 'Calendar', icon: Calendar, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'] },
+      {
+        to: '/planner',
+        label: 'Planner',
+        icon: CalendarDays,
+        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_curriculum', 'read_grades'],
+        appRoles: ['student'],
+        feature: 'planner',
+      },
+      { to: '/attendance', label: 'Attendance', icon: UserCheck, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'], feature: 'attendance' },
     ],
   },
   {
     label: 'Schoolwork',
     items: [
-      { to: '/assignments', label: 'Assignments', icon: FileText, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/upload', label: 'Upload', icon: Upload, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/quizzes', label: 'Quizzes', icon: ClipboardCheck, roles: ['parent', 'co-parent', 'tutor'], feature: 'quizzes' },
-      { to: '/grades', label: 'Gradebook', icon: BarChart, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+      {
+        to: '/assignments',
+        label: 'Assignments',
+        icon: FileText,
+        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_curriculum', 'read_submissions', 'read_grades'],
+        appRoles: ['student'],
+      },
+      { to: '/upload', label: 'Upload', icon: Upload, capabilities: ['manage_submissions'] },
+      { to: '/quizzes', label: 'Quizzes', icon: ClipboardCheck, capabilities: ['manage_grading'], feature: 'quizzes' },
+      {
+        to: '/grades',
+        label: 'Gradebook',
+        icon: BarChart,
+        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades'],
+        appRoles: ['student'],
+      },
     ],
   },
   {
     label: 'Records',
     items: [
-      { to: '/academic-records', label: 'Academic Records', icon: FileStack, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/portfolio', label: 'Portfolio', icon: BookOpenCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'], feature: 'portfolio' },
-      { to: '/compliance', label: 'Compliance', icon: ShieldCheck, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'], feature: 'compliance' },
+      {
+        to: '/academic-records',
+        label: 'Academic Records',
+        icon: FileStack,
+        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades', 'read_curriculum'],
+        appRoles: ['student'],
+      },
+      {
+        to: '/portfolio',
+        label: 'Portfolio',
+        icon: BookOpenCheck,
+        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades', 'read_curriculum'],
+        appRoles: ['student'],
+        feature: 'portfolio',
+      },
+      {
+        to: '/compliance',
+        label: 'Compliance',
+        icon: ShieldCheck,
+        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades', 'read_curriculum'],
+        appRoles: ['student'],
+        feature: 'compliance',
+      },
     ],
   },
   {
     label: 'Settings',
     items: [
-      { to: '/settings/family', label: 'Family & Features', icon: Settings, roles: ['parent', 'co-parent'] },
-      { to: '/data', label: 'Data Management', icon: Database, roles: ['parent', 'co-parent', 'tutor'] },
-      { to: '/settings/appearance', label: 'Appearance', icon: Palette, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
-      { to: '/notifications/preferences', label: 'Notifications', icon: Bell, roles: ['parent', 'co-parent', 'tutor', 'student_viewer'] },
+      { to: '/settings/family', label: 'Family & Features', icon: Settings, capabilities: ['manage_household', 'manage_family'] },
+      { to: '/data', label: 'Data Management', icon: Database, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'manage_platform'] },
+      { to: '/settings/appearance', label: 'Appearance', icon: Palette },
+      { to: '/notifications/preferences', label: 'Notifications', icon: Bell },
     ],
   },
 ]
@@ -109,7 +155,7 @@ const focusableSelector = [
 ].join(', ')
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { logout, userName, familyName, role, enabledFeatures } = useAuth()
+  const { logout, userName, familyName, role, enabledFeatures, hasCapability, hasRole } = useAuth()
   const { preferences } = useTheme()
   const { recent, unreadCount, markAllAsRead, markAsRead } = useNotifications()
   const { canInstall, installApp, isOfflineReady, isOnline, needsRefresh, dismissOfflineReady, applyUpdate } = usePwa()
@@ -129,12 +175,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       navGroups
         .map((group) => ({
           ...group,
-          items: group.items.filter(
-            (item) => (role ? item.roles.includes(role) : false) && (item.feature ? enabledFeatures[item.feature] !== false : true),
-          ),
+          items: group.items.filter((item) => {
+            const capabilityMatch = item.capabilities?.some((capability) => hasCapability(capability)) ?? false
+            const roleMatch = item.appRoles?.some((appRole) => hasRole(appRole)) ?? false
+            const hasAccess = (!item.capabilities?.length && !item.appRoles?.length) || capabilityMatch || roleMatch
+            return hasAccess && (item.feature ? enabledFeatures[item.feature] !== false : true)
+          }),
         }))
         .filter((group) => group.items.length),
-    [enabledFeatures, role],
+    [enabledFeatures, hasCapability, hasRole],
   )
 
   useEffect(() => {

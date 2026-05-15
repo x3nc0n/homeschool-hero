@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { FamilyRole } from '@/types/api'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/context/AuthContext'
 import { CurriculumPage } from './CurriculumPage'
@@ -11,16 +10,16 @@ const TABS = ['curriculum', 'lesson-plans', 'resources'] as const
 
 type TabValue = (typeof TABS)[number]
 
-const tabRoles: Record<TabValue, FamilyRole[]> = {
-  curriculum: ['parent', 'co-parent', 'tutor'],
-  'lesson-plans': ['parent', 'co-parent', 'tutor', 'student_viewer'],
-  resources: ['parent', 'co-parent', 'tutor'],
-}
-
 export default function CurriculumHubPage() {
-  const { role } = useAuth()
+  const { canManageCurriculum, hasCapability, hasRole } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const availableTabs = TABS.filter((tab) => (role ? tabRoles[tab].includes(role) : false))
+  const canViewStudentWorkspace = hasCapability('view_own_progress') || hasCapability('read_curriculum') || hasRole('student')
+  const availableTabs = TABS.filter((tab) => {
+    if (tab === 'lesson-plans') {
+      return canManageCurriculum || canViewStudentWorkspace
+    }
+    return canManageCurriculum
+  })
   const fallbackTab = availableTabs[0] ?? 'curriculum'
   const requestedTab = searchParams.get('tab')
   const activeTab = availableTabs.includes(requestedTab as TabValue) ? (requestedTab as TabValue) : fallbackTab

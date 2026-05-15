@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { FamilyRole } from '@/types/api'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/context/AuthContext'
 import { GradesPage } from './GradesPage'
@@ -10,15 +9,11 @@ const TABS = ['grades', 'review'] as const
 
 type TabValue = (typeof TABS)[number]
 
-const tabRoles: Record<TabValue, FamilyRole[]> = {
-  grades: ['parent', 'co-parent', 'tutor', 'student_viewer'],
-  review: ['parent', 'co-parent', 'tutor'],
-}
-
 export default function GradebookPage() {
-  const { role } = useAuth()
+  const { canManageGrading, hasCapability, hasRole } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const availableTabs = TABS.filter((tab) => (role ? tabRoles[tab].includes(role) : false))
+  const canViewGrades = canManageGrading || hasCapability('view_own_progress') || hasCapability('read_grades') || hasRole('student')
+  const availableTabs = TABS.filter((tab) => (tab === 'review' ? canManageGrading : canViewGrades))
   const fallbackTab = availableTabs[0] ?? 'grades'
   const requestedTab = searchParams.get('tab')
   const activeTab = availableTabs.includes(requestedTab as TabValue) ? (requestedTab as TabValue) : fallbackTab

@@ -17,6 +17,7 @@ export type GradingJobStatus =
   | 'reviewed'
   | 'final'
 export type FamilyRole = 'parent' | 'co-parent' | 'tutor' | 'student_viewer'
+export type AppRole = 'admin' | 'teacher' | 'student'
 export type CapabilityName = 'ai_grading' | 'email' | 'backup' | 'ocr'
 export type AuthProvider = 'local' | 'oidc' | 'saml'
 export type ThemePreference = 'light' | 'dark' | 'high-contrast' | 'system'
@@ -283,6 +284,8 @@ export interface AuthSession {
   user: User
   family: Family
   membership: FamilyMembership
+  app_roles?: AppRole[]
+  effective_capabilities?: string[]
   ui_preferences: UserUiPreferences
   message?: string
 }
