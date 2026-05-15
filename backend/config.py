@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     auth_lockout_threshold: int = Field(5, alias='AUTH_LOCKOUT_THRESHOLD')
     auth_lockout_minutes: int = Field(15, alias='AUTH_LOCKOUT_MINUTES')
     auth_provider: str = Field('local', alias='AUTH_PROVIDER')
+    auth_breakglass_local: bool = Field(False, alias='AUTH_BREAKGLASS_LOCAL')
     oidc_client_id: str | None = Field(default=None, alias='OIDC_CLIENT_ID')
     oidc_client_secret: str | None = Field(default=None, alias='OIDC_CLIENT_SECRET')
     oidc_discovery_url: str | None = Field(default=None, alias='OIDC_DISCOVERY_URL')
@@ -126,6 +127,29 @@ class Settings(BaseSettings):
     @property
     def upload_allowed_mime_types(self) -> set[str]:
         return {item.strip().lower() for item in self.upload_allowed_mime_types_raw.split(',') if item.strip()}
+
+    @property
+    def normalized_auth_provider(self) -> str:
+        return (self.auth_provider or 'local').strip().lower() or 'local'
+
+    @property
+    def local_auth_enabled(self) -> bool:
+        return self.normalized_auth_provider == 'local' or self.auth_breakglass_local
+
+    @property
+    def oidc_configured(self) -> bool:
+        return bool((self.oidc_client_id or '').strip())
+
+    @property
+    def saml_configured(self) -> bool:
+        return all(
+            (value or '').strip()
+            for value in (
+                self.saml_metadata_url,
+                self.saml_entity_id,
+                self.saml_acs_url,
+            )
+        )
 
     @property
     def external_role_mappings(self) -> dict[str, str]:

@@ -36,8 +36,17 @@ class SAMLConfigurationError(RuntimeError):
 
 
 def _ensure_saml_enabled() -> None:
-    if settings.auth_provider.strip().lower() != 'saml':
-        raise SAMLConfigurationError('SAML authentication is not enabled.')
+    missing = [
+        name
+        for name, value in {
+            'SAML_METADATA_URL': settings.saml_metadata_url,
+            'SAML_ENTITY_ID': settings.saml_entity_id,
+            'SAML_ACS_URL': settings.saml_acs_url,
+        }.items()
+        if not (value or '').strip()
+    ]
+    if missing:
+        raise SAMLConfigurationError('SAML authentication requires these settings: ' + ', '.join(missing))
     if not SAML_TOOLKIT_AVAILABLE:
         raise SAMLConfigurationError('SAML authentication requires the optional python3-saml dependency.')
 

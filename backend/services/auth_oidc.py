@@ -31,9 +31,26 @@ class OIDCConfigurationError(RuntimeError):
     """Raised when OIDC is not available or returns unusable claims."""
 
 
+def _oidc_callback_error_message(exc: Exception) -> str:
+    if isinstance(exc, OAuthError):
+        detail = str(getattr(exc, 'error', '') or '').strip()
+        if detail:
+            return f'OIDC sign-in failed: {detail}'
+    return 'OIDC sign-in failed. Please try again.'
+
+
 def _ensure_oidc_enabled() -> None:
-    if settings.auth_provider.strip().lower() != 'oidc':
-        raise OIDCConfigurationError('OIDC authentication is not enabled.')
+    missing = [
+        name
+        for name, value in {
+            'OIDC_CLIENT_ID': settings.oidc_client_id,
+            'OIDC_CLIENT_SECRET': settings.oidc_client_secret,
+            'OIDC_DISCOVERY_URL': settings.oidc_discovery_url,
+        }.items()
+        if not (value or '').strip()
+    ]
+    if missing:
+        raise OIDCConfigurationError('OIDC authentication requires these settings: ' + ', '.join(missing))
     if not AUTHLIB_AVAILABLE:
         raise OIDCConfigurationError('OIDC authentication requires the optional authlib dependency.')
 
@@ -175,15 +192,17 @@ async def complete_oidc_login(request: Request) -> ExternalIdentity:
     oauth = create_oauth_client()
     try:
         token = await oauth.oidc.authorize_access_token(request)
-    except OAuthError as exc:
-        raise OIDCConfigurationError(f'OIDC sign-in failed: {exc.error}') from exc
+    except Exception as exc:
+        logger.warning('OIDC callback token exchange failed.', exc_info=exc)
+        raise OIDCConfigurationError(_oidc_callback_error_message(exc)) from exc
 
     claims: Mapping[str, object] | None = token.get('userinfo') if isinstance(token, dict) else None
     if claims is None:
         try:
             parsed = await oauth.oidc.parse_id_token(request, token)
-        except Exception:
-            parsed = None
+        except Exception as exc:
+            logger.warning('OIDC callback ID token parsing failed.', exc_info=exc)
+            raise OIDCConfigurationError(_oidc_callback_error_message(exc)) from exc
         if isinstance(parsed, Mapping):
             claims = parsed
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -40,6 +41,7 @@ from backend.services.notifications import create_security_alert_for_user
 from backend.services.preferences import DEFAULT_USER_PREFERENCES, serialize_user_preferences
 
 router = APIRouter(prefix='/auth', tags=['auth'])
+logger = logging.getLogger(__name__)
 
 
 def _set_session_cookie(
@@ -144,6 +146,10 @@ def _redirect_to_app() -> RedirectResponse:
     return RedirectResponse(url='/', status_code=status.HTTP_302_FOUND)
 
 
+def _is_breakglass_local_login() -> bool:
+    return settings.auth_breakglass_local and settings.normalized_auth_provider in {'oidc', 'saml'}
+
+
 @router.get('/bootstrap', response_model=BootstrapStatusResponse)
 async def bootstrap_status(db: AsyncSession = Depends(get_db)) -> BootstrapStatusResponse:
     return BootstrapStatusResponse(bootstrap_required=await bootstrap_required(db))
@@ -219,6 +225,8 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid email or password')
 
     await _reset_failed_login(db, user)
+    if _is_breakglass_local_login():
+        logger.warning("Breakglass local login used while AUTH_PROVIDER=%s", settings.auth_provider)
     _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
     auth = AuthSession(
         user_id=user.id,

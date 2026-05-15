@@ -34,16 +34,25 @@ def _status(name: str, *, enabled: bool, configured: bool, reason: str, details:
 
 
 def get_auth_providers(config: Settings = settings) -> dict[str, Any]:
-    provider = (config.auth_provider or 'local').strip().lower() or 'local'
-    available_providers = ['local']
-    if provider in {'oidc', 'saml'}:
-        available_providers.append(provider)
+    provider = config.normalized_auth_provider
+    local_enabled = config.local_auth_enabled
+    oidc_enabled = config.oidc_configured
+    saml_enabled = config.saml_configured
+
+    available_providers: list[str] = []
+    if local_enabled:
+        available_providers.append('local')
+    if oidc_enabled:
+        available_providers.append('oidc')
+    if saml_enabled:
+        available_providers.append('saml')
+
     return {
         'current_provider': provider,
         'available_providers': available_providers,
-        'local_enabled': True,
-        'oidc_enabled': provider == 'oidc',
-        'saml_enabled': provider == 'saml',
+        'local_enabled': local_enabled,
+        'oidc_enabled': oidc_enabled,
+        'saml_enabled': saml_enabled,
     }
 
 

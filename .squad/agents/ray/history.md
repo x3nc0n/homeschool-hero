@@ -2,6 +2,7 @@
 
 ## Learnings
 
+- 2026-05-15T07:10:40.494-05:00 — Auth capabilities now separate the primary login method (`AUTH_PROVIDER`) from provider visibility: OIDC shows when `OIDC_CLIENT_ID` is set, SAML shows when all SAML settings are present, and `AUTH_BREAKGLASS_LOCAL` controls whether local auth stays exposed as the fallback option.
 - 2026-05-14T09:30:46-05:00 — Provider-agnostic route guards now live in `backend/services/authorization.py`, where `require_admin`, `require_teacher`, `require_student`, and `require_any_role` enforce app-role checks consistently for cookie sessions and stateless JWT bearer tokens while preserving 401 for missing/expired auth and 403 for role failures.
 - 2026-05-14T09:30:46-05:00 — JWT bearer auth is opt-in through `JWT_ENABLED` and validates against either `JWT_SECRET` or `JWT_JWKS_URL` (never both), caches JWKS for 5 minutes, and requires issuer, audience, expiration, and family context so API clients can build `AuthSession` without a stored DB session.
 

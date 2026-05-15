@@ -79,13 +79,41 @@ def test_capability_detection_uses_mocked_service_checks(monkeypatch, tmp_path: 
     assert result['ocr']['reason'] == 'Tesseract missing'
 
 
-def test_auth_provider_capabilities_report_selected_provider(tmp_path: Path) -> None:
+def test_auth_provider_capabilities_include_all_configured_providers(tmp_path: Path) -> None:
+    config = Settings().model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'auth_provider': 'local',
+            'auth_breakglass_local': True,
+            'oidc_client_id': 'client-id',
+            'oidc_client_secret': 'client-secret',
+            'oidc_discovery_url': 'https://login.example/.well-known/openid-configuration',
+            'saml_metadata_url': 'https://idp.example/metadata',
+            'saml_entity_id': 'https://app.example/api/auth/saml/metadata',
+            'saml_acs_url': 'https://app.example/api/auth/saml/acs',
+            'testing': True,
+        }
+    )
+
+    auth = get_auth_providers(config)
+
+    assert auth['current_provider'] == 'local'
+    assert auth['available_providers'] == ['local', 'oidc', 'saml']
+    assert auth['local_enabled'] is True
+    assert auth['oidc_enabled'] is True
+    assert auth['saml_enabled'] is True
+
+
+def test_auth_provider_capabilities_can_disable_breakglass_local(tmp_path: Path) -> None:
     config = Settings().model_copy(
         update={
             'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
             'secret_key': 'required-test-secret',
             'upload_dir': str(tmp_path / 'uploads'),
             'auth_provider': 'oidc',
+            'auth_breakglass_local': False,
             'oidc_client_id': 'client-id',
             'oidc_client_secret': 'client-secret',
             'oidc_discovery_url': 'https://login.example/.well-known/openid-configuration',
@@ -96,6 +124,7 @@ def test_auth_provider_capabilities_report_selected_provider(tmp_path: Path) -> 
     auth = get_auth_providers(config)
 
     assert auth['current_provider'] == 'oidc'
-    assert auth['local_enabled'] is True
+    assert auth['available_providers'] == ['oidc']
+    assert auth['local_enabled'] is False
     assert auth['oidc_enabled'] is True
     assert auth['saml_enabled'] is False
