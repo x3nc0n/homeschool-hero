@@ -2,6 +2,7 @@
 
 ## Learnings
 
+- 2026-05-15T22:47:30.723-05:00 — Updated the LoginPage Microsoft OIDC button to match the official Entra light-theme branding spec, with a dark-theme counterpart, 21px logo sizing, and accessible button labeling.
 - 2026-05-15T14:09:23-05:00 — **PR #109 MERGED & v0.9.2 RELEASED.** Frontend Entra auth gating (#107) integrated into merged PR #109. Auth capability-first model now live. Frontend auth layer normalized to use backend RBAC data (app_roles, effective_capabilities). Frontend gating now matches backend authorization rules. v0.9.2 released.
 
 ### ESLint version constraints (2026-05-09T07:12:14.142-05:00)
