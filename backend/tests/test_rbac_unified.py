@@ -5,15 +5,17 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
+from sqlalchemy import select
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal
-from backend.models import User
+from backend.models import FamilyMembership, FamilyRole, User
 from backend.security import AuthSession, resolve_external_app_roles
 from backend.services.auth_oidc import extract_identity as extract_oidc_identity
 from backend.services.auth_provisioning import ExternalIdentity, provision_external_identity
 from backend.services.auth_saml import extract_identity as extract_saml_identity
 from backend.services.authorization import Capability, has_capability
+from backend.services.rbac import AppRole, derive_family_role_from_app_roles
 from tests.contracts import AUTH, BACKUPS, CURRICULUM, GRADES, GRADING, STUDENTS, student_payload
 from tests.helpers import response_id, sync_csrf_header
 
@@ -59,6 +61,7 @@ def _issue_token(
     audience: str | None = None,
     secret: str | None = None,
     extra_claims: dict[str, object] | None = None,
+    extra_headers: dict[str, object] | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     claims: dict[str, object] = {
@@ -82,7 +85,12 @@ def _issue_token(
         claims['student_id'] = student_id
     if extra_claims:
         claims.update(extra_claims)
-    return jwt.encode(claims, secret or jwt_auth_settings['secret'], algorithm=jwt_auth_settings['algorithm'])
+    return jwt.encode(
+        claims,
+        secret or jwt_auth_settings['secret'],
+        algorithm=jwt_auth_settings['algorithm'],
+        headers=extra_headers,
+    )
 
 
 async def _login_local(client, *, email: str, password: str, family_id: int) -> None:
@@ -544,6 +552,18 @@ class TestUnifiedRBACRoleMapping:
     def test_unknown_external_role_fails_closed(self):
         assert resolve_external_app_roles(['Unknown Role']) == []
 
+    @pytest.mark.parametrize(
+        ('app_roles', 'expected_family_role'),
+        [
+            ([AppRole.admin], FamilyRole.parent),
+            ([AppRole.teacher], FamilyRole.tutor),
+            ([AppRole.student], FamilyRole.student_viewer),
+            ([], FamilyRole.student_viewer),
+        ],
+    )
+    def test_app_roles_derive_expected_family_role(self, app_roles, expected_family_role):
+        assert derive_family_role_from_app_roles(app_roles) is expected_family_role
+
 
 class TestUnifiedRBACConflictResolution:
     def test_sso_admin_claim_and_local_student_membership_follow_defined_precedence(self):
@@ -578,6 +598,130 @@ class TestUnifiedRBACConflictResolution:
             )
         assert provisioned.created_default_family_membership is True
         assert provisioned.family.name == 'SSO Users'
+        assert provisioned.membership.role is FamilyRole.tutor
+        assert provisioned.membership.is_owner is False
+
+    @pytest.mark.asyncio
+    async def test_auto_provisioned_never_owner(self, monkeypatch):
+        monkeypatch.setattr(settings, 'auth_auto_provision_mode', 'default_family', raising=False)
+        monkeypatch.setattr(settings, 'auth_default_family_name', 'SSO Users', raising=False)
+        async with AsyncSessionLocal() as db:
+            provisioned = await provision_external_identity(
+                db,
+                ExternalIdentity(
+                    provider='oidc',
+                    external_id='oidc-user-admin-1',
+                    email='fresh-admin@example.com',
+                    display_name='Fresh Admin',
+                    roles=('admin',),
+                ),
+            )
+        assert provisioned.membership.role is FamilyRole.parent
+        assert provisioned.membership.is_owner is False
+
+    @pytest.mark.asyncio
+    async def test_sso_auto_provision_accepts_already_normalized_internal_roles(self, monkeypatch):
+        monkeypatch.setattr(settings, 'auth_auto_provision_mode', 'default_family', raising=False)
+        monkeypatch.setattr(settings, 'auth_default_family_name', 'SSO Users', raising=False)
+        monkeypatch.setattr(settings, 'role_mapping_admin_raw', 'DistrictAdmin', raising=False)
+        monkeypatch.setattr(settings, 'role_mapping_teacher_raw', 'DistrictTeacher', raising=False)
+        monkeypatch.setattr(settings, 'role_mapping_student_raw', 'DistrictStudent', raising=False)
+        async with AsyncSessionLocal() as db:
+            provisioned = await provision_external_identity(
+                db,
+                ExternalIdentity(
+                    provider='oidc',
+                    external_id='oidc-user-admin-normalized',
+                    email='normalized-admin@example.com',
+                    display_name='Normalized Admin',
+                    roles=('admin',),
+                ),
+            )
+        assert provisioned.membership.role is FamilyRole.parent
+        assert provisioned.membership.is_owner is False
+
+    @pytest.mark.asyncio
+    async def test_sso_admin_auto_provision_stays_non_owner_when_default_family_already_has_owner(self, monkeypatch):
+        monkeypatch.setattr(settings, 'auth_auto_provision_mode', 'default_family', raising=False)
+        monkeypatch.setattr(settings, 'auth_default_family_name', 'SSO Users', raising=False)
+        async with AsyncSessionLocal() as db:
+            first = await provision_external_identity(
+                db,
+                ExternalIdentity(
+                    provider='oidc',
+                    external_id='oidc-user-admin-2',
+                    email='existing-owner@example.com',
+                    display_name='Existing Owner',
+                    roles=('admin',),
+                ),
+            )
+        async with AsyncSessionLocal() as db:
+            second = await provision_external_identity(
+                db,
+                ExternalIdentity(
+                    provider='oidc',
+                    external_id='oidc-user-admin-3',
+                    email='second-admin@example.com',
+                    display_name='Second Admin',
+                    roles=('admin',),
+                ),
+            )
+            owner_memberships = (
+                await db.execute(
+                    select(FamilyMembership).where(
+                        FamilyMembership.family_id == second.family.id,
+                        FamilyMembership.is_owner.is_(True),
+                    )
+                )
+            ).scalars().all()
+        assert first.membership.is_owner is False
+        assert second.membership.role is FamilyRole.parent
+        assert second.membership.is_owner is False
+        assert len(owner_memberships) == 0
+
+    @pytest.mark.asyncio
+    async def test_sso_auto_provision_logs_and_falls_back_when_roles_are_missing(self, monkeypatch, caplog):
+        monkeypatch.setattr(settings, 'auth_auto_provision_mode', 'default_family', raising=False)
+        monkeypatch.setattr(settings, 'auth_default_family_name', 'SSO Users', raising=False)
+        caplog.set_level(logging.WARNING)
+        async with AsyncSessionLocal() as db:
+            provisioned = await provision_external_identity(
+                db,
+                ExternalIdentity(
+                    provider='oidc',
+                    external_id='oidc-user-4',
+                    email='no-roles@example.com',
+                    display_name='No Roles',
+                    roles=(),
+                ),
+            )
+        assert provisioned.membership.role is FamilyRole.student_viewer
+        assert provisioned.membership.student_id is None
+        assert provisioned.membership.is_owner is False
+        assert 'had no app roles' in caplog.text
+        assert 'least-privilege student_viewer/non-owner' in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_unmapped_roles_get_least_privilege(self, monkeypatch, caplog):
+        monkeypatch.setattr(settings, 'auth_auto_provision_mode', 'default_family', raising=False)
+        monkeypatch.setattr(settings, 'auth_default_family_name', 'SSO Users', raising=False)
+        caplog.set_level(logging.WARNING)
+        async with AsyncSessionLocal() as db:
+            provisioned = await provision_external_identity(
+                db,
+                ExternalIdentity(
+                    provider='oidc',
+                    external_id='oidc-user-5',
+                    email='unknown-roles@example.com',
+                    display_name='Unknown Roles',
+                    roles=('district-admin',),
+                ),
+            )
+        assert provisioned.membership.role is FamilyRole.student_viewer
+        assert provisioned.membership.student_id is None
+        assert provisioned.membership.is_owner is False
+        assert 'had unmapped app roles' in caplog.text
+        assert 'least-privilege student_viewer/non-owner' in caplog.text
 
 
 class TestEntraBearerRBAC:
@@ -787,6 +931,23 @@ class TestNegativeSecurityCases:
         response = await secondary_client.get(TEACHER_ROUTE, headers=_bearer_headers(token))
 
         assert response.status_code == 401, response.text
+
+    @pytest.mark.asyncio
+    async def test_jwt_with_unknown_crit_header_returns_401(self, authorized_client, secondary_client, jwt_auth_settings):
+        family_id = await _family_id_from_client(authorized_client)
+        token = _issue_token(
+            jwt_auth_settings,
+            roles=['Teacher'],
+            family_id=family_id,
+            user_id=95051,
+            family_role='tutor',
+            extra_headers={'crit': ['unknown-ext'], 'unknown-ext': 'required'},
+        )
+
+        response = await secondary_client.get(TEACHER_ROUTE, headers=_bearer_headers(token))
+
+        assert response.status_code == 401, response.text
+        assert response.json()['detail'] == 'Bearer token is invalid'
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

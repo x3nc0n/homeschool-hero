@@ -113,6 +113,17 @@ def synthesize_app_roles(family_role: FamilyRole) -> list[AppRole]:
     return [AppRole.student]
 
 
+def derive_family_role_from_app_roles(app_roles: Iterable[str | AppRole]) -> FamilyRole:
+    normalized_app_roles = normalize_app_role_names(app_roles)
+    if AppRole.admin in normalized_app_roles:
+        return FamilyRole.parent
+    if AppRole.teacher in normalized_app_roles:
+        return FamilyRole.tutor
+    if AppRole.student in normalized_app_roles:
+        return FamilyRole.student_viewer
+    return FamilyRole.student_viewer
+
+
 def normalize_app_role_names(app_roles: Iterable[str | AppRole]) -> list[AppRole]:
     normalized: list[AppRole] = []
     seen: set[AppRole] = set()
