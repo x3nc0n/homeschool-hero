@@ -12,11 +12,13 @@ import { api } from '@/lib/api'
 
 function MicrosoftLogo() {
   return (
-    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg">
-      <path d="M1 1h10v10H1z" fill="#f25022" />
-      <path d="M12 1h10v10H12z" fill="#7fba00" />
-      <path d="M1 12h10v10H1z" fill="#00a4ef" />
-      <path d="M12 12h10v10H12z" fill="#ffb900" />
+    <svg aria-hidden="true" className="h-[21px] w-[21px]" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+      <g transform="translate(-1 -1)">
+        <path d="M1 1h10v10H1z" fill="#f25022" />
+        <path d="M12 1h10v10H12z" fill="#7fba00" />
+        <path d="M1 12h10v10H1z" fill="#00a4ef" />
+        <path d="M12 12h10v10H12z" fill="#ffb900" />
+      </g>
     </svg>
   )
 }
@@ -73,7 +75,9 @@ export function LoginPage() {
             ) : null}
             {showOidc ? (
               <Button
-                className="w-full justify-center gap-2 border-0 bg-[#0F6CBD] text-white hover:bg-[#115EA3] focus-visible:ring-[#0F6CBD]"
+                aria-label={t('login.microsoft')}
+                className="h-auto min-h-[41px] w-full justify-center gap-3 rounded-[4px] border border-[#8C8C8C] bg-[#FFFFFF] px-3 py-3 text-[15px] font-semibold text-[#1E1E1E] shadow-none hover:border-[#6B6B6B] hover:bg-[#F5F5F5] focus-visible:border-[#0F6CBD] focus-visible:ring-[#0F6CBD]/20 dark:border-[#6B6B6B] dark:bg-[#2F2F2F] dark:text-white dark:hover:border-[#8C8C8C] dark:hover:bg-[#3A3A3A]"
+                style={{ fontFamily: '"Segoe UI", ui-sans-serif, system-ui, sans-serif' }}
                 type="button"
                 onClick={() => handleExternalLogin('oidc')}
               >
