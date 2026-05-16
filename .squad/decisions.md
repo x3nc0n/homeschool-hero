@@ -235,6 +235,67 @@
 - **Decision:** Rehydrate every bearer-backed family session from the database before authorization. Bearer requests now require an accepted `FamilyMembership` for the authenticated user and selected family, reject forged `X-Family-Id` values with 403, ignore `is_owner` claims in JWT payloads, and fail closed to `student_viewer` when family-role claims are absent. Remove the dead `_ROLE_CAPABILITIES` table so RBAC has one canonical capability source.
 - **Impact:** JWT, OIDC, SAML, and local flows now follow the architecture rule that family scope and owner semantics are database-backed, while test coverage explicitly guards against family-header injection and owner-claim escalation.
 
+### User Directive: Cross-Team Workflow (2026-05-15T07:10:38-05:00)
+- **By:** John (via Copilot)
+- **What:** The infra team (Spava-Corp) will open issues on x3nc0n/homeschool-hero that this squad must monitor and address. This squad can open issues on `Spava-Corp/homeschool-hero-azure` for them to address (e.g., infrastructure/deployment issues like #110).
+- **Infra repo:** `Spava-Corp/homeschool-hero-azure`
+- **Why:** User request — captured for team memory. Establishes cross-team workflow between app team (this repo) and infra team.
+
+### Egon Breakglass Semantics Authority (2026-05-15T07:43:55-05:00)
+- **Author:** Egon
+- **Issue:** PR #109 review
+- **Context:** The auth capabilities API now reports provider visibility separately from `AUTH_PROVIDER`, and `AUTH_BREAKGLASS_LOCAL` is presented as the switch that keeps local login available as an IdP-down fallback. In the reviewed implementation, `AUTH_BREAKGLASS_LOCAL=false` removes local auth from capability reporting, but the backend login route still accepts local credentials unconditionally.
+- **Decision:** `AUTH_BREAKGLASS_LOCAL` must have one authoritative meaning across UI, backend enforcement, and operator documentation. Either the backend must reject `POST /api/auth/login` when local auth is disabled, or the capabilities surface must continue to report local auth as enabled whenever the backend route remains reachable. Do not ship a configuration flag that only hides the button while leaving the credential path active.
+- **Impact:** Keeps SSO deployments honest: operators can rely on the config they set, audit expectations stay accurate, and there is no hidden mismatch between reported auth posture and actual reachable login paths. Aligns with the dual-axis RBAC model by preserving local-auth compatibility only when explicitly intended, not as an undocumented side channel.
+
+### Egon PR #106 Review — Entra ID RBAC Middleware (2026-05-14T18:46:37-05:00)
+- **Author:** Egon
+- **PR:** #106 (feat(auth): Entra ID RBAC middleware, authored by Tully)
+- **Verdict:** ✅ APPROVED
+- **Context:** Adds Entra-specific bearer token validation: `tid` enforcement, v2.0 issuer contract, `roles` claim as authoritative for RBAC, groups overage safe handling, and OIDC identity resolution for DB family rehydration.
+- **Security findings:** All fail-closed. Cross-tenant tokens rejected at 401. Groups never used for RBAC decisions. DB membership is always rehydrated — token claims cannot escalate privileges. Startup validation prevents misconfigured Entra deployments.
+- **Impact:** Entra ID bearer-token API access is production-ready once merged. Teams using Entra can configure `JWT_TENANT_ID` to enable tenant-scoped validation.
+
+### Ray Multi-Provider Capabilities (2026-05-15T07:10:40.494-05:00)
+- **Author:** Ray
+- **Context:** Homeschool Hero already supports local auth, OIDC, and SAML, plus a breakglass local-login path, but the capabilities payload still treated `AUTH_PROVIDER` as both the primary flow and the only visible external provider. That made the frontend hide configured secondary providers and left the auth capability contract out of sync with the actual multi-provider backend behavior.
+- **Decision:** Treat `AUTH_PROVIDER` as the primary/default login flow only. Compute provider visibility independently: expose OIDC when `OIDC_CLIENT_ID` is present, expose SAML when its required metadata/entity/ACS settings are present, and keep local auth available by default through `AUTH_BREAKGLASS_LOCAL=true` while allowing operators to disable that fallback explicitly.
+- **Impact:** The frontend can render all configured login options without losing the existing auth contract shape, while the backend still has a clear primary-provider concept for default UX. Multi-provider deployments now fail fast on incomplete secondary-provider config, and local breakglass visibility lines up with backend login enforcement instead of being a UI-only flag.
+
+### Tully Breakglass Local Login (2026-05-15T07:10:40.494-05:00)
+- **Author:** Tully
+- **Context:** Homeschool Hero now supports OIDC and SAML alongside local auth, but operators still need a fail-safe path when an external identity provider is unavailable. The fallback must not bypass the unified RBAC model or silently turn protocol failures into backend 500s.
+- **Decision:** Keep the existing local password login route available for pre-existing database accounts even when `AUTH_PROVIDER` is set to `oidc` or `saml`, and treat `AUTH_BREAKGLASS_LOCAL=true` as the operator signal to audit those successful local sign-ins with a WARNING log. For OIDC, convert callback token-exchange and ID-token parsing failures into user-safe login redirects via `/login?error=...` instead of surfacing server errors.
+- **Impact:** Operators have an auditable breakglass path during IdP outages without granting any new roles or family scope beyond what the database already stores for the user. End users also get actionable OIDC failure feedback on the login screen instead of an opaque 500 response.
+
+### Tully Entra RBAC Middleware (2026-05-14T18:25:38.883-05:00)
+- **Author:** Tully
+- **Issue:** #97
+- **Context:** Production bearer-token auth needs to consume Microsoft Entra ID access tokens without bypassing the unified RBAC model or the database-backed family-scope rules added in PR #104.
+- **Decision:** Keep the existing JWT/JWKS validation path, but add Entra-specific constraints on top of it: require `JWT_TENANT_ID`, validate the Entra `tid` claim, and require the configured issuer to match the tenant-scoped `https://login.microsoftonline.com/<tenant-id>/v2.0` format. For bearer sessions, treat the Entra `roles` claim as the only RBAC source of truth, treat `groups` as optional supporting data with overage-safe parsing, and resolve the local user through linked OIDC `external_id` first with normalized email fallback before rehydrating the selected `FamilyMembership` via `X-Family-Id`.
+- **Impact:** The app can now accept Entra-issued API tokens without adding group-ID coupling or trusting token-supplied family-scope data. Operators get startup validation for tenant misconfiguration, and the test suite now covers tenant mismatch, OIDC external-ID resolution, and groups-overage behavior.
+
+### Tully Frontend Auth Fixes (2026-05-14T22:20:11.663-05:00)
+- **Author:** Tully
+- **Issue:** #107
+- **Context:** PR #108 exposed drift between backend auth-session serialization and the frontend capability-first auth layer. The SPA had to fall back to legacy RBAC synthesis because `/api/auth/me` omitted canonical `app_roles` and `effective_capabilities`, and that fallback over-granted `manage_security` to non-owner parents.
+- **Decision:** Treat the backend auth session payload as the canonical RBAC contract for the frontend: always serialize `app_roles` and `effective_capabilities` from `AuthSession`, keep `manage_security` owner-parent only in any legacy fallback, and promote `view_own_progress` into the backend capability enum so student-facing route guards reference a real server-defined permission.
+- **Impact:** Frontend gating now consumes the same RBAC data the backend enforces, reducing dead fallback paths and preventing UI exposure that contradicts server authorization. Student progress checks also have an explicit backend capability, which keeps the dual-axis RBAC model expressive without inventing client-only permissions.
+
+### Tully PyJWT crit Header Rejection (2026-05-15T07:43:55-05:00)
+- **Author:** Tully
+- **Issue:** #105 (CVE-2026-32597)
+- **Context:** GitHub issue #105 reports CVE-2026-32597 against PyJWT 2.10.1. The bearer-token path in `backend/services/auth_jwt.py` validates externally supplied JWTs, so unknown `crit` header extensions must be rejected fail-closed.
+- **Decision:** Align `requirements.txt`, `requirements-prod.txt`, and `backend/requirements-test.txt` on PyJWT 2.12.0 and explicitly reject any bearer token that includes a `crit` header because homeschool-hero does not define any supported critical JWT extensions.
+- **Impact:** Production, CI, and local test environments stop installing the vulnerable PyJWT release, and bearer auth remains fail-closed even if a future dependency drift reintroduces older library behavior.
+
+### Venkman Frontend Entra Auth Gating (2026-05-14T21:02:10.172-05:00)
+- **Author:** Venkman
+- **Issue:** #107
+- **Context:** The backend session model now carries AppRole and effective capability data for Entra/OIDC sign-in, but the SPA still gated routes and navigation by raw `FamilyRole` string checks. That would drift from backend authorization rules, especially for Entra-issued sessions whose access is determined by `app_roles` and `effective_capabilities`.
+- **Decision:** Make the frontend auth layer capability-first. `AuthContext` should normalize `app_roles` and `effective_capabilities` into shared `hasRole`/`hasCapability` helpers, then synthesize legacy AppRole/capability fallbacks from `membership.role` when local auth sessions do not include RBAC fields. Route guards, navigation, and tab visibility should consume those helpers so OIDC and local auth follow the same UI gating rules.
+- **Impact:** Frontend access checks now match the backend RBAC shape without requiring MSAL or a client-side OAuth implementation. Local email/password installs keep working because FamilyRole-based sessions are translated into the same helper API, reducing future drift between server auth decisions and visible UI affordances.
+
 ## Governance
 
 - All meaningful changes require team consensus

@@ -9,6 +9,9 @@
 - **Architecture doc:** docs/architecture/rbac-unified-model.md
 
 ## Learnings
+
+- 2026-05-15T14:09:23-05:00 — **PR #109 MERGED & v0.9.2 RELEASED.** PyJWT crit-header fix (commit 720200f) merged and published. Frontend auth fixes (#107) integrated into merged PR #109. Breakglass local login, Entra RBAC middleware, and multi-provider capabilities now live on main.
+
 - 2026-05-14T17:32:06-05:00 — `backend/security.py` now rehydrates bearer sessions from the database before authorization, so `FamilyMembership` stays authoritative for `family_role`, `is_owner`, and `student_id` and invalid `X-Family-Id` values fail with 403.
 - 2026-05-14T17:32:06-05:00 — `backend/services/auth_jwt.py` must fail closed when family-role claims are missing; the safe fallback is `student_viewer`, while effective bearer authorization still depends on DB-backed membership context.
 - 2026-05-14T17:32:06-05:00 — Unified RBAC capability logic lives in `backend/services/rbac.py`, and stale capability tables should be removed once superseded to avoid conflicting security behavior.
@@ -29,3 +32,4 @@
 - 2026-05-14T22:20:11.663-05:00 — `backend/services/rbac.py` is the canonical capability list; `view_own_progress` now belongs there for `student_viewer`/`student` access so frontend route guards and navigation can rely on a real backend-backed capability.
 - 2026-05-15T07:10:40.494-05:00 — Breakglass local login lives at the existing `/api/auth/login` password flow: keep it available even when `AUTH_PROVIDER` advertises OIDC/SAML, but only successful logins against an existing database account proceed and they must emit a WARNING audit log when `AUTH_BREAKGLASS_LOCAL=true`.
 - 2026-05-15T07:10:40.494-05:00 — OIDC callback failures should degrade back to `/login?error=...` instead of 500ing; wrap token-exchange and ID-token parsing failures in a user-safe `OIDCConfigurationError` so the router can redirect cleanly.
+- 2026-05-15T07:43:55-05:00 — Bearer JWT validation is affected by PyJWT `crit`-header handling because `backend/services/auth_jwt.py` accepts externally supplied bearer tokens; keep PyJWT pinned/aligned at 2.12.0 across `requirements*.txt`, and fail closed on any token that presents a `crit` header because the app defines no supported critical JWT extensions.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -12,6 +13,9 @@ from backend.config import settings
 from backend.models import Family, FamilyMembership, FamilyRole, FamilySettings, Invitation, User
 from backend.security import hash_password, normalize_email
 from backend.services.gradebook import ensure_default_grade_scale
+from backend.services.rbac import derive_family_role_from_app_roles, normalize_app_role_names, normalize_external_app_roles
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -206,12 +210,47 @@ async def provision_external_identity(db: AsyncSession, identity: ExternalIdenti
         )
 
     family = await _ensure_default_family(db)
+    normalized_app_roles = normalize_external_app_roles(
+        identity.roles,
+        external_role_mappings=settings.external_role_mappings,
+    )
+    if not normalized_app_roles and identity.roles:
+        try:
+            normalized_app_roles = normalize_app_role_names(identity.roles)
+        except ValueError:
+            normalized_app_roles = []
+
+    if not identity.roles:
+        logger.warning(
+            'External identity %s for provider %s had no app roles; defaulting auto-provisioned family membership to least-privilege student_viewer/non-owner.',
+            identity.external_id,
+            provider,
+        )
+    elif not normalized_app_roles:
+        logger.warning(
+            'External identity %s for provider %s had unmapped app roles %s; defaulting auto-provisioned family membership to least-privilege student_viewer/non-owner.',
+            identity.external_id,
+            provider,
+            list(identity.roles),
+        )
+
+    derived_role = derive_family_role_from_app_roles(normalized_app_roles)
+    is_owner = False
+    student_id = None
+    if derived_role is FamilyRole.student_viewer:
+        logger.warning(
+            'External identity %s for provider %s derived student_viewer without a linked student_id; creating least-privilege membership pending explicit student linkage.',
+            identity.external_id,
+            provider,
+        )
+
     now = datetime.now(timezone.utc)
     membership = FamilyMembership(
         user_id=user.id,
         family_id=family.id,
-        role=FamilyRole.parent,
-        is_owner=False,
+        role=derived_role,
+        is_owner=is_owner,
+        student_id=student_id,
         invited_at=now,
         accepted_at=now,
     )

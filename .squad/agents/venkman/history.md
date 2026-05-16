@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-05-15T14:09:23-05:00 — **PR #109 MERGED & v0.9.2 RELEASED.** Frontend Entra auth gating (#107) integrated into merged PR #109. Auth capability-first model now live. Frontend auth layer normalized to use backend RBAC data (app_roles, effective_capabilities). Frontend gating now matches backend authorization rules. v0.9.2 released.
+
 ### ESLint version constraints (2026-05-09T07:12:14.142-05:00)
 - `eslint-plugin-jsx-a11y@6.10.2` (latest) declares peer `eslint@"^3 || ... || ^9"` — ESLint 10 is not supported.
 - ESLint is pinned to `^9.9.0` (with `@eslint/js` to match) because that's the minimum version providing the `defineConfig`/`globalIgnores` flat-config helpers used in `eslint.config.js`.
