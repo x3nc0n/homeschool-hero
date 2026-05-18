@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-05-18T07:55:09.535-05:00 — `frontend/vite.config.ts` owns the generated Workbox service worker config; backend-owned navigation targets like `/api/*`, `/uploads/*`, and `/health` must stay on a navigation denylist so OIDC redirects and direct file/health navigations bypass the SPA shell, with `skipWaiting` + `clientsClaim` enabled for faster SW rollout.
+- 2026-05-17T21:57:29.677-05:00 — Hardened `FileUpload` previews by only generating preview blob URLs after file-signature checks for JPEG/PNG/WEBP/PDF, which preserves upload UX while blocking HTML/script content from being rendered as a PDF preview.
 - 2026-05-15T22:47:30.723-05:00 — Updated the LoginPage Microsoft OIDC button to match the official Entra light-theme branding spec, with a dark-theme counterpart, 21px logo sizing, and accessible button labeling.
 - 2026-05-15T14:09:23-05:00 — **PR #109 MERGED & v0.9.2 RELEASED.** Frontend Entra auth gating (#107) integrated into merged PR #109. Auth capability-first model now live. Frontend auth layer normalized to use backend RBAC data (app_roles, effective_capabilities). Frontend gating now matches backend authorization rules. v0.9.2 released.
 

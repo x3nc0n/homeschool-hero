@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import path from 'node:path'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const serviceWorkerNavigationDenylist = [/^\/api\//, /^\/uploads\//, /^\/health(?:\/|$)/]
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -14,11 +16,18 @@ export default defineConfig({
       includeAssets: ['favicon.svg', 'pwa-192.svg', 'pwa-512.svg'],
       workbox: {
         cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: serviceWorkerNavigationDenylist,
         globPatterns: ['**/*.{js,css,html,svg,png,ico,json}'],
         runtimeCaching: [
           {
-            urlPattern: ({ request }) => request.mode === 'navigate',
+            urlPattern: ({ request, url }) =>
+              request.mode === 'navigate' &&
+              !/^\/api\//.test(url.pathname) &&
+              !/^\/uploads\//.test(url.pathname) &&
+              !/^\/health(?:\/|$)/.test(url.pathname),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'app-pages',
