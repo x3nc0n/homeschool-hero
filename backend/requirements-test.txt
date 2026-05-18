@@ -12,5 +12,5 @@ APScheduler>=3.11.2,<4.0
 itsdangerous>=2.2,<3.0
 passlib[bcrypt]>=1.7.4,<2.0
 python-multipart>=0.0.9,<1.0
-pillow>=10.4,<13.0
+pillow>=12.2.0,<13.0
 pytesseract>=0.3.13,<1.0
