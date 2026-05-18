@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-05-18T16:38:51.741-05:00 — ESLint 10 + `@eslint/js` 10 work with the existing flat config in `frontend/eslint.config.js` unchanged, but `eslint-plugin-jsx-a11y@6.10.2` still advertises peer support only through ESLint 9. Added `frontend/.npmrc` with `legacy-peer-deps=true` so plain `npm install` succeeds while keeping the accessibility plugin enabled; `cd frontend && npm run lint && npm run build` both pass on ESLint 10.
+
 - 2026-05-18T07:55:09.535-05:00 — `frontend/vite.config.ts` owns the generated Workbox service worker config; backend-owned navigation targets like `/api/*`, `/uploads/*`, and `/health` must stay on a navigation denylist so OIDC redirects and direct file/health navigations bypass the SPA shell, with `skipWaiting` + `clientsClaim` enabled for faster SW rollout.
 - 2026-05-17T21:57:29.677-05:00 — Hardened `FileUpload` previews by only generating preview blob URLs after file-signature checks for JPEG/PNG/WEBP/PDF, which preserves upload UX while blocking HTML/script content from being rendered as a PDF preview.
 - 2026-05-15T22:47:30.723-05:00 — Updated the LoginPage Microsoft OIDC button to match the official Entra light-theme branding spec, with a dark-theme counterpart, 21px logo sizing, and accessible button labeling.
