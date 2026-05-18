@@ -118,3 +118,9 @@
 - CodeQL taint analysis now verifies safety through React state flow
 - Committed b3ef0b5 with XSS pattern guardrail for future maintainers
 
+
+### Team Notification: Ray bcrypt 5.0 Password Validation (2026-05-18T22:20:14Z)
+- **From:** Scribe (on behalf of Ray)
+- **Context:** Ray completed bcrypt 5.0 upgrade (PR #94) with 72-byte UTF-8 password validation guardrails added at API layer (register, login, invitation acceptance). 333 backend tests pass.
+- **Your awareness:** This frontend has no password validation UI work required — all validation is API-enforced. Any future password input fields should delegate length validation to the backend 400 response feedback. Ray's guardrails make bcrypt 5.0 safe for production.
+- **Status:** v0.9.9 released with bcrypt 5.0 and security hardening.

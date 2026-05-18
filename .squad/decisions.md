@@ -246,6 +246,37 @@ This pattern should be applied to **any** tainted value (user input, file input,
 - `frontend/src/components/features/FileUpload.tsx` — added `safePreviewUrl` computed at render time, replaced `previewUrl` in `img src` and `object data` attributes.
 
 
+### Egon Dependabot Triage — May 18 (2026-05-18T16:23:50-05:00)
+- **Author:** Egon
+- **Type:** Dependency review
+- **Total PRs triaged:** 10 (4 safe, 4 review, 2 risky)
+- **Decision:** 
+  - **Safe to merge immediately:** #137 (vite patch), #135 (react-plugin patch), #89 (sqlalchemy patch)
+  - **Needs review + testing:** #96 (reportlab, RC-01 integration tests), #95 (alembic, migration audit), #93 (azure-communication-email), #91 (tailwind-merge, visual regression)
+  - **Risky — requires team decision:** #136 & #92 (ESLint 9→10 major bump, requires jsx-a11y compatibility audit), #94 (bcrypt 4→5, requires 72-byte password validation audit)
+- **Impact:** Establishes gating criteria for safe dependency updates vs. those requiring owner sign-off. ESLint 9→10 and bcrypt 5.0 require application code review before merge.
+
+### Venkman ESLint 9→10 Upgrade (2026-05-18T16:38:51-05:00)
+- **Author:** Venkman
+- **Related PRs:** #136 (eslint 9→10), #92 (@eslint/js 9→10)
+- **Context:** Dependabot triggered major ESLint version upgrade, conflicting with previous team decision to pin 9.x due to `eslint-plugin-jsx-a11y@6.10.2` peer-dep exclusion. Venkman validates that linting works with ESLint 10 and jsx-a11y unchanged.
+- **Decision:** Upgrade `frontend` to `eslint@^10.4.0` and `@eslint/js@^10.0.1` together (PRs #136 and #92 as atomic unit), add `legacy-peer-deps=true` to `frontend/.npmrc` as temporary install compatibility shim to work around jsx-a11y peer-dep declarations, validate `npm run lint` and `npm run build` pass.
+- **Impact:** Merged PRs #136 and #92. Frontend stays current with ESLint major while preserving accessibility linting coverage and allowing jsx-a11y to remain at 6.10.2.
+
+### Ray bcrypt 5.0 Password Validation (2026-05-18T16:38:51-05:00)
+- **Author:** Ray
+- **Related PR:** #94 (bcrypt 4→5)
+- **Context:** bcrypt 5.0 raises `ValueError` for passwords > 72 UTF-8 bytes (previously silently truncated at 72). Existing user accounts and API inputs lack explicit 72-byte guardrails.
+- **Decision:** Enforce 72-byte UTF-8 password limit at the API schema layer (register, login, invitation acceptance) so clients get validation error instead of server error. Add defensive checks in `hash_password()` / `verify_password()` functions. Fail early during legacy family-password migration if `FAMILY_PASSWORD` exceeds 72 bytes.
+- **Impact:** Merged PR #94. Existing operators get clear validation or startup errors instead of unpredictable bcrypt exceptions. Local auth no longer depends on bcrypt 4.x truncation behavior.
+
+### Tully Security Hardening (2026-05-17T21:57:29-05:00)
+- **Author:** Tully
+- **Related issues:** CodeQL/Trivy findings
+- **Context:** Backend logs vulnerable to injection attacks, upload handling lacks path traversal protection, and 5xx responses leak exception details.
+- **Decision:** Sanitize control characters in log messages, correlation IDs, action labels, and structured payloads before formatting. Validate upload destinations from normalized relative paths only; reject absolute paths and parent-directory traversal. Redact all 5xx responses to generic `internal_error` payload, keeping details in logs only.
+- **Impact:** Closes CodeQL/Trivy findings for log injection, path injection, and stack-trace exposure. Auth/security behavior remains fail-closed: suspicious paths rejected, user-controlled log fields cannot forge entries, clients never receive server exception details.
+
 ## Governance
 
 - All meaningful changes require team consensus

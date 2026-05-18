@@ -117,3 +117,17 @@
 ## Learnings
 
 
+## RBAC Implementation Summary (Issues #98–#103, 2026-05-14)
+- **#98 (Unified Model):** Egon defined canonical role model with `FamilyRole`/`FamilyMembership` persisted, `AppRole` normalized (`admin`/`teacher`/`student`), capabilities as enforcement surface, narrower-wins precedence when IdP roles conflict with family roles.
+- **#99 (External Role Mapping):** Environment-driven external role mappings (`ROLE_MAPPING_ADMIN`, `ROLE_MAPPING_TEACHER`, `ROLE_MAPPING_STUDENT`) enable configurable external → app-role translation with comma-separated alias support.
+- **#100 (OIDC Role Extraction):** OIDC login normalizes IdP roles via `OIDC_ROLES_CLAIM` (primary) or `OIDC_GROUPS_CLAIM` fallback with `OIDC_GROUP_ROLE_MAP` mapping; stores normalized app-role names on `ExternalIdentity.roles`.
+- **#101 (SAML Role Extraction):** SAML login reads `SAML_ROLE_ATTRIBUTE` (configurable), falls back to Microsoft/generic role/group attributes, normalizes through shared external-role mapping layer, stores on `ExternalIdentity.roles`.
+- **#102 (RBAC Enforcement):** Provider-neutral app-role dependency decorators enforce at route level; app roles derive from persisted family role (local auth) or extracted from IdP (OIDC/SAML/JWT); effective capabilities computed by combining family-role base + app-role grants.
+- **#103 (JWT Bearer Validation):** Stateless JWT bearer token validation with configurable symmetric/asymmetric signing, issuer/audience/expiration/family validation, no stored session required for API clients.
+
+- 2026-05-14T09:30:46-05:00 — OIDC and SAML role extraction now normalize IdP claims straight into `ExternalIdentity.roles`, including OIDC `groups` fallback via `OIDC_GROUP_ROLE_MAP` and SAML attribute selection via `SAML_ROLE_ATTRIBUTE`, so external sessions can preserve provider-issued app roles without re-mapping in the auth router.
+- 2026-05-14T08:57:23-05:00 — Unified RBAC now computes effective capabilities from both persisted `FamilyRole` and normalized app roles, with `manage_family` preserved as a compatibility alias over the new `manage_household` and `manage_platform` split.
+- **From:** Scribe (on behalf of Venkman)
+- **Context:** Venkman completed ESLint major version upgrade (PRs #136 and #92 merged as atomic unit). Added `legacy-peer-deps=true` to `frontend/.npmrc` to work around `eslint-plugin-jsx-a11y@6.10.2` peer-dep declarations while keeping accessibility linting enabled.
+- **Your awareness:** Frontend is now on ESLint 10.4.0 + @eslint/js 10.0.1. This is a frontend-only change with no backend API/schema impact. All frontend linting and builds pass.
+- **Status:** v0.9.9 released with ESLint 10 and security hardening.
