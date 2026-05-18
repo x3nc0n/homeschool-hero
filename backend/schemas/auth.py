@@ -1,7 +1,12 @@
 from pydantic import BaseModel, Field, field_validator
 
 from backend.schemas.preferences import UserPreferencesRead
-from backend.validation import normalize_email_address, normalize_text, validate_password_policy
+from backend.validation import (
+    normalize_email_address,
+    normalize_text,
+    validate_bcrypt_password_length,
+    validate_password_policy,
+)
 
 
 class LoginRequest(BaseModel):
@@ -17,7 +22,7 @@ class LoginRequest(BaseModel):
     @field_validator('password')
     @classmethod
     def validate_password(cls, value: str) -> str:
-        return value.strip()
+        return validate_bcrypt_password_length(value.strip())
 
 
 class RegisterRequest(BaseModel):

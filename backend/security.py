@@ -24,6 +24,7 @@ from backend.services.rbac import (
     synthesize_app_roles,
     validate_app_role_assignment,
 )
+from backend.validation import validate_bcrypt_password_length
 
 serializer = URLSafeTimedSerializer(settings.secret_key, salt='homeschool-session')
 ModelT = TypeVar('ModelT')
@@ -94,10 +95,15 @@ def normalize_email(email: str) -> str:
 
 
 def hash_password(password: str) -> str:
+    password = validate_bcrypt_password_length(password)
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        password = validate_bcrypt_password_length(password)
+    except ValueError:
+        return False
     return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
 

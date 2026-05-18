@@ -7,7 +7,7 @@ from backend.config import settings
 from backend.rate_limit import RateLimitRule
 from backend.services.capabilities import get_capability_registry
 from tests.contracts import AUTH, STUDENTS, SUBMISSIONS, bootstrap_payload
-from tests.helpers import response_id
+from tests.helpers import assert_validation_error, response_id
 
 
 async def test_cookie_security_and_headers(async_client) -> None:
@@ -40,6 +40,24 @@ async def test_password_policy_rejects_weak_password(async_client):
     )
     assert response.status_code == 422, response.text
     assert response.json()['error']['code'] == 'validation_error'
+
+
+async def test_password_policy_rejects_passwords_over_bcrypt_limit(async_client):
+    response = await async_client.post(
+        AUTH['register'],
+        json=bootstrap_payload(password='a' * 72 + '1'),
+    )
+    assert_validation_error(response)
+    assert '72 bytes or fewer' in response.text
+
+
+async def test_login_rejects_passwords_over_bcrypt_limit(authorized_client, secondary_client):
+    response = await secondary_client.post(
+        AUTH['login'],
+        json={'email': 'owner@example.com', 'password': 'a' * 72 + '1'},
+    )
+    assert_validation_error(response)
+    assert '72 bytes or fewer' in response.text
 
 
 async def test_account_lockout_after_failed_logins(authorized_client, secondary_client, monkeypatch):

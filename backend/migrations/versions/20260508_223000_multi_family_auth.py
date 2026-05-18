@@ -33,11 +33,14 @@ ROLLBACK_NOTES = """
 """
 
 family_role = postgresql.ENUM('parent', 'co-parent', 'tutor', 'student_viewer', name='family_role', create_type=False)
+BCRYPT_PASSWORD_MAX_BYTES = 72
 
 
 def _hash_legacy_password() -> str:
     if settings.legacy_family_password_hash:
         return settings.legacy_family_password_hash
+    if len(settings.legacy_family_password.encode('utf-8')) > BCRYPT_PASSWORD_MAX_BYTES:
+        raise ValueError(f'FAMILY_PASSWORD must be {BCRYPT_PASSWORD_MAX_BYTES} bytes or fewer for bcrypt')
     return bcrypt.hashpw(settings.legacy_family_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 

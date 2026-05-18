@@ -9,7 +9,7 @@ from sqlalchemy import select
 from backend.models import FamilyRole
 from backend.services import invitations
 from tests.contracts import AUTH, INVITATIONS, STUDENTS, student_payload
-from tests.helpers import response_id
+from tests.helpers import assert_validation_error, response_id
 
 
 @pytest.mark.asyncio
@@ -78,6 +78,32 @@ async def test_invitation_create_list_accept_and_revoke(authorized_client, secon
         },
     )
     assert accept_revoked.status_code == 404, accept_revoked.text
+
+
+@pytest.mark.asyncio
+async def test_invitation_accept_rejects_passwords_over_bcrypt_limit(authorized_client, secondary_client):
+    create_response = await authorized_client.post(
+        INVITATIONS['collection'],
+        json={
+            'email': 'toolong@example.com',
+            'role': 'tutor',
+            'expires_in_days': 7,
+        },
+    )
+    assert create_response.status_code == 201, create_response.text
+    invite = create_response.json()
+
+    accept_response = await secondary_client.post(
+        INVITATIONS['accept'].format(invitation_id=invite['id']),
+        json={
+            'token': invite['invite_code'],
+            'email': 'toolong@example.com',
+            'display_name': 'Too Long',
+            'password': 'a' * 72 + '1',
+        },
+    )
+    assert_validation_error(accept_response)
+    assert '72 bytes or fewer' in accept_response.text
 
 
 @pytest.mark.asyncio

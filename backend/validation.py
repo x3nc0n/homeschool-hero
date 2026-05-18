@@ -11,6 +11,7 @@ EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 HEX_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
 SAFE_TEXT_RE = re.compile(r'^[^\x00-\x1f\x7f]+$')
 SAFE_FILENAME_CHARS_RE = re.compile(r'[^A-Za-z0-9._ -]+')
+BCRYPT_PASSWORD_MAX_BYTES = 72
 
 
 def normalize_text(value: str, *, field_name: str) -> str:
@@ -42,9 +43,16 @@ def normalize_email_address(value: str) -> str:
     return email
 
 
+def validate_bcrypt_password_length(password: str) -> str:
+    if len(password.encode('utf-8')) > BCRYPT_PASSWORD_MAX_BYTES:
+        raise ValueError(f'Password must be {BCRYPT_PASSWORD_MAX_BYTES} bytes or fewer')
+    return password
+
+
 def validate_password_policy(password: str) -> str:
     if len(password) < settings.password_min_length:
         raise ValueError(f'Password must be at least {settings.password_min_length} characters long')
+    validate_bcrypt_password_length(password)
     if not any(character.isalpha() for character in password):
         raise ValueError('Password must include at least one letter')
     if not any(character.isdigit() for character in password):
