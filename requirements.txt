@@ -6,7 +6,7 @@ alembic==1.18.4
 pydantic==2.13.4
 pydantic-settings==2.14.1
 APScheduler==3.11.2
-python-multipart==0.0.27
+python-multipart==0.0.29
 bcrypt==5.0.0
 Authlib==1.7.2
 itsdangerous==2.2.0
