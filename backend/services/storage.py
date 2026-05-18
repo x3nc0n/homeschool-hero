@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import os
 from pathlib import Path
 
 import fitz
@@ -85,6 +86,22 @@ def extract_file_metadata(content_type: str, contents: bytes) -> tuple[int | Non
     return None, None, None
 
 
+def _resolve_safe_upload_destination(upload_root: str, relative_path: Path) -> tuple[Path, Path]:
+    upload_root_path = Path(upload_root).resolve()
+    normalized_relative_path = os.path.normpath(os.fspath(relative_path))
+    candidate = Path(normalized_relative_path)
+    if normalized_relative_path in {'', '.', os.curdir} or os.path.isabs(normalized_relative_path) or candidate.anchor:
+        raise ValueError('Invalid upload path')
+    if any(part == '..' for part in candidate.parts):
+        raise ValueError('Invalid upload path')
+    destination = (upload_root_path / candidate).resolve()
+    try:
+        destination.relative_to(upload_root_path)
+    except ValueError as exc:
+        raise ValueError('Path traversal detected') from exc
+    return candidate, destination
+
+
 def store_submission_file(
     *,
     upload_root: str,
@@ -104,10 +121,7 @@ def store_submission_file(
         submission_id=submission_id,
         file_name=sanitized_name,
     )
-    upload_root_path = Path(upload_root).resolve()
-    destination = (upload_root_path / relative_path).resolve()
-    if not str(destination).startswith(str(upload_root_path)):
-        raise ValueError('Path traversal detected')
+    safe_relative_path, destination = _resolve_safe_upload_destination(upload_root, relative_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(contents)
     image_width, image_height, page_count = extract_file_metadata(content_type, contents)
@@ -116,7 +130,7 @@ def store_submission_file(
         file_name=sanitized_name,
         content_type=content_type,
         file_size_bytes=len(contents),
-        relative_path=str(relative_path),
+        relative_path=str(safe_relative_path),
         absolute_path=str(destination),
         image_width=image_width,
         image_height=image_height,

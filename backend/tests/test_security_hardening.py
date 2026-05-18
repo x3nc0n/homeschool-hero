@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient
+
 from backend.config import settings
 from backend.rate_limit import RateLimitRule
+from backend.services.capabilities import get_capability_registry
 from tests.contracts import AUTH, STUDENTS, SUBMISSIONS, bootstrap_payload
 from tests.helpers import response_id
 
@@ -97,3 +101,46 @@ async def test_general_rate_limit_applies_to_api_requests(authorized_client, mon
             assert response.status_code == 200, response.text
         else:
             assert response.status_code == 429, response.text
+            assert response.json()['error']['code'] == 'rate_limited'
+
+
+async def test_http_500_errors_do_not_expose_exception_details(app, monkeypatch):
+    registry = get_capability_registry()
+
+    async def _http_500():
+        raise HTTPException(status_code=500, detail='sensitive\nstack trace')
+
+    monkeypatch.setattr(registry, 'check_all', _http_500)
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+        response = await client.get('/api/capabilities')
+
+    assert response.status_code == 500, response.text
+    payload = response.json()
+    assert payload['error']['code'] == 'internal_error'
+    assert payload['detail'] == 'An unexpected error occurred.'
+    assert payload['error']['message'] == 'An unexpected error occurred.'
+    assert 'details' not in payload['error']
+    assert 'sensitive' not in response.text
+
+
+async def test_internal_errors_do_not_expose_exception_details(app, monkeypatch):
+    registry = get_capability_registry()
+
+    async def _boom():
+        raise RuntimeError('sensitive\ntraceback details')
+
+    monkeypatch.setattr(registry, 'check_all', _boom)
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+        response = await client.get('/api/capabilities')
+
+    assert response.status_code == 500, response.text
+    payload = response.json()
+    assert payload['error']['code'] == 'internal_error'
+    assert payload['detail'] == 'An unexpected error occurred.'
+    assert payload['error']['message'] == 'An unexpected error occurred.'
+    assert 'details' not in payload['error']
+    assert 'sensitive' not in response.text

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from io import StringIO
 from pathlib import Path
 
 import pytest
 
 from backend.config import settings
 from backend.services.capabilities import get_capability_registry
+from backend.services.logging_config import JsonFormatter, RequestContextFilter, log_action
 
 
 def _request_logs(caplog):
@@ -16,6 +19,42 @@ def _request_logs(caplog):
         for record in caplog.records
         if getattr(record, 'action', None) == 'http_request' and isinstance(getattr(record, 'details', None), dict)
     ]
+
+
+def test_log_action_sanitizes_control_characters() -> None:
+    stream = StringIO()
+    logger = logging.getLogger('tests.logging.sanitization')
+    logger.handlers = []
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(RequestContextFilter())
+    handler.setFormatter(JsonFormatter())
+    logger.addHandler(handler)
+
+    try:
+        log_action(
+            logger,
+            logging.INFO,
+            'message\nwith\rcontrol\x00chars',
+            action='upload\nrequest',
+            correlation_id='corr\r123',
+            details={
+                'filename': 'bad\nname.png',
+                'nested': ['tab\tvalue', 'null\x00byte'],
+            },
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = True
+
+    payload = json.loads(stream.getvalue())
+    assert payload['message'] == 'message\\nwith\\rcontrol\\x00chars'
+    assert payload['action'] == 'upload\\nrequest'
+    assert payload['correlation_id'] == 'corr\\r123'
+    assert payload['details']['filename'] == 'bad\\nname.png'
+    assert payload['details']['nested'] == ['tab\\tvalue', 'null\\x00byte']
 
 
 def test_request_logging_propagates_correlation_id(app, caplog) -> None:

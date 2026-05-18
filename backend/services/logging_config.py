@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from contextvars import ContextVar, Token
 from datetime import UTC, datetime
@@ -16,20 +17,41 @@ _DEFAULT_CONTEXT = {
     'action': None,
     'details': None,
 }
+_CONTROL_CHARACTER_RE = re.compile(r'[\x00-\x1f\x7f]')
+_CONTROL_CHARACTER_ESCAPES = {
+    '\n': r'\n',
+    '\r': r'\r',
+    '\t': r'\t',
+}
 _log_context: ContextVar[dict[str, Any]] = ContextVar('backend_log_context', default=_DEFAULT_CONTEXT.copy())
 _configured = False
+
+
+def _sanitize_log_text(value: str) -> str:
+    return _CONTROL_CHARACTER_RE.sub(
+        lambda match: _CONTROL_CHARACTER_ESCAPES.get(match.group(0), f'\\x{ord(match.group(0)):02x}'),
+        value,
+    )
+
+
+def _coerce_log_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _sanitize_log_text(value)
+    return value
 
 
 def _coerce_details(details: Any) -> Any:
     if details is None:
         return None
     if isinstance(details, dict):
-        return {str(key): _coerce_details(value) for key, value in details.items()}
+        return {_sanitize_log_text(str(key)): _coerce_details(value) for key, value in details.items()}
     if isinstance(details, (list, tuple, set)):
         return [_coerce_details(value) for value in details]
-    if isinstance(details, (str, int, float, bool)):
+    if isinstance(details, str):
+        return _sanitize_log_text(details)
+    if isinstance(details, (int, float, bool)):
         return details
-    return str(details)
+    return _sanitize_log_text(str(details))
 
 
 def bind_context(**values: Any) -> Token:
@@ -37,7 +59,7 @@ def bind_context(**values: Any) -> Token:
     for key, value in values.items():
         if key not in _DEFAULT_CONTEXT:
             continue
-        current[key] = _coerce_details(value) if key == 'details' else value
+        current[key] = _coerce_details(value) if key == 'details' else _coerce_log_value(value)
     return _log_context.set(current)
 
 
@@ -60,10 +82,10 @@ def get_context() -> dict[str, Any]:
 class RequestContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         context = get_context()
-        record.correlation_id = getattr(record, 'correlation_id', None) or context['correlation_id']
+        record.correlation_id = _coerce_log_value(getattr(record, 'correlation_id', None) or context['correlation_id'])
         record.user_id = getattr(record, 'user_id', None) or context['user_id']
         record.family_id = getattr(record, 'family_id', None) or context['family_id']
-        record.action = getattr(record, 'action', None) or context['action']
+        record.action = _coerce_log_value(getattr(record, 'action', None) or context['action'])
         details = getattr(record, 'details', None)
         record.details = _coerce_details(context['details'] if details is None else details)
         return True
@@ -75,7 +97,7 @@ class JsonFormatter(logging.Formatter):
             'timestamp': datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             'level': record.levelname,
             'logger': record.name,
-            'message': record.getMessage(),
+            'message': _sanitize_log_text(record.getMessage()),
             'correlation_id': getattr(record, 'correlation_id', None),
             'user_id': getattr(record, 'user_id', None),
             'family_id': getattr(record, 'family_id', None),
@@ -94,7 +116,7 @@ class ConsoleFormatter(logging.Formatter):
         action = getattr(record, 'action', None) or '-'
         details = getattr(record, 'details', None)
         details_suffix = f' details={json.dumps(details, default=str)}' if details is not None else ''
-        return f'{timestamp} {record.levelname:<8} [{correlation_id}] {action} {record.getMessage()}{details_suffix}'
+        return f'{timestamp} {record.levelname:<8} [{correlation_id}] {action} {_sanitize_log_text(record.getMessage())}{details_suffix}'
 
 
 def should_use_json_logging(config: Settings = settings) -> bool:
@@ -135,15 +157,15 @@ def log_action(
     details: dict[str, Any] | None = None,
     exc_info: Any = None,
 ) -> None:
-    sanitized_message = message.replace('\n', '\\n').replace('\r', '\\r')
+    sanitized_message = _sanitize_log_text(message)
     logger.log(
         level,
         sanitized_message,
         extra={
-            'correlation_id': correlation_id,
+            'correlation_id': _coerce_log_value(correlation_id),
             'user_id': user_id,
             'family_id': family_id,
-            'action': action,
+            'action': _coerce_log_value(action),
             'details': _coerce_details(details),
         },
         exc_info=exc_info,

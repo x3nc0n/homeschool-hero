@@ -8,6 +8,7 @@ from sqlalchemy import select
 from backend.config import settings
 from backend.database import AsyncSessionLocal
 from backend.models import GradingJob, GradingJobStatus
+from backend.services.storage import store_submission_file
 from tests.contracts import SUBMISSIONS, UPLOADS_DIR
 from tests.helpers import assert_validation_error, require_route, response_id
 
@@ -205,6 +206,42 @@ async def test_submissions_store_files_in_deterministic_paths(authorized_client,
     assert normalized_path.endswith(expected_suffix)
     stored_file = UPLOADS_DIR / Path(payload['file_path'])
     assert stored_file.exists()
+
+
+def test_store_submission_file_rejects_parent_path_segments(tmp_path, monkeypatch):
+    monkeypatch.setattr('backend.services.storage.build_submission_relative_path', lambda **_kwargs: Path('..', 'escape.png'))
+
+    with pytest.raises(ValueError, match='Invalid upload path'):
+        store_submission_file(
+            upload_root=str(tmp_path),
+            family_id=1,
+            student_id=2,
+            assignment_id=3,
+            submission_id=4,
+            original_filename='fractions.png',
+            content_type='image/png',
+            contents=PNG_BYTES,
+        )
+
+
+
+def test_store_submission_file_rejects_absolute_paths(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        'backend.services.storage.build_submission_relative_path',
+        lambda **_kwargs: Path(tmp_path.anchor) / 'escape.png',
+    )
+
+    with pytest.raises(ValueError, match='Invalid upload path'):
+        store_submission_file(
+            upload_root=str(tmp_path),
+            family_id=1,
+            student_id=2,
+            assignment_id=3,
+            submission_id=4,
+            original_filename='fractions.png',
+            content_type='image/png',
+            contents=PNG_BYTES,
+        )
 
 
 @pytest.mark.asyncio

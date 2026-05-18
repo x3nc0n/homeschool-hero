@@ -266,6 +266,29 @@ def _maintenance_payload(*, message: str, source: str) -> dict[str, object]:
     )
 
 
+def _build_internal_error_response(
+    request: Request,
+    *,
+    status_code: int = 500,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    response = JSONResponse(
+        status_code=status_code,
+        content=build_error_payload(
+            error_detail(
+                code='internal_error',
+                message_key='errors.request.internal',
+                default_message='An unexpected error occurred.',
+            ),
+            locale=_get_request_locale(request),
+            requested_locale=request.headers.get('accept-language'),
+        ),
+        headers=headers,
+    )
+    _apply_transport_headers(request, response)
+    return response
+
+
 def _https_redirect_url(request: Request) -> str:
     target = request.url.replace(scheme='https')
     return str(target)
@@ -320,6 +343,9 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        if exc.status_code >= 500:
+            return _build_internal_error_response(request, status_code=exc.status_code, headers=exc.headers)
+
         response = JSONResponse(
             status_code=exc.status_code,
             content=build_error_payload(
@@ -362,22 +388,7 @@ def create_app() -> FastAPI:
             details={'path': request.url.path, 'method': request.method},
             exc_info=exc,
         )
-        details = {'type': exc.__class__.__name__} if settings.testing else None
-        response = JSONResponse(
-            status_code=500,
-            content=build_error_payload(
-                error_detail(
-                    code='internal_error',
-                    message_key='errors.request.internal',
-                    default_message='An unexpected error occurred.',
-                    details=details,
-                ),
-                locale=_get_request_locale(request),
-                requested_locale=request.headers.get('accept-language'),
-            ),
-        )
-        _apply_transport_headers(request, response)
-        return response
+        return _build_internal_error_response(request)
 
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):
@@ -403,6 +414,8 @@ def create_app() -> FastAPI:
                 try:
                     session = await resolve_request_session_claims(request)
                 except HTTPException as exc:
+                    if exc.status_code >= 500:
+                        return _build_internal_error_response(request, status_code=exc.status_code, headers=exc.headers)
                     response = JSONResponse(
                         status_code=exc.status_code,
                         content=build_error_payload(
@@ -466,6 +479,8 @@ def create_app() -> FastAPI:
                     try:
                         require_csrf(request, session)
                     except HTTPException as exc:
+                        if exc.status_code >= 500:
+                            return _build_internal_error_response(request, status_code=exc.status_code, headers=exc.headers)
                         response = JSONResponse(
                             status_code=exc.status_code,
                             content=build_error_payload(
