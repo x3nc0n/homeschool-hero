@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 import pytest
 from fastapi.responses import RedirectResponse
 
@@ -60,6 +61,9 @@ class _FakeOAuth:
 class _FailingOIDCApp:
     def __init__(self, exc: Exception) -> None:
         self._exc = exc
+
+    async def authorize_redirect(self, _request, _redirect_uri: str):
+        raise self._exc
 
     async def authorize_access_token(self, _request):
         raise self._exc
@@ -281,6 +285,70 @@ async def test_oidc_login_redirects_to_identity_provider(async_client, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_oidc_login_redirects_to_login_when_discovery_is_unreachable(async_client, monkeypatch, caplog):
+    _set_auth_settings(
+        monkeypatch,
+        auth_provider='oidc',
+        oidc_client_id='client-id',
+        oidc_client_secret='client-secret',
+        oidc_discovery_url='https://idp.example/.well-known/openid-configuration',
+    )
+    caplog.set_level(logging.ERROR)
+    request = httpx.Request('GET', 'https://idp.example/.well-known/openid-configuration')
+    monkeypatch.setattr(
+        'backend.services.auth_oidc.create_oauth_client',
+        lambda: _FailingOAuth(httpx.ConnectError('dns lookup failed', request=request)),
+    )
+    monkeypatch.setattr('backend.services.auth_oidc._ensure_oidc_enabled', lambda: None)
+
+    response = await async_client.get(AUTH['oidc_login'])
+
+    assert response.status_code == 302
+    assert 'OIDC%20sign-in%20is%20unavailable%3A%20provider%20discovery%20endpoint%20is%20unreachable' in response.headers['location']
+    assert 'OIDC login initiation failed.' in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_oidc_verify_reports_unreachable_discovery(async_client, monkeypatch):
+    _set_auth_settings(
+        monkeypatch,
+        auth_provider='oidc',
+        oidc_client_id='client-id',
+        oidc_client_secret='client-secret',
+        oidc_discovery_url='https://idp.example/.well-known/openid-configuration',
+    )
+
+    class _FailingAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, _url, headers=None):
+            request = httpx.Request('GET', 'https://idp.example/.well-known/openid-configuration')
+            raise httpx.ConnectError('dns lookup failed', request=request)
+
+    monkeypatch.setattr('backend.services.auth_oidc.httpx.AsyncClient', _FailingAsyncClient)
+    monkeypatch.setattr('backend.services.auth_oidc.AUTHLIB_AVAILABLE', True)
+
+    response = await async_client.get(AUTH['oidc_verify'])
+
+    assert response.status_code == 503
+    assert response.json() == {
+        'configured': True,
+        'reachable': False,
+        'message': 'OIDC sign-in is unavailable: provider discovery endpoint is unreachable',
+        'discovery_url': 'https://idp.example/.well-known/openid-configuration',
+        'issuer': None,
+        'authorization_endpoint': None,
+    }
+
+
+@pytest.mark.asyncio
 async def test_oidc_callback_redirects_to_login_when_token_exchange_fails(async_client, monkeypatch):
     _set_auth_settings(
         monkeypatch,
@@ -299,6 +367,29 @@ async def test_oidc_callback_redirects_to_login_when_token_exchange_fails(async_
 
     assert response.status_code == 302
     assert response.headers['location'].startswith('/login?error=OIDC%20sign-in%20failed')
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_redirects_to_login_when_unexpected_error_bubbles(async_client, monkeypatch, caplog):
+    _set_auth_settings(
+        monkeypatch,
+        auth_provider='oidc',
+        oidc_client_id='client-id',
+        oidc_client_secret='client-secret',
+        oidc_discovery_url='https://idp.example/.well-known/openid-configuration',
+    )
+    caplog.set_level(logging.ERROR)
+
+    async def _explode(_request):
+        raise RuntimeError('database unavailable')
+
+    monkeypatch.setattr('backend.routers.auth.complete_oidc_login', _explode)
+
+    response = await async_client.get(f"{AUTH['oidc_callback']}?code=test-code&state=test-state")
+
+    assert response.status_code == 302
+    assert response.headers['location'] == '/login?error=OIDC%20sign-in%20failed.%20Please%20try%20again.'
+    assert 'OIDC callback failed.' in caplog.text
 
 
 @pytest.mark.asyncio

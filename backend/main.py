@@ -93,6 +93,7 @@ PUBLIC_API_PATHS = {
     f'{API_PREFIX}/auth/login',
     f'{API_PREFIX}/auth/register',
     f'{API_PREFIX}/auth/oidc/login',
+    f'{API_PREFIX}/auth/oidc/verify',
     f'{API_PREFIX}/auth/oidc/callback',
     f'{API_PREFIX}/auth/saml/login',
     f'{API_PREFIX}/auth/saml/metadata',
@@ -432,6 +433,7 @@ def create_app() -> FastAPI:
             maintenance_bypass_paths = {
                 f'{API_PREFIX}/auth/login',
                 f'{API_PREFIX}/auth/oidc/login',
+                f'{API_PREFIX}/auth/oidc/verify',
                 f'{API_PREFIX}/auth/oidc/callback',
                 f'{API_PREFIX}/auth/saml/login',
                 f'{API_PREFIX}/auth/saml/acs',

@@ -12,6 +12,7 @@ AUTH = {
     'logout': f'{API_PREFIX}/auth/logout',
     'me': f'{API_PREFIX}/auth/me',
     'oidc_login': f'{API_PREFIX}/auth/oidc/login',
+    'oidc_verify': f'{API_PREFIX}/auth/oidc/verify',
     'oidc_callback': f'{API_PREFIX}/auth/oidc/callback',
     'saml_login': f'{API_PREFIX}/auth/saml/login',
     'saml_metadata': f'{API_PREFIX}/auth/saml/metadata',

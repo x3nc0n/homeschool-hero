@@ -80,6 +80,15 @@ class BootstrapStatusResponse(BaseModel):
     bootstrap_required: bool
 
 
+class OIDCVerifyResponse(BaseModel):
+    configured: bool
+    reachable: bool
+    message: str
+    discovery_url: str | None = None
+    issuer: str | None = None
+    authorization_endpoint: str | None = None
+
+
 LoginResponse = AuthSessionResponse
 RegisterResponse = AuthSessionResponse
 SessionResponse = AuthSessionResponse

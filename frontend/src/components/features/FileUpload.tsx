@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Camera, FileText, RotateCcw, Upload } from 'lucide-react'
 import type { Assignment, Student, Submission, SubmissionDetail } from '@/types/api'
 import { api } from '@/lib/api'
@@ -28,6 +28,8 @@ const ALLOWED_MIME_TYPES = new Set([
 ])
 const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.heic', '.heif', '.tif', '.tiff', '.webp']
 
+type PreviewKind = 'image' | 'pdf'
+
 function formatBytes(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
@@ -37,6 +39,35 @@ function formatBytes(bytes: number) {
 function isAllowedFile(file: File) {
   const name = file.name.toLowerCase()
   return ALLOWED_MIME_TYPES.has(file.type) || ALLOWED_EXTENSIONS.some((extension) => name.endsWith(extension))
+}
+
+function startsWithSignature(bytes: Uint8Array, signature: number[]) {
+  return signature.every((value, index) => bytes[index] === value)
+}
+
+function isPdfSignature(bytes: Uint8Array) {
+  return startsWithSignature(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d])
+}
+
+function isJpegSignature(bytes: Uint8Array) {
+  return startsWithSignature(bytes, [0xff, 0xd8, 0xff])
+}
+
+function isPngSignature(bytes: Uint8Array) {
+  return startsWithSignature(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+}
+
+function isWebpSignature(bytes: Uint8Array) {
+  return startsWithSignature(bytes, [0x52, 0x49, 0x46, 0x46]) && startsWithSignature(bytes.slice(8), [0x57, 0x45, 0x42, 0x50])
+}
+
+async function getPreviewKind(file: File): Promise<PreviewKind | null> {
+  const header = new Uint8Array(await file.slice(0, 16).arrayBuffer())
+
+  if (isPdfSignature(header)) return 'pdf'
+  if (isJpegSignature(header) || isPngSignature(header) || isWebpSignature(header)) return 'image'
+
+  return null
 }
 
 export function FileUpload({
@@ -60,7 +91,9 @@ export function FileUpload({
   const [selectedAssignment, setSelectedAssignment] = useState<string>('')
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string>('')
+  const [previewKind, setPreviewKind] = useState<PreviewKind | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const previewSelectionId = useRef(0)
   const [progress, setProgress] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -77,11 +110,8 @@ export function FileUpload({
     }
   }, [previewUrl])
 
-  const isImage = useMemo(() => {
-    if (!file) return false
-    return ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
-  }, [file])
-  const isPdf = useMemo(() => file?.type === 'application/pdf', [file])
+  const isImage = previewKind === 'image'
+  const isPdf = previewKind === 'pdf'
   const visibleAssignments = useMemo(
     () =>
       assignments.filter((assignment) => {
@@ -92,7 +122,7 @@ export function FileUpload({
     [assignments, selectedStudent],
   )
 
-  const onFileChange = (picked?: File) => {
+  const onFileChange = async (picked?: File) => {
     if (!picked) return
     if (!isAllowedFile(picked)) {
       setError(`Allowed file types: ${ALLOWED_FILE_LABEL}.`)
@@ -103,10 +133,24 @@ export function FileUpload({
       return
     }
     if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setPreviewUrl('')
+    setPreviewKind(null)
     setFile(picked)
     setError('')
+
+    const selectionId = ++previewSelectionId.current
+    const nextPreviewKind = await getPreviewKind(picked)
+    if (selectionId !== previewSelectionId.current || !nextPreviewKind) return
+
     const objectUrl = URL.createObjectURL(picked)
-    setPreviewUrl(objectUrl.startsWith('blob:') ? objectUrl : '')
+    if (!objectUrl.startsWith('blob:')) return
+    if (selectionId !== previewSelectionId.current) {
+      URL.revokeObjectURL(objectUrl)
+      return
+    }
+
+    setPreviewKind(nextPreviewKind)
+    setPreviewUrl(objectUrl)
   }
 
   const handleSubmit = async () => {
@@ -134,6 +178,7 @@ export function FileUpload({
       setFile(null)
       if (previewUrl) URL.revokeObjectURL(previewUrl)
       setPreviewUrl('')
+      setPreviewKind(null)
       if (!resubmitTarget) {
         setSelectedStudent('')
         setSelectedAssignment('')
@@ -273,7 +318,9 @@ export function FileUpload({
                 {isImage ? (
                   <img alt="Submission preview" src={previewUrl} className="max-h-56 rounded-md border object-contain" />
                 ) : isPdf ? (
-                  <iframe title="PDF preview" src={previewUrl} sandbox="" className="h-64 w-full rounded-md border" />
+                  <object aria-label="PDF preview" data={previewUrl} type="application/pdf" className="h-64 w-full rounded-md border">
+                    <p className="p-4 text-xs text-muted-foreground">PDF preview is unavailable in this browser.</p>
+                  </object>
                 ) : (
                   <p className="text-xs text-muted-foreground">Preview is unavailable for this file type, but the upload is supported.</p>
                 )}

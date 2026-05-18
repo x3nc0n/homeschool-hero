@@ -4,6 +4,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+import httpx
 from fastapi import Request
 
 from backend.config import settings
@@ -31,11 +32,34 @@ class OIDCConfigurationError(RuntimeError):
     """Raised when OIDC is not available or returns unusable claims."""
 
 
-def _oidc_callback_error_message(exc: Exception) -> str:
+def _oidc_provider_error_detail(exc: Exception) -> str | None:
     if isinstance(exc, OAuthError):
         detail = str(getattr(exc, 'error', '') or '').strip()
         if detail:
-            return f'OIDC sign-in failed: {detail}'
+            return detail
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f'provider discovery returned HTTP {exc.response.status_code}'
+    if isinstance(exc, httpx.RequestError):
+        return 'provider discovery endpoint is unreachable'
+    detail = str(exc).strip()
+    return detail or None
+
+
+def _oidc_login_error_message(exc: Exception) -> str:
+    if isinstance(exc, OIDCConfigurationError):
+        return str(exc)
+    detail = _oidc_provider_error_detail(exc)
+    if detail:
+        return f'OIDC sign-in is unavailable: {detail}'
+    return 'OIDC sign-in is temporarily unavailable. Please try again.'
+
+
+def _oidc_callback_error_message(exc: Exception) -> str:
+    if isinstance(exc, OIDCConfigurationError):
+        return str(exc)
+    detail = _oidc_provider_error_detail(exc)
+    if detail:
+        return f'OIDC sign-in failed: {detail}'
     return 'OIDC sign-in failed. Please try again.'
 
 
@@ -184,7 +208,10 @@ async def begin_oidc_login(request: Request):
     _ensure_oidc_enabled()
     oauth = create_oauth_client()
     redirect_uri = str(request.url_for('oidc_callback'))
-    return await oauth.oidc.authorize_redirect(request, redirect_uri)
+    try:
+        return await oauth.oidc.authorize_redirect(request, redirect_uri)
+    except Exception as exc:
+        raise OIDCConfigurationError(_oidc_login_error_message(exc)) from exc
 
 
 async def complete_oidc_login(request: Request) -> ExternalIdentity:
@@ -210,3 +237,66 @@ async def complete_oidc_login(request: Request) -> ExternalIdentity:
         raise OIDCConfigurationError('OIDC provider did not return user claims.')
 
     return extract_identity(claims)
+
+
+async def verify_oidc_configuration() -> dict[str, Any]:
+    discovery_url = (settings.oidc_discovery_url or '').strip() or None
+    try:
+        _ensure_oidc_enabled()
+    except OIDCConfigurationError as exc:
+        return {
+            'configured': False,
+            'reachable': False,
+            'message': str(exc),
+            'discovery_url': discovery_url,
+            'issuer': None,
+            'authorization_endpoint': None,
+        }
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+            response = await client.get(discovery_url, headers={'Accept': 'application/json'})
+            response.raise_for_status()
+            metadata = response.json()
+    except Exception as exc:
+        return {
+            'configured': True,
+            'reachable': False,
+            'message': _oidc_login_error_message(exc),
+            'discovery_url': discovery_url,
+            'issuer': None,
+            'authorization_endpoint': None,
+        }
+
+    if not isinstance(metadata, Mapping):
+        return {
+            'configured': True,
+            'reachable': False,
+            'message': 'OIDC discovery endpoint returned invalid metadata.',
+            'discovery_url': discovery_url,
+            'issuer': None,
+            'authorization_endpoint': None,
+        }
+
+    issuer = metadata.get('issuer')
+    authorization_endpoint = metadata.get('authorization_endpoint')
+    issuer_value = issuer.strip() if isinstance(issuer, str) and issuer.strip() else None
+    authorization_value = authorization_endpoint.strip() if isinstance(authorization_endpoint, str) and authorization_endpoint.strip() else None
+    if authorization_value is None:
+        return {
+            'configured': True,
+            'reachable': False,
+            'message': 'OIDC discovery endpoint is missing an authorization endpoint.',
+            'discovery_url': discovery_url,
+            'issuer': issuer_value,
+            'authorization_endpoint': None,
+        }
+
+    return {
+        'configured': True,
+        'reachable': True,
+        'message': 'OIDC discovery endpoint is reachable.',
+        'discovery_url': discovery_url,
+        'issuer': issuer_value,
+        'authorization_endpoint': authorization_value,
+    }

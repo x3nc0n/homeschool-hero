@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from backend.schemas.auth import (
     BootstrapStatusResponse,
     LoginRequest,
     LoginResponse,
+    OIDCVerifyResponse,
     RegisterRequest,
     RegisterResponse,
     SessionResponse,
@@ -31,7 +32,7 @@ from backend.security import (
     set_session_cookies,
     verify_password,
 )
-from backend.services.auth_oidc import OIDCConfigurationError, begin_oidc_login, complete_oidc_login
+from backend.services.auth_oidc import OIDCConfigurationError, begin_oidc_login, complete_oidc_login, verify_oidc_configuration
 from backend.services.auth_provisioning import ExternalIdentity, provision_external_identity
 from backend.services.auth_saml import SAMLConfigurationError, begin_saml_login, complete_saml_login, get_metadata_xml
 from backend.services.audit import log_event
@@ -330,8 +331,17 @@ async def _complete_external_login(
 async def oidc_login(request: Request):
     try:
         return await begin_oidc_login(request)
-    except OIDCConfigurationError as exc:
-        return _redirect_to_login_error(str(exc))
+    except Exception as exc:
+        logger.exception('OIDC login initiation failed.', exc_info=exc)
+        message = str(exc) if isinstance(exc, OIDCConfigurationError) else 'OIDC sign-in is temporarily unavailable. Please try again.'
+        return _redirect_to_login_error(message)
+
+
+@router.get('/oidc/verify', response_model=OIDCVerifyResponse)
+async def oidc_verify() -> JSONResponse:
+    verification = await verify_oidc_configuration()
+    status_code = status.HTTP_200_OK if verification['reachable'] else status.HTTP_503_SERVICE_UNAVAILABLE
+    return JSONResponse(status_code=status_code, content=verification)
 
 
 @router.get('/oidc/callback')
@@ -340,9 +350,12 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         identity = await complete_oidc_login(request)
         return await _complete_external_login(identity=identity, request=request, db=db)
     except HTTPException as exc:
-        return _redirect_to_login_error(exc.detail)
-    except OIDCConfigurationError as exc:
-        return _redirect_to_login_error(str(exc))
+        logger.warning('OIDC callback rejected login: %s', exc.detail)
+        return _redirect_to_login_error(str(exc.detail))
+    except Exception as exc:
+        logger.exception('OIDC callback failed.', exc_info=exc)
+        message = str(exc) if isinstance(exc, OIDCConfigurationError) else 'OIDC sign-in failed. Please try again.'
+        return _redirect_to_login_error(message)
 
 
 @router.get('/saml/metadata')
