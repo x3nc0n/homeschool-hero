@@ -18,6 +18,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         curl \
         postgresql-client \
