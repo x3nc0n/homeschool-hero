@@ -296,6 +296,53 @@
 - **Decision:** Make the frontend auth layer capability-first. `AuthContext` should normalize `app_roles` and `effective_capabilities` into shared `hasRole`/`hasCapability` helpers, then synthesize legacy AppRole/capability fallbacks from `membership.role` when local auth sessions do not include RBAC fields. Route guards, navigation, and tab visibility should consume those helpers so OIDC and local auth follow the same UI gating rules.
 - **Impact:** Frontend access checks now match the backend RBAC shape without requiring MSAL or a client-side OAuth implementation. Local email/password installs keep working because FamilyRole-based sessions are translated into the same helper API, reducing future drift between server auth decisions and visible UI affordances.
 
+### Egon RBAC Hierarchy Redesign (2026-05-22T15:25:42.606-05:00)
+- **Author:** Egon
+- **Requested by:** John
+- **Context:** The current unified RBAC implementation does not match the product hierarchy John wants. In `backend/services/rbac.py`, `AppRole.admin` only grants `manage_platform`, and `derive_effective_capabilities()` intersects family-role and app-role capability sets. For an admin user with `family_role='parent'`, `app_roles=['admin']`, and `is_owner=True`, that strips out the educational bundle and leaves only platform/security capabilities, which causes 403s on dashboard, students, gradebook, compliance, and imports flows. This also leaves `backend/services/authorization.py` too literal: `require_any_role()` only accepts exact app-role matches, so routes guarded as teacher-or-student deny admins even when the intended hierarchy is "admin implies everything below it."
+- **Decision:** Replace the current narrower-wins app-role behavior with an explicit hierarchy: Admin = full educator access + student-view access + platform management; Parent/Teacher = one shared educator capability bundle for curriculum, grading, students, imports, compliance, and dashboard access; Student = limited student bundle only; Owner-only security remains family-scoped. Teach `require_any_role()` about role implication so `admin` implies `teacher` and `student`, but `teacher` and `student` do not imply `admin`. Make the admin capability set a superset: keep `_TEACHER_CAPABILITIES` as the educator bundle, define the student bundle as `_STUDENT_PROGRESS_CAPABILITIES | _READ_CAPABILITIES`, change `_APP_ROLE_CAPABILITIES` so `AppRole.teacher` = educator bundle, `AppRole.student` = student bundle, `AppRole.admin` = educator bundle + student bundle + `{Capability.manage_platform}`. Remove intersection-based capability derivation and instead compute effective capabilities by hierarchy/union: start from family-role bundle, union in app-role bundle(s), add `manage_platform` from admin, add `manage_security` only when the existing owner-parent rule is true. Preserve `Capability.manage_family` as the compatibility alias for `manage_household` / `manage_platform`.
+- **Impact:** Admin users now pass teacher/student role guards automatically, educator flows keep working under the redesigned hierarchy, student-viewer scoping stays unchanged, endpoints like `/api/dashboard`, `/api/gradebook/scales`, compliance reports, and imports unblock for admins.
+
+### Ray RBAC Implementation Guardrail (2026-05-22T15:25:42.606-05:00)
+- **Author:** Ray
+- **Requested by:** John
+- **Context:** Implementing Egon's RBAC hierarchy redesign made `admin` a true superset and switched capability derivation to union-based grants. That broader educator bundle also means legacy `Capability.manage_family` compatibility checks now admit tutor sessions for household-scoped actions like student management and invitations.
+- **Decision:** Keep the compatibility alias intact for migration, but treat audit-log access as a platform-admin surface. `backend/routers/audit.py` now requires `Capability.manage_platform` instead of the legacy `manage_family` alias so tutors do not inherit audit access from the educator bundle.
+- **Impact:** Admins now pass teacher/student role guards automatically, educator flows keep working under the redesigned hierarchy, and student-viewer scoping stays unchanged. Audit logs remain restricted to platform administrators even while educator permissions expand elsewhere.
+
+### Ray Role Derivation Fixes (2026-05-15T21:46:25.724-05:00)
+- **Author:** Ray
+- **Context:** Issue #112 review found that external-role auto-provisioning could fail open to `parent`, could infer `is_owner` from IdP admin claims, and could create `student_viewer` memberships without clarifying whether missing `student_id` was acceptable.
+- **Decision:** Auto-provisioning now defaults empty or unmapped IdP roles to least-privilege `FamilyRole.student_viewer`, never infers `is_owner` from IdP claims, and allows `student_viewer` memberships with `student_id=None` because `FamilyMembership.student_id` is nullable; these memberships are treated as placeholder access until an explicit student linkage is granted.
+- **Impact:** SSO users without recognized role claims cannot escalate to parent/admin-equivalent family access, owner authority stays DB-backed and admin-assigned only, and placeholder student viewers remain architecture-compatible without inventing synthetic student links.
+
+### Tully OIDC Login Fix (2026-05-18T07:28:45.785-05:00)
+- **Author:** Tully
+- **Requested by:** John
+- **Context:** A production HAR for `school.spaid.family` showed `GET /api/auth/oidc/login` ending as `200 text/html` with the SPA payload, even though the backend was handling the request and OIDC was enabled. The auth router only redirected cleanly for `OIDCConfigurationError`, leaving discovery/network/authlib failures to surface unpredictably while clients following redirects could appear to land directly on `index.html`.
+- **Decision:** Treat OIDC login and callback initiation failures as fail-closed auth errors: log the exception, redirect to `/login?error=...`, and keep user-visible messages safe and actionable. Wrap OIDC login initiation failures in `backend/services/auth_oidc.py` so discovery/network errors become `OIDCConfigurationError` with meaningful messages. Add a public `/api/auth/oidc/verify` diagnostic that checks discovery reachability and reports whether the IdP metadata is usable.
+- **Impact:** Users no longer loop into opaque SPA behavior when the IdP discovery URL is unreachable; they are redirected back to the login screen with a readable error. Infra can hit `/api/auth/oidc/verify` to distinguish config/discovery outages from frontend routing noise. The existing `/api/auth/oidc/login` success path still returns the upstream IdP redirect.
+
+### Tully OIDC Role Derivation (2026-05-15T21:46:25.724-05:00)
+- **Author:** Tully
+- **Requested by:** John
+- **Context:** OIDC external identities already arrive with normalized app roles in `identity.roles`, but the auto-provision default-family path was hard-coding `FamilyRole.parent` and `is_owner=False`. That broke RBAC expectations for admin, teacher, and student SSO users by ignoring their IdP-derived application roles.
+- **Decision:** For default-family auto-provisioning only, normalize `identity.roles` through `settings.external_role_mappings`, derive `FamilyMembership.role` from app roles in `backend/services/rbac.py`, and allow ownership only for admin-derived parent memberships when the family has no accepted owner yet.
+- **Impact:** Admin SSO users land as `parent`; the first accepted admin in the default family becomes owner. Teacher SSO users land as `tutor`. Student SSO users land as `student_viewer`. Empty or unmapped external roles log a warning and fail closed to the legacy default: `parent` plus `is_owner=False`. Invitation-based provisioning remains unchanged.
+
+### Tully Security Fixes (2026-05-17T21:57:29.677-05:00)
+- **Author:** Tully
+- **Requested by:** John
+- **Decision:** Sanitize control characters in backend log messages, correlation IDs, action labels, and structured detail payloads before formatting or emitting logs. Resolve upload destinations from normalized relative paths only, and reject absolute paths plus any parent-directory traversal before writing submission files. Redact all 5xx HTTP responses to the generic `internal_error` payload so stack traces and exception details stay in logs only.
+- **Impact:** Closes the backend CodeQL/Trivy findings for log injection, path injection, stack-trace exposure, and the vulnerable PyJWT pin. Keeps auth/security behavior fail-closed: suspicious upload paths are rejected, user-controlled log fields cannot forge entries, and clients never receive server exception details.
+
+### Venkman Service Worker Denylist (2026-05-18T07:55:09.535-05:00)
+- **Author:** Venkman
+- **Requested by:** John
+- **Context:** The generated PWA service worker was treating every browser navigation as SPA territory. That let Workbox serve `index.html` for backend-owned navigation requests like `/api/auth/oidc/login` and `/api/auth/oidc/callback`, which breaks OIDC redirects and can also mask direct navigations to uploaded files or health endpoints.
+- **Decision:** Add a Workbox navigation denylist in `frontend/vite.config.ts` for `/api/*`, `/uploads/*`, and `/health` so those requests bypass the SPA fallback. Mirror the same exclusions in the navigation runtime cache rule so backend navigations are never cached as app pages. Enable `skipWaiting` and `clientsClaim` so fixed service workers activate promptly on the next visit.
+- **Impact:** Browser-driven OIDC login and callback navigations now reach the backend instead of loading the SPA shell. Direct navigation to uploaded files and health checks remains backend-owned. Existing users pick up the corrected service worker without waiting through an extra release cycle.
+
 ## Governance
 
 - All meaningful changes require team consensus

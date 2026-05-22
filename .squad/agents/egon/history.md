@@ -2,6 +2,10 @@
 
 ## Learnings
 
+- 2026-05-22T20:25:42.606Z — Scribe merged Egon RBAC Hierarchy Redesign decision and 6 supporting decisions (Ray guardrail, role-derivation fixes, Tully OIDC/security fixes, Venkman SW denylist) to decisions.md. Orchestration logs recorded. decisions.md: 35145 → 44191 bytes (+9046). Ray's RBAC implementation complete with 334 tests passing.
+
+- 2026-05-22T15:25:42.606-05:00 — Analyzed the RBAC regression blocking admin-parent sessions from educational routes. Wrote the hierarchy redesign decision in `.squad/decisions/inbox/egon-rbac-hierarchy-redesign.md`: admin becomes a true superset, parent/teacher share the educator bundle, `require_any_role` gains admin implication, and impacted routes/tests are enumerated.
+
 - 2026-05-15T14:09:23-05:00 — **PR #109 MERGED & v0.9.2 RELEASED.** Coordinator merged PR #109 (squash c131e4d) after Winston's fix (b1fd05c) and Tully's PyJWT hardening (720200f). All 300 backend tests passing. Frontend auth gating complete. Issue #105 (CVE-2026-32597) closed. Release tag v0.9.2 pushed.
 
 - 2026-05-15T14:09:23-05:00 — Re-reviewed PR #109 after Winston's fix commit b1fd05c. All 3 findings resolved: default corrected to `True`, 403 gate added to `POST /login`, naming confirmed clear. 300 tests pass, frontend build clean. Approved (posted as comment due to self-review restriction on repo).

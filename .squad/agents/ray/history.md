@@ -2,11 +2,14 @@
 
 ## Learnings
 
+- 2026-05-22T20:25:42.606Z — Scribe merged Ray RBAC Implementation and related RBAC fix decisions to decisions.md. Session complete: admin hierarchy now enforced, audit logs gated on manage_platform, role-derivation defaults to student_viewer. Orchestration log recorded. 334 tests passing validates implementation.
+
 - 2026-05-15T07:10:40.494-05:00 — Auth capabilities now separate the primary login method (`AUTH_PROVIDER`) from provider visibility: OIDC shows when `OIDC_CLIENT_ID` is set, SAML shows when all SAML settings are present, and `AUTH_BREAKGLASS_LOCAL` controls whether local auth stays exposed as the fallback option.
 - 2026-05-14T09:30:46-05:00 — Provider-agnostic route guards now live in `backend/services/authorization.py`, where `require_admin`, `require_teacher`, `require_student`, and `require_any_role` enforce app-role checks consistently for cookie sessions and stateless JWT bearer tokens while preserving 401 for missing/expired auth and 403 for role failures.
 - 2026-05-14T09:30:46-05:00 — JWT bearer auth is opt-in through `JWT_ENABLED` and validates against either `JWT_SECRET` or `JWT_JWKS_URL` (never both), caches JWKS for 5 minutes, and requires issuer, audience, expiration, and family context so API clients can build `AuthSession` without a stored DB session.
 - 2026-05-18T16:38:51.741-05:00 — Merged Dependabot PRs #137, #135, #89, #91, #96, #95, and #93 successfully; `git pull origin main` initially hit a local `.squad/agents/egon/history.md` modification but succeeded with autostash, backend verification required a local Python 3.13 venv because the system `python`/`python3` toolchain could not run pytest directly, and verification finished green with 330 passed / 1 skipped plus a successful frontend Vite build.
 - 2026-05-18T16:38:51.741-05:00 — bcrypt 5.0 is not safe to merge unguarded here because local register/login/invitation flows accepted up to 255 characters without a UTF-8 byte cap; the fix is to reject passwords over 72 bytes at schema validation time, keep `hash_password()`/`verify_password()` defensive, and fail fast in the legacy auth migration if `FAMILY_PASSWORD` exceeds bcrypt’s limit.
+- 2026-05-22T15:25:42.606-05:00 — RBAC hierarchy now treats `admin` as a true superset of educator + student capabilities while keeping `manage_security` parent-owner only and `ensure_student_scope()` keyed to `student_viewer`; audit logs stay `manage_platform`-gated so expanded educator access does not open admin-only audit reads.
 
 ### Provider-Agnostic RBAC Enforcement + JWT Bearer Validation (2026-05-14T14:30:46Z)
 - **Issues:** #102 (RBAC enforcement) and #103 (JWT bearer validation) implemented
