@@ -9,6 +9,13 @@ from backend.security import AuthSession, get_auth_session
 from backend.services.rbac import AppRole, Capability, expand_capability_aliases, normalize_app_role_names
 
 
+_APP_ROLE_IMPLICATIONS: dict[AppRole, set[AppRole]] = {
+    AppRole.admin: {AppRole.admin, AppRole.teacher, AppRole.student},
+    AppRole.teacher: {AppRole.teacher},
+    AppRole.student: {AppRole.student},
+}
+
+
 def role_from_auth(auth: AuthSession) -> FamilyRole:
     return FamilyRole(auth.family_role)
 
@@ -19,7 +26,8 @@ def has_capability(auth: AuthSession, capability: Capability) -> bool:
 
 
 def has_app_role(auth: AuthSession, app_role: AppRole) -> bool:
-    return app_role.value in auth.app_roles
+    normalized_roles = normalize_app_role_names(auth.app_roles)
+    return any(app_role in _APP_ROLE_IMPLICATIONS[assigned_role] for assigned_role in normalized_roles)
 
 
 def require_any_role(*roles: str | AppRole, action: str = 'access this resource') -> Callable[[AuthSession], AuthSession]:

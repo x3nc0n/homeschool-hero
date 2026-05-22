@@ -39,6 +39,8 @@ _READ_CAPABILITIES = {
 
 _STUDENT_PROGRESS_CAPABILITIES = {Capability.view_own_progress}
 
+_STUDENT_CAPABILITIES = {*_STUDENT_PROGRESS_CAPABILITIES, *_READ_CAPABILITIES}
+
 _TEACHER_CAPABILITIES = {
     Capability.manage_household,
     Capability.manage_curriculum,
@@ -71,13 +73,13 @@ _FAMILY_ROLE_CAPABILITIES: dict[FamilyRole, set[Capability]] = {
         Capability.manage_grading,
         *_READ_CAPABILITIES,
     },
-    FamilyRole.student_viewer: {*_STUDENT_PROGRESS_CAPABILITIES, *_READ_CAPABILITIES},
+    FamilyRole.student_viewer: set(_STUDENT_CAPABILITIES),
 }
 
 _APP_ROLE_CAPABILITIES: dict[AppRole, set[Capability]] = {
-    AppRole.admin: {Capability.manage_platform},
+    AppRole.admin: {*_TEACHER_CAPABILITIES, *_STUDENT_CAPABILITIES, Capability.manage_platform},
     AppRole.teacher: set(_TEACHER_CAPABILITIES),
-    AppRole.student: {*_STUDENT_PROGRESS_CAPABILITIES, *_READ_CAPABILITIES},
+    AppRole.student: set(_STUDENT_CAPABILITIES),
 }
 
 _FAMILY_SCOPED_CAPABILITIES = {
@@ -173,17 +175,14 @@ def derive_effective_capabilities(
     is_owner: bool,
 ) -> set[Capability]:
     normalized_app_roles = normalize_app_role_names(app_roles)
-    family_capabilities = set(_FAMILY_ROLE_CAPABILITIES[family_role])
-    if is_owner and family_role is FamilyRole.parent:
-        family_capabilities.add(Capability.manage_security)
+    effective = set(_FAMILY_ROLE_CAPABILITIES[family_role])
 
-    app_capabilities: set[Capability] = set()
     for app_role in normalized_app_roles:
-        app_capabilities.update(_APP_ROLE_CAPABILITIES[app_role])
+        effective.update(_APP_ROLE_CAPABILITIES[app_role])
 
-    effective = (family_capabilities & app_capabilities & _FAMILY_SCOPED_CAPABILITIES)
-    effective.update(app_capabilities & _APP_AXIS_ONLY_CAPABILITIES)
-    effective.update(family_capabilities & _FAMILY_AXIS_ONLY_CAPABILITIES)
+    if is_owner and family_role is FamilyRole.parent:
+        effective.add(Capability.manage_security)
+
     return effective
 
 

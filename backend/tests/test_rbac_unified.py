@@ -209,6 +209,41 @@ class TestUnifiedRBACAccessMatrix:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('provider', AUTH_PROVIDERS, ids=AUTH_PROVIDERS)
+    async def test_admin_can_access_teacher_and_student_routes_via_role_implication(
+        self,
+        authorized_client,
+        secondary_client,
+        create_family_user,
+        jwt_auth_settings,
+        provider: str,
+    ):
+        family_id = await _family_id_from_client(authorized_client)
+        if provider == 'local':
+            packages = await authorized_client.get(TEACHER_ROUTE)
+            students = await authorized_client.get(STUDENTS['collection'])
+        else:
+            user = await _create_bearer_member(
+                create_family_user,
+                family_id=family_id,
+                email=f'admin-implication-{provider}@example.com',
+                role='tutor',
+            )
+            token = _issue_token(
+                jwt_auth_settings,
+                roles=['Admin'],
+                family_id=family_id,
+                user_id=user['user_id'],
+                family_role='tutor',
+                auth_provider=provider,
+            )
+            headers = _bearer_headers(token)
+            packages = await secondary_client.get(TEACHER_ROUTE, headers=headers)
+            students = await secondary_client.get(STUDENTS['collection'], headers=headers)
+        assert packages.status_code == 200, packages.text
+        assert students.status_code == 200, students.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('provider', AUTH_PROVIDERS, ids=AUTH_PROVIDERS)
     async def test_teacher_can_access_curriculum_and_grading_routes_for_each_provider(
         self,
         authorized_client,
@@ -566,7 +601,36 @@ class TestUnifiedRBACRoleMapping:
 
 
 class TestUnifiedRBACConflictResolution:
-    def test_sso_admin_claim_and_local_student_membership_follow_defined_precedence(self):
+    def test_parent_admin_gets_full_admin_superset_capabilities(self):
+        auth = AuthSession(
+            user_id=1,
+            family_id=1,
+            email='admin-parent@example.com',
+            display_name='Admin Parent',
+            auth_provider='oidc',
+            family_role='parent',
+            app_roles=['admin'],
+            is_owner=True,
+            family_name='Test Family',
+        )
+
+        for capability in (
+            Capability.read_students,
+            Capability.read_curriculum,
+            Capability.read_submissions,
+            Capability.read_grades,
+            Capability.manage_household,
+            Capability.manage_curriculum,
+            Capability.manage_submissions,
+            Capability.manage_grading,
+            Capability.manage_invitations,
+            Capability.view_own_progress,
+            Capability.manage_platform,
+            Capability.manage_security,
+        ):
+            assert has_capability(auth, capability)
+
+    def test_sso_admin_claim_and_local_student_membership_uses_admin_superset_hierarchy(self):
         auth = AuthSession(
             user_id=1,
             family_id=1,
@@ -579,7 +643,10 @@ class TestUnifiedRBACConflictResolution:
             family_name='Test Family',
         )
         assert has_capability(auth, Capability.manage_platform)
-        assert not has_capability(auth, Capability.read_students)
+        assert has_capability(auth, Capability.read_students)
+        assert has_capability(auth, Capability.manage_curriculum)
+        assert has_capability(auth, Capability.view_own_progress)
+        assert not has_capability(auth, Capability.manage_security)
 
     @pytest.mark.asyncio
     async def test_sso_user_without_local_membership_follows_provisioning_policy(self, monkeypatch):
