@@ -343,6 +343,26 @@
 - **Decision:** Add a Workbox navigation denylist in `frontend/vite.config.ts` for `/api/*`, `/uploads/*`, and `/health` so those requests bypass the SPA fallback. Mirror the same exclusions in the navigation runtime cache rule so backend navigations are never cached as app pages. Enable `skipWaiting` and `clientsClaim` so fixed service workers activate promptly on the next visit.
 - **Impact:** Browser-driven OIDC login and callback navigations now reach the backend instead of loading the SPA shell. Direct navigation to uploaded files and health checks remains backend-owned. Existing users pick up the corrected service worker without waiting through an extra release cycle.
 
+### Ray bcrypt 5.0 Upgrade Guardrail (2026-05-18)
+- **Date:** 2026-05-18T16:38:51.741-05:00
+- **Requested by:** John
+- **Decision:** Do not rely on bcrypt 5.0 silent truncation behavior; enforce a 72-byte UTF-8 password limit before any local-auth bcrypt hash or check reaches the library. Apply the guardrail at the API schema layer for register, login, and invitation acceptance so clients get a validation error instead of a server error. Keep backend defensive checks in `hash_password()` / `verify_password()` and fail early during the legacy family-password migration when `FAMILY_PASSWORD` exceeds bcrypt's limit.
+- **Impact:** PR #94 can merge safely once these guardrails are on main because local auth no longer depends on bcrypt 4.x truncation. Existing and future operators get a clear validation or startup error instead of unpredictable bcrypt exceptions when a password exceeds 72 UTF-8 bytes.
+
+### Ray Student Management Capability (2026-05-24)
+- **Date:** 2026-05-24T12:57:00.215-05:00
+- **Requested by:** John
+- **Decision:** Introduce a dedicated `manage_students` capability for student roster writes instead of reusing broad `manage_family` / `manage_household` checks. Grant `manage_students` to parent and co-parent family roles plus the admin app role; do not grant it to the teacher app role so tutors cannot edit the roster. Align the frontend student route and edit affordances with the same capability so admin-only sessions can reach `/students` and use the add-student flow.
+- **Impact:** `backend\routers\students.py` now expresses the intended authorization directly for create/update/delete. `backend\services\rbac.py` keeps student-roster permissions separate from general household/platform management, which avoids accidental tutor access while preserving admin access. `frontend\src\context\AuthContext.tsx`, `frontend\src\App.tsx`, and `frontend\src\components\layout\AppShell.tsx` stay in sync with backend RBAC so UI visibility matches API authorization.
+
+### Venkman ESLint upgrade (2026-05-18)
+- **Date:** 2026-05-18T16:38:51.741-05:00
+- **Requester:** John
+- **Scope:** frontend dependency maintenance
+- **Decision:** Upgrade `frontend` to `eslint@^10.4.0` and `@eslint/js@^10.0.1` together, and commit `frontend/.npmrc` with `legacy-peer-deps=true` as a temporary install compatibility shim.
+- **Why:** Dependabot PR #92 (`@eslint/js` 10) conflicts with ESLint 9 because `@eslint/js@10.0.1` declares `peerOptional eslint@^10.0.0`. Dependabot PR #136 (`eslint` 10) should not land separately from the `@eslint/js` major bump because the flat config imports `@eslint/js` directly. `eslint-plugin-jsx-a11y@6.10.2` is still the latest release and only declares peer support through ESLint 9, but linting still passes with ESLint 10 in this repo. The `.npmrc` shim keeps `npm install` working without dropping accessibility lint coverage.
+- **Validation:** `cd frontend && npm install`, `cd frontend && npm run lint`, `cd frontend && npm run build`.
+
 ## Governance
 
 - All meaningful changes require team consensus

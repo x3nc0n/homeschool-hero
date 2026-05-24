@@ -93,3 +93,37 @@
 
 ## Summary
 Completed 25+ Wave 3 production workstreams spanning academic operations, grading systems, compliance, data management, observability, deployment, and internationalization. Test coverage grew from 33 to 187+ passing tests across all areas. All production migrations validated; Docker and CI pipelines verified. Ready for final consolidation and team architecture decisions.
+
+## Archived Phases and Tasks (2026-05-14 through 2026-05-22)
+
+### Wave 4 RBAC Implementation (2026-05-14T08:57 through 2026-05-22T15:25)
+- **Issues #98–#103 (Unified RBAC):** Ray implemented phase 1 with provider-neutral `AppRole` layer, environment-driven external role mappings, effective capability calculation preserving backward compatibility.
+- **OIDC/SAML Role Extraction:** Ray added role extraction at protocol boundary, `OIDC_ROLES_CLAIM` primary with `OIDC_GROUPS_CLAIM` fallback, `SAML_ROLE_ATTRIBUTE` selection with Microsoft attribute support.
+- **Provider-Agnostic Enforcement + JWT Bearer:** Ray added explicit role dependencies (`require_admin`, `require_teacher`, `require_student`), bearer-token prioritization, symmetric/asymmetric JWT validation with JWKS caching, provider-neutral auth source resolution.
+- **Bearer Security Hardening:** Tully rehydrated bearer-backed sessions from database, rejected forged family-context, ignored owner claims in JWT, kept database-backed family scope as canonical.
+- **Frontend Auth Gating:** Venkman made auth layer capability-first, normalized `app_roles`/`effective_capabilities` in AuthContext, synthesized legacy fallbacks for local auth, route guards keyed off capabilities/AppRoles.
+- **RBAC Hierarchy Redesign:** Egon replaced narrower-wins with explicit hierarchy: Admin = full educator + student + platform; Parent/Teacher = educator bundle; Student = student bundle; Owner-only security remains family-scoped.
+- **Implementation Guardrail:** Ray kept compatibility alias, gated audit-log access to `manage_platform` to exclude tutor escalation.
+- **Role Derivation Fixes:** Ray defaulted unmapped external roles to least-privilege `student_viewer`, never inferred `is_owner` from IdP, allowed `student_viewer` with `student_id=None`.
+- **Breakglass Semantics:** Tully clarified `AUTH_BREAKGLASS_LOCAL` authorization: backend rejects `/api/auth/login` when disabled, capabilities report local auth accurately.
+- **Multi-Provider Capabilities:** Ray separated `AUTH_PROVIDER` (primary flow) from visibility: expose OIDC/SAML based on config presence, local auth by default with `AUTH_BREAKGLASS_LOCAL`.
+- **Breakglass Local Login:** Tully kept local password route available as fallback even when primary provider set to OIDC/SAML, convert OIDC failures to user-safe redirects.
+- **OIDC Login Fix:** Tully wrapped OIDC discovery/network failures in `OIDCConfigurationError`, added `/api/auth/oidc/verify` diagnostic.
+- **OIDC Role Derivation:** Tully normalized `identity.roles` through external mappings, derived `FamilyRole` from app roles, allowed first admin to become owner in default-family auto-provisioning.
+- **Security Fixes:** Tully sanitized control characters in logs, resolved upload paths from normalized relative paths only, redacted 5xx HTTP responses.
+- **Service Worker Denylist:** Venkman added Workbox navigation denylist for `/api/*`, `/uploads/*`, `/health` to preserve backend ownership and OIDC redirect flow.
+- **Dependencies:** Upgraded bcrypt, PyJWT 2.12.0 (CVE-2026-32597), ESLint 10 with `.npmrc` legacy-peer-deps shim.
+- **Test Coverage:** 334–339 tests passing; RBAC unified spec tests with 34 skipped cases awaiting implementation.
+- **Decisions:** 8 merged (RBAC Implementation, OIDC/SAML Extraction, Enforcement+JWT, Breakglass Semantics, Multi-Provider, Breakglass Login, OIDC Login Fix, OIDC Role Derivation).
+- **Key Commits:** Multiple PRs merging unified RBAC across all providers; CI green with 339 tests passing.
+
+### CI Fixes & Operations (2026-05-09 through 2026-05-18)
+- **Migration Lint:** Added ROLLBACK_NOTES blocks to 16 migration files; fixed lesson_plans_alias.py no-op downgrade.
+- **Security:** Set TLSv1_2 minimum in backend/services/health.py; updated PyJWT to 2.12.0.
+- **Test Quality:** Removed duplicate function definitions in backend/tests/contracts.py.
+- **Docker Capability:** Restored PostgreSQL startup with minimal `cap_add` on db service.
+- **CI Fixes:** Changed high-entropy secrets to allowlisted placeholders, added `--load` flag for Buildx+Trivy.
+- **Admin Guide:** Created docs/admin-guide.md with 2400+ word runbooks.
+- **Azure Scaffold:** Cloned Spaidoso/homeschool-hero-azure with 30-file Bicep structure; PostgreSQL private access via delegated subnet.
+- **Dependency Review:** 10 backend PRs reviewed; 8 auto-merged; pytest 9.x major held pending migration assessment.
+- **Commit:** eba9332 (210 tests, 0 lint errors), 7833329 (Docker capability), 6889c31 (CodeQL/Buildx/Trivy), 809f38f (Azure scaffold).
