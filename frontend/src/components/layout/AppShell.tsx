@@ -57,7 +57,7 @@ const navGroups: NavGroup[] = [
     label: 'Academics',
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/students', label: 'Students', icon: Users, capabilities: ['manage_household', 'manage_family', 'manage_curriculum'] },
+      { to: '/students', label: 'Students', icon: Users, capabilities: ['manage_students', 'manage_household', 'manage_family', 'manage_curriculum'] },
       { to: '/subjects', label: 'Subjects', icon: BookOpen, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'] },
       {
         to: '/curriculum',

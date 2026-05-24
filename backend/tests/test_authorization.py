@@ -53,8 +53,7 @@ async def test_rbac_enforces_role_permissions(authorized_client, secondary_clien
     assert tutor_assignment.status_code == 201, tutor_assignment.text
 
     tutor_student = await secondary_client.post(STUDENTS['collection'], json=student_payload('Tutor Can Add'))
-    assert tutor_student.status_code == 201, tutor_student.text
-    assert tutor_student.json()['name'] == 'Tutor Can Add'
+    assert tutor_student.status_code == 403, tutor_student.text
 
     tutor_invite = await secondary_client.post(INVITATIONS['collection'], json={'email': 'blocked@example.com', 'role': 'tutor', 'expires_in_days': 7})
     assert tutor_invite.status_code == 201, tutor_invite.text
@@ -154,8 +153,10 @@ def test_local_auth_session_synthesizes_app_roles_and_effective_capabilities() -
     assert auth.family_role == 'parent'
     assert auth.app_roles == ['admin', 'teacher']
     assert has_capability(auth, Capability.manage_family)
+    assert has_capability(auth, Capability.manage_students)
     assert Capability.manage_platform.value in auth.effective_capabilities
     assert Capability.manage_household.value in auth.effective_capabilities
+    assert Capability.manage_students.value in auth.effective_capabilities
 
 
 def test_student_viewer_session_includes_view_own_progress_capability() -> None:
@@ -202,6 +203,7 @@ def test_external_teacher_role_is_narrower_than_parent_membership_without_admin(
     )
 
     assert has_capability(auth, Capability.manage_household)
+    assert has_capability(auth, Capability.manage_students)
     assert not has_capability(auth, Capability.manage_platform)
 
 

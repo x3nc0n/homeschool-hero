@@ -36,7 +36,7 @@ async def list_students(
 async def create_student(
     payload: StudentCreate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage students')),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_students, action='manage students')),
 ) -> Student:
     existing = await db.execute(
         select(Student).where(Student.family_id == auth.family_id, Student.name == payload.name.strip())
@@ -88,7 +88,7 @@ async def update_student(
     student_id: int,
     payload: StudentUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage students')),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_students, action='manage students')),
 ) -> Student:
     student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:
@@ -114,7 +114,7 @@ async def update_student(
 async def delete_student(
     student_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='manage students')),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_students, action='manage students')),
 ) -> None:
     student = await get_family_record(db, Student, student_id, auth.family_id)
     if not student:

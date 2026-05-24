@@ -43,6 +43,7 @@ import { MaintenancePage } from '@/pages/MaintenancePage'
 import { StatusPage } from '@/pages/StatusPage'
 
 const HOUSEHOLD_CAPABILITIES = ['manage_household', 'manage_family']
+const STUDENT_MANAGEMENT_CAPABILITIES = ['manage_students']
 const TEACHER_CAPABILITIES = ['manage_curriculum', 'manage_grading', 'manage_submissions']
 const STUDENT_CAPABILITIES = ['view_own_progress', 'read_grades', 'read_curriculum', 'read_submissions', 'read_students']
 const PLATFORM_CAPABILITIES = ['manage_platform']
@@ -102,7 +103,7 @@ function ProtectedRoutes() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/students" element={<AccessRoute anyCapabilities={[...HOUSEHOLD_CAPABILITIES, 'manage_curriculum']} element={<StudentsPage />} />} />
+        <Route path="/students" element={<AccessRoute anyCapabilities={[...HOUSEHOLD_CAPABILITIES, ...STUDENT_MANAGEMENT_CAPABILITIES, 'manage_curriculum']} element={<StudentsPage />} />} />
         <Route
           path="/students/:studentId"
           element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<StudentDetailPage />} />}

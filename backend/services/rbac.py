@@ -9,6 +9,7 @@ from backend.models import FamilyRole
 class Capability(str, Enum):
     manage_family = 'manage_family'
     manage_household = 'manage_household'
+    manage_students = 'manage_students'
     manage_platform = 'manage_platform'
     manage_curriculum = 'manage_curriculum'
     manage_submissions = 'manage_submissions'
@@ -42,7 +43,6 @@ _STUDENT_PROGRESS_CAPABILITIES = {Capability.view_own_progress}
 _STUDENT_CAPABILITIES = {*_STUDENT_PROGRESS_CAPABILITIES, *_READ_CAPABILITIES}
 
 _TEACHER_CAPABILITIES = {
-    Capability.manage_household,
     Capability.manage_curriculum,
     Capability.manage_submissions,
     Capability.manage_grading,
@@ -50,9 +50,12 @@ _TEACHER_CAPABILITIES = {
     *_READ_CAPABILITIES,
 }
 
+_ADMIN_CAPABILITIES = {*_TEACHER_CAPABILITIES, *_STUDENT_CAPABILITIES, Capability.manage_students, Capability.manage_platform}
+
 _FAMILY_ROLE_CAPABILITIES: dict[FamilyRole, set[Capability]] = {
     FamilyRole.parent: {
         Capability.manage_household,
+        Capability.manage_students,
         Capability.manage_curriculum,
         Capability.manage_submissions,
         Capability.manage_grading,
@@ -61,6 +64,7 @@ _FAMILY_ROLE_CAPABILITIES: dict[FamilyRole, set[Capability]] = {
     },
     FamilyRole.co_parent: {
         Capability.manage_household,
+        Capability.manage_students,
         Capability.manage_curriculum,
         Capability.manage_submissions,
         Capability.manage_grading,
@@ -77,13 +81,14 @@ _FAMILY_ROLE_CAPABILITIES: dict[FamilyRole, set[Capability]] = {
 }
 
 _APP_ROLE_CAPABILITIES: dict[AppRole, set[Capability]] = {
-    AppRole.admin: {*_TEACHER_CAPABILITIES, *_STUDENT_CAPABILITIES, Capability.manage_platform},
+    AppRole.admin: set(_ADMIN_CAPABILITIES),
     AppRole.teacher: set(_TEACHER_CAPABILITIES),
     AppRole.student: set(_STUDENT_CAPABILITIES),
 }
 
 _FAMILY_SCOPED_CAPABILITIES = {
     Capability.manage_household,
+    Capability.manage_students,
     Capability.manage_curriculum,
     Capability.manage_submissions,
     Capability.manage_grading,
@@ -99,7 +104,12 @@ _COMPATIBILITY_ALIASES: dict[Capability, set[Capability]] = {
         Capability.manage_family,
         Capability.manage_household,
         Capability.manage_platform,
-    }
+    },
+    Capability.manage_students: {
+        Capability.manage_students,
+        Capability.manage_household,
+        Capability.manage_platform,
+    },
 }
 
 

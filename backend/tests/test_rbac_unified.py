@@ -620,6 +620,7 @@ class TestUnifiedRBACConflictResolution:
             Capability.read_submissions,
             Capability.read_grades,
             Capability.manage_household,
+            Capability.manage_students,
             Capability.manage_curriculum,
             Capability.manage_submissions,
             Capability.manage_grading,
@@ -643,6 +644,7 @@ class TestUnifiedRBACConflictResolution:
             family_name='Test Family',
         )
         assert has_capability(auth, Capability.manage_platform)
+        assert has_capability(auth, Capability.manage_students)
         assert has_capability(auth, Capability.read_students)
         assert has_capability(auth, Capability.manage_curriculum)
         assert has_capability(auth, Capability.view_own_progress)

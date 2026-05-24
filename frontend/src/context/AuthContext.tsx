@@ -46,6 +46,7 @@ const LEGACY_CAPABILITIES: Record<FamilyRole, string[]> = {
   parent: [
     'manage_family',
     'manage_household',
+    'manage_students',
     'manage_platform',
     'manage_curriculum',
     'manage_submissions',
@@ -59,6 +60,7 @@ const LEGACY_CAPABILITIES: Record<FamilyRole, string[]> = {
   'co-parent': [
     'manage_family',
     'manage_household',
+    'manage_students',
     'manage_platform',
     'manage_curriculum',
     'manage_submissions',
@@ -76,6 +78,7 @@ const LEGACY_CAPABILITIES: Record<FamilyRole, string[]> = {
 const CAPABILITY_ALIASES: Record<string, string[]> = {
   manage_family: ['manage_family', 'manage_household', 'manage_platform'],
   manage_household: ['manage_household', 'manage_family'],
+  manage_students: ['manage_students', 'manage_household', 'manage_family', 'manage_platform'],
   manage_grading: ['manage_grading', 'grade_assignments'],
   view_own_progress: ['view_own_progress', 'read_grades', 'read_curriculum', 'read_submissions', 'read_students'],
 }
@@ -207,7 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       hasCapability,
       hasRole,
       studentId: session?.membership.student_id ?? null,
-      canEditStudents: hasCapability('manage_household'),
+      canEditStudents: hasCapability('manage_students'),
       canManageCurriculum: hasCapability('manage_curriculum'),
       canManageGrading: hasCapability('manage_grading'),
       canManageInvitations: hasCapability('manage_invitations'),
