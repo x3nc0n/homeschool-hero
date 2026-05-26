@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Homeschool Hero dashboard placeholder</title>
+  <desc id="desc">Placeholder illustration for the dashboard overview screenshot referenced in the documentation.</desc>
+  <rect width="1280" height="720" fill="#0f172a" rx="32" />
+  <rect x="48" y="48" width="1184" height="624" fill="#111827" stroke="#334155" stroke-width="4" rx="24" />
+  <rect x="96" y="96" width="240" height="528" fill="#1e293b" rx="18" />
+  <rect x="376" y="96" width="808" height="96" fill="#1d4ed8" rx="18" />
+  <rect x="376" y="224" width="248" height="160" fill="#1e40af" rx="18" />
+  <rect x="656" y="224" width="248" height="160" fill="#0f766e" rx="18" />
+  <rect x="936" y="224" width="248" height="160" fill="#7c3aed" rx="18" />
+  <rect x="376" y="416" width="808" height="208" fill="#1e293b" rx="18" />
+  <text x="96" y="636" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="700">Dashboard overview</text>
+</svg>

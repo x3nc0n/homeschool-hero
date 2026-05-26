@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Homeschool Hero assignment form placeholder</title>
+  <desc id="desc">Placeholder illustration for the assignment form screenshot referenced in the documentation.</desc>
+  <rect width="1280" height="720" fill="#0f172a" rx="32" />
+  <rect x="120" y="72" width="1040" height="576" fill="#111827" stroke="#334155" stroke-width="4" rx="24" />
+  <rect x="168" y="128" width="944" height="56" fill="#1d4ed8" rx="16" />
+  <rect x="168" y="224" width="944" height="72" fill="#1e293b" rx="16" />
+  <rect x="168" y="328" width="456" height="72" fill="#1e293b" rx="16" />
+  <rect x="656" y="328" width="456" height="72" fill="#1e293b" rx="16" />
+  <rect x="168" y="432" width="944" height="120" fill="#1e293b" rx="16" />
+  <rect x="872" y="576" width="240" height="40" fill="#2563eb" rx="12" />
+  <text x="168" y="618" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="700">Assignment form</text>
+</svg>

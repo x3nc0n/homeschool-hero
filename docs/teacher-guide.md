@@ -4,7 +4,7 @@ Welcome to **Homeschool Hero**. This guide is written for parents, co-parents, a
 
 Use this handbook as your “how do I do this?” reference.
 
-![Dashboard Overview](screenshots/dashboard.png)
+![Dashboard Overview](screenshots/dashboard.svg)
 
 ## 1. Getting Started
 
@@ -138,7 +138,7 @@ Here you can create:
 
 This is important because report cards, gradebook filters, and compliance tracking all use your academic calendar.
 
-![Calendar Setup](screenshots/calendar.png)
+![Calendar Setup](screenshots/calendar.svg)
 
 ### Set family-wide rules and preferences
 
@@ -351,7 +351,7 @@ Assignments can include an **answer key** with:
 
 This is especially useful when you want AI-assisted grading or faster review later.
 
-![Assignment Form](screenshots/assignments.png)
+![Assignment Form](screenshots/assignments.svg)
 
 ## 6. Quizzes
 
@@ -686,7 +686,7 @@ Collections let you group entries into a meaningful set, such as:
 
 Collections can be marked **public**, which creates a shareable link.
 
-![Portfolio Workspace](screenshots/portfolio.png)
+![Portfolio Workspace](screenshots/portfolio.svg)
 
 ## 14. Notifications and Search
 

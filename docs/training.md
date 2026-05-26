@@ -13,7 +13,7 @@ cp .env.example .env          # DEMO_MODE=true is already set
 docker compose --profile ai up --build -d
 ```
 
-Open **http://localhost:8000** and log in:
+Open `http://localhost:8000` and log in:
 
 | Field    | Value                |
 |----------|----------------------|

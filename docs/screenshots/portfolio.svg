@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Homeschool Hero portfolio workspace placeholder</title>
+  <desc id="desc">Placeholder illustration for the portfolio workspace screenshot referenced in the documentation.</desc>
+  <rect width="1280" height="720" fill="#0f172a" rx="32" />
+  <rect x="72" y="72" width="1136" height="576" fill="#111827" stroke="#334155" stroke-width="4" rx="24" />
+  <rect x="120" y="120" width="328" height="480" fill="#1e293b" rx="20" />
+  <rect x="496" y="120" width="664" height="192" fill="#1d4ed8" rx="20" />
+  <rect x="496" y="344" width="312" height="256" fill="#0f766e" rx="20" />
+  <rect x="848" y="344" width="312" height="256" fill="#7c3aed" rx="20" />
+  <text x="120" y="632" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="700">Portfolio workspace</text>
+</svg>
