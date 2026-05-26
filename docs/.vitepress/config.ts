@@ -10,7 +10,8 @@ export default defineConfig({
       { text: 'Home', link: '/' },
       { text: 'Guides', link: '/teacher-guide' },
       { text: 'Architecture', link: '/architecture' },
-      { text: 'Reference', link: '/api-integration' },
+      { text: 'API Reference', link: '/api/' },
+      { text: 'Dev Guide', link: '/dev/' },
       { text: 'GitHub', link: 'https://github.com/x3nc0n/homeschool-hero' },
     ],
     sidebar: [
@@ -22,6 +23,24 @@ export default defineConfig({
           { text: 'Student Guide', link: '/student-guide' },
           { text: 'Administrator Guide', link: '/admin-guide' },
           { text: 'Training', link: '/training' },
+        ],
+      },
+      {
+        text: 'API Reference',
+        items: [
+          { text: 'Overview', link: '/api/' },
+          { text: 'Authentication', link: '/api/authentication' },
+          { text: 'Endpoints', link: '/api/endpoints' },
+          { text: 'Errors', link: '/api/errors' },
+        ],
+      },
+      {
+        text: 'Developer Guide',
+        items: [
+          { text: 'Overview', link: '/dev/' },
+          { text: 'Local Setup', link: '/dev/setup' },
+          { text: 'Testing', link: '/dev/testing' },
+          { text: 'Contributing', link: '/dev/contributing' },
         ],
       },
       {
