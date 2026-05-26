@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { EmptyState } from '@/components/common/EmptyState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { LoadingState } from '@/components/common/LoadingState'
+import { SchoolYearWizard } from '@/components/SchoolYearWizard'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -137,6 +138,7 @@ export function CalendarPage() {
   const [gradingPeriodFormError, setGradingPeriodFormError] = useState('')
   const [eventFormError, setEventFormError] = useState('')
   const [calendarMonth, setCalendarMonth] = useState('')
+  const [wizardOpen, setWizardOpen] = useState(false)
 
   const loadSchoolYears = async (preferredId?: number | null) => {
     const years = await api.listSchoolYears()
@@ -406,8 +408,19 @@ export function CalendarPage() {
   if (error) return <ErrorState message={error} onRetry={() => void load(selectedSchoolYearId)} />
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+    <>
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="font-medium">Need a faster setup?</p>
+              <p className="text-sm text-muted-foreground">Use the guided wizard to create a school year, terms, and holiday presets in one flow.</p>
+            </div>
+            <Button onClick={() => setWizardOpen(true)}>Set Up New School Year →</Button>
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Card>
           <CardHeader>
             <CardTitle>{editingSchoolYearId ? 'Edit school year' : 'Create school year'}</CardTitle>
@@ -969,6 +982,13 @@ export function CalendarPage() {
       ) : (
         <EmptyState title="No school year selected" description="Create or choose a school year to manage the academic calendar." />
       )}
-    </div>
+      </div>
+      <SchoolYearWizard
+        open={wizardOpen}
+        existingSchoolYears={schoolYears}
+        onOpenChange={setWizardOpen}
+        onComplete={(schoolYearId) => load(schoolYearId)}
+      />
+    </>
   )
 }

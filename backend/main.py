@@ -51,6 +51,7 @@ from backend.routers import (
     users_router,
 )
 from backend.routers.calendar import router as calendar_router
+from backend.routers.calendar import wizard_router as school_year_wizard_router
 from backend.routers.grading import router as grading_router
 from backend.routers.health import router as health_router
 from backend.routers.imports import router as imports_router
@@ -599,6 +600,7 @@ def create_app() -> FastAPI:
     app.include_router(students_router, prefix=API_PREFIX)
     app.include_router(subjects_router, prefix=API_PREFIX)
     app.include_router(calendar_router, prefix=API_PREFIX)
+    app.include_router(school_year_wizard_router, prefix=API_PREFIX)
     app.include_router(attendance_router, prefix=API_PREFIX)
     app.include_router(compliance_router, prefix=API_PREFIX)
     app.include_router(compliance_reports_router, prefix=API_PREFIX)

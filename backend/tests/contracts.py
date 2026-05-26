@@ -133,6 +133,8 @@ RESTORE = {
 CALENDAR = {
     'school_years': f'{API_PREFIX}/calendar/school-years',
     'school_year_detail': f'{API_PREFIX}/calendar/school-years/{{school_year_id}}',
+    'terms_bulk': f'{API_PREFIX}/calendar/school-years/{{school_year_id}}/terms/bulk',
+    'events_bulk': f'{API_PREFIX}/calendar/school-years/{{school_year_id}}/events/bulk',
     'terms': f'{API_PREFIX}/calendar/terms',
     'term_detail': f'{API_PREFIX}/calendar/terms/{{term_id}}',
     'grading_periods': f'{API_PREFIX}/calendar/grading-periods',
@@ -141,6 +143,12 @@ CALENDAR = {
     'event_detail': f'{API_PREFIX}/calendar/events/{{event_id}}',
     'active': f'{API_PREFIX}/calendar/active',
     'days': f'{API_PREFIX}/calendar/{{school_year_id}}/days',
+}
+
+WIZARD = {
+    'create': f'{API_PREFIX}/school-years/wizard',
+    'holidays': f'{API_PREFIX}/school-years/wizard/holidays',
+    'templates': f'{API_PREFIX}/school-years/wizard/templates',
 }
 
 ATTENDANCE = {
@@ -400,6 +408,33 @@ def calendar_event_payload(
     if notes is not None:
         payload['notes'] = notes
     return payload
+
+
+def school_year_wizard_payload(
+    *,
+    name: str = '2026-2027 School Year',
+    start_date: str = '2026-08-15',
+    end_date: str = '2027-05-30',
+    term_structure: str = 'semesters',
+    holidays: list[str] | None = None,
+    custom_breaks: list[dict[str, Any]] | None = None,
+    is_active: bool = True,
+) -> dict[str, Any]:
+    return {
+        'name': name,
+        'start_date': start_date,
+        'end_date': end_date,
+        'term_structure': term_structure,
+        'holidays': holidays or ['us_federal', 'christmas_break', 'easter_break', 'spring_break'],
+        'custom_breaks': custom_breaks or [
+            {
+                'name': 'Fall Break',
+                'start_date': '2026-10-15',
+                'end_date': '2026-10-16',
+            }
+        ],
+        'is_active': is_active,
+    }
 
 
 def attendance_daily_payload(

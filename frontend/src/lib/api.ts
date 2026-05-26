@@ -114,6 +114,9 @@ import type {
   ReviewReviewer,
   SchoolYear,
   SchoolYearDetail,
+  SchoolYearWizardCreatePayload,
+  SchoolYearWizardHolidayPreset,
+  SchoolYearWizardTemplate,
   Student,
   Subject,
   SubmissionDetail,
@@ -654,6 +657,19 @@ export const api = {
     return request<SchoolYear>(`/calendar/school-years/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
   },
 
+  listSchoolYearWizardTemplates() {
+    return request<SchoolYearWizardTemplate[]>('/school-years/wizard/templates')
+  },
+
+  listSchoolYearWizardHolidays(year: number) {
+    const params = new URLSearchParams({ year: String(year) })
+    return request<SchoolYearWizardHolidayPreset[]>(`/school-years/wizard/holidays?${params.toString()}`)
+  },
+
+  createSchoolYearFromWizard(payload: SchoolYearWizardCreatePayload) {
+    return request<SchoolYearDetail>('/school-years/wizard', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
   deleteSchoolYear(id: number) {
     return request<void>(`/calendar/school-years/${id}`, { method: 'DELETE' })
   },
@@ -668,6 +684,13 @@ export const api = {
 
   createTerm(payload: Pick<Term, 'school_year_id' | 'name' | 'start_date' | 'end_date' | 'term_type'>) {
     return request<Term>('/calendar/terms', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  createTermsBulk(schoolYearId: number, payload: { terms: Array<Pick<Term, 'name' | 'start_date' | 'end_date' | 'term_type'>> }) {
+    return request<{ terms: Term[] }>(`/calendar/school-years/${schoolYearId}/terms/bulk`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   },
 
   updateTerm(id: number, payload: Pick<Term, 'name' | 'start_date' | 'end_date' | 'term_type'>) {
@@ -694,6 +717,16 @@ export const api = {
     payload: Pick<CalendarEvent, 'school_year_id' | 'date' | 'event_type' | 'name' | 'is_instructional_day' | 'notes'>,
   ) {
     return request<CalendarEvent>('/calendar/events', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  createEventsBulk(
+    schoolYearId: number,
+    payload: { events: Array<Pick<CalendarEvent, 'date' | 'event_type' | 'name' | 'is_instructional_day' | 'notes'>> },
+  ) {
+    return request<{ events: CalendarEvent[] }>(`/calendar/school-years/${schoolYearId}/events/bulk`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   },
 
   updateCalendarEvent(

@@ -1658,6 +1658,55 @@ export interface SchoolYearDetail extends SchoolYear {
   calendar_events: CalendarEvent[]
 }
 
+export type SchoolYearWizardTermStructure = 'semesters' | 'quarters' | 'trimesters' | 'custom'
+export type SchoolYearWizardHolidayPresetType = 'federal' | 'religious' | 'school_break'
+
+export interface SchoolYearWizardTemplate {
+  key: string
+  name: string
+  description: string
+  suggested_start_date: string
+  suggested_end_date: string
+  default_term_structure: SchoolYearWizardTermStructure
+}
+
+export interface SchoolYearWizardHolidayPresetEvent {
+  date: string
+  name: string
+}
+
+export interface SchoolYearWizardHolidayPresetDateRange {
+  start_date: string
+  end_date: string
+}
+
+export interface SchoolYearWizardHolidayPreset {
+  key: string
+  name: string
+  type: SchoolYearWizardHolidayPresetType
+  recurring: boolean
+  calculation_rule?: Record<string, unknown> | null
+  date?: string | null
+  date_range?: SchoolYearWizardHolidayPresetDateRange | null
+  events: SchoolYearWizardHolidayPresetEvent[]
+}
+
+export interface SchoolYearWizardCustomBreak {
+  name: string
+  start_date: string
+  end_date: string
+}
+
+export interface SchoolYearWizardCreatePayload {
+  name: string
+  start_date: string
+  end_date: string
+  term_structure: SchoolYearWizardTermStructure
+  holidays: string[]
+  custom_breaks: SchoolYearWizardCustomBreak[]
+  is_active?: boolean
+}
+
 export interface InstructionalDayCount {
   school_year_id: number
   instructional_days: number

@@ -1,0 +1,163 @@
+[
+  {
+    "key": "us_federal",
+    "name": "US Federal Holidays",
+    "type": "federal",
+    "calculation_rule": {
+      "kind": "group",
+      "members": [
+        "new_years_day",
+        "martin_luther_king_jr_day",
+        "presidents_day",
+        "memorial_day",
+        "juneteenth",
+        "independence_day",
+        "labor_day",
+        "columbus_day",
+        "veterans_day",
+        "thanksgiving_day",
+        "christmas_day"
+      ]
+    },
+    "recurring": true,
+    "selectable": true
+  },
+  {
+    "key": "new_years_day",
+    "name": "New Year's Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "fixed_date", "month": 1, "day": 1},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "martin_luther_king_jr_day",
+    "name": "Martin Luther King Jr. Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "nth_weekday_of_month", "month": 1, "weekday": 0, "occurrence": 3},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "presidents_day",
+    "name": "Presidents' Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "nth_weekday_of_month", "month": 2, "weekday": 0, "occurrence": 3},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "memorial_day",
+    "name": "Memorial Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "last_weekday_of_month", "month": 5, "weekday": 0},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "juneteenth",
+    "name": "Juneteenth National Independence Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "fixed_date", "month": 6, "day": 19},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "independence_day",
+    "name": "Independence Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "fixed_date", "month": 7, "day": 4},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "labor_day",
+    "name": "Labor Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "nth_weekday_of_month", "month": 9, "weekday": 0, "occurrence": 1},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "columbus_day",
+    "name": "Columbus Day / Indigenous Peoples' Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "nth_weekday_of_month", "month": 10, "weekday": 0, "occurrence": 2},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "veterans_day",
+    "name": "Veterans Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "fixed_date", "month": 11, "day": 11},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "thanksgiving_day",
+    "name": "Thanksgiving Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "nth_weekday_of_month", "month": 11, "weekday": 3, "occurrence": 4},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "christmas_day",
+    "name": "Christmas Day",
+    "type": "federal",
+    "calculation_rule": {"kind": "fixed_date", "month": 12, "day": 25},
+    "recurring": true,
+    "groups": ["us_federal"]
+  },
+  {
+    "key": "christmas_break",
+    "name": "Christmas Break",
+    "type": "religious",
+    "date_range": {
+      "start": {"month": 12, "day": 20},
+      "end": {"month": 1, "day": 2},
+      "spans_year": true
+    },
+    "recurring": true,
+    "selectable": true
+  },
+  {
+    "key": "good_friday",
+    "name": "Good Friday",
+    "type": "religious",
+    "calculation_rule": {"kind": "easter_offset", "offset_days": -2},
+    "recurring": true
+  },
+  {
+    "key": "easter_monday",
+    "name": "Easter Monday",
+    "type": "religious",
+    "calculation_rule": {"kind": "easter_offset", "offset_days": 1},
+    "recurring": true
+  },
+  {
+    "key": "easter_break",
+    "name": "Easter Break",
+    "type": "religious",
+    "calculation_rule": {"kind": "easter_range", "start_offset_days": -6, "end_offset_days": 1},
+    "recurring": true,
+    "selectable": true
+  },
+  {
+    "key": "spring_break",
+    "name": "Spring Break",
+    "type": "school_break",
+    "calculation_rule": {"kind": "nth_full_week_of_month", "month": 3, "nth": 3, "week_start_weekday": 0, "length_days": 5},
+    "recurring": true,
+    "selectable": true
+  },
+  {
+    "key": "fall_break",
+    "name": "Fall Break",
+    "type": "school_break",
+    "calculation_rule": {"kind": "nth_weekday_range", "month": 10, "occurrence": 2, "weekday": 3, "length_days": 2},
+    "recurring": true,
+    "selectable": true
+  }
+]

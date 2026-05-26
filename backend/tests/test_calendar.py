@@ -5,9 +5,11 @@ import pytest
 from tests.contracts import (
     AUTH,
     CALENDAR,
+    WIZARD,
     calendar_event_payload,
     grading_period_payload,
     school_year_payload,
+    school_year_wizard_payload,
     term_payload,
 )
 from tests.helpers import response_id, sync_csrf_header, update_resource
@@ -235,3 +237,190 @@ async def test_terms_reject_overlapping_ranges(authorized_client):
     )
     assert overlapping_term.status_code == 409, overlapping_term.text
     assert 'overlap' in overlapping_term.json()['detail'].lower()
+
+
+@pytest.mark.asyncio
+async def test_calendar_bulk_create_terms_and_events_is_idempotent(authorized_client):
+    school_year_create = await authorized_client.post(CALENDAR['school_years'], json=school_year_payload())
+    assert school_year_create.status_code == 201, school_year_create.text
+    school_year_id = response_id(school_year_create.json())
+
+    term_bulk_payload = [
+        term_payload(
+            school_year_id,
+            name='Fall Semester',
+            start_date='2025-08-18',
+            end_date='2025-12-19',
+        ),
+        term_payload(
+            school_year_id,
+            name='Spring Semester',
+            start_date='2026-01-05',
+            end_date='2026-05-29',
+        ),
+    ]
+    bulk_terms = await authorized_client.post(
+        CALENDAR['terms_bulk'].format(school_year_id=school_year_id),
+        json=term_bulk_payload,
+    )
+    assert bulk_terms.status_code == 201, bulk_terms.text
+    bulk_terms_payload = bulk_terms.json()
+    assert [item['name'] for item in bulk_terms_payload] == ['Fall Semester', 'Spring Semester']
+
+    repeated_terms = await authorized_client.post(
+        CALENDAR['terms_bulk'].format(school_year_id=school_year_id),
+        json=term_bulk_payload,
+    )
+    assert repeated_terms.status_code == 201, repeated_terms.text
+    assert repeated_terms.json() == []
+
+    list_terms = await authorized_client.get(f"{CALENDAR['terms']}?school_year_id={school_year_id}")
+    assert list_terms.status_code == 200, list_terms.text
+    assert [item['name'] for item in list_terms.json()] == ['Fall Semester', 'Spring Semester']
+
+    event_bulk_payload = [
+        calendar_event_payload(school_year_id, date='2025-11-27', name='Thanksgiving Day'),
+        calendar_event_payload(school_year_id, date='2025-12-25', name='Christmas Day'),
+    ]
+    bulk_events = await authorized_client.post(
+        CALENDAR['events_bulk'].format(school_year_id=school_year_id),
+        json=event_bulk_payload,
+    )
+    assert bulk_events.status_code == 201, bulk_events.text
+    bulk_events_payload = bulk_events.json()
+    assert [(item['date'], item['name']) for item in bulk_events_payload] == [
+        ('2025-11-27', 'Thanksgiving Day'),
+        ('2025-12-25', 'Christmas Day'),
+    ]
+
+    repeated_events = await authorized_client.post(
+        CALENDAR['events_bulk'].format(school_year_id=school_year_id),
+        json=event_bulk_payload,
+    )
+    assert repeated_events.status_code == 201, repeated_events.text
+    assert repeated_events.json() == []
+
+    list_events = await authorized_client.get(f"{CALENDAR['events']}?school_year_id={school_year_id}")
+    assert list_events.status_code == 200, list_events.text
+    assert [(item['date'], item['name']) for item in list_events.json()] == [
+        ('2025-11-27', 'Thanksgiving Day'),
+        ('2025-12-25', 'Christmas Day'),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_calendar_bulk_events_are_atomic_on_validation_failure(authorized_client):
+    school_year_create = await authorized_client.post(CALENDAR['school_years'], json=school_year_payload())
+    assert school_year_create.status_code == 201, school_year_create.text
+    school_year_id = response_id(school_year_create.json())
+
+    bulk_events = await authorized_client.post(
+        CALENDAR['events_bulk'].format(school_year_id=school_year_id),
+        json=[
+            calendar_event_payload(school_year_id, date='2025-11-27', name='Thanksgiving Day'),
+            calendar_event_payload(school_year_id, date='2026-06-01', name='Outside Range'),
+        ],
+    )
+    assert bulk_events.status_code == 400, bulk_events.text
+    assert 'school year date range' in bulk_events.json()['detail'].lower()
+
+    list_events = await authorized_client.get(f"{CALENDAR['events']}?school_year_id={school_year_id}")
+    assert list_events.status_code == 200, list_events.text
+    assert list_events.json() == []
+
+
+@pytest.mark.asyncio
+async def test_calendar_bulk_terms_are_atomic_when_any_term_conflicts(authorized_client):
+    school_year_create = await authorized_client.post(CALENDAR['school_years'], json=school_year_payload())
+    assert school_year_create.status_code == 201, school_year_create.text
+    school_year_id = response_id(school_year_create.json())
+
+    existing_term = await authorized_client.post(
+        CALENDAR['terms'],
+        json=term_payload(school_year_id, name='Fall Semester', start_date='2025-08-18', end_date='2025-12-19'),
+    )
+    assert existing_term.status_code == 201, existing_term.text
+
+    bulk_terms = await authorized_client.post(
+        CALENDAR['terms_bulk'].format(school_year_id=school_year_id),
+        json=[
+            term_payload(school_year_id, name='Fall Semester', start_date='2025-08-18', end_date='2025-12-19'),
+            term_payload(school_year_id, name='Spring Semester', start_date='2026-01-05', end_date='2026-05-29'),
+            term_payload(school_year_id, name='Winter Intensive', start_date='2025-12-01', end_date='2026-01-15'),
+        ],
+    )
+    assert bulk_terms.status_code == 409, bulk_terms.text
+    assert 'overlap' in bulk_terms.json()['detail'].lower()
+
+    list_terms = await authorized_client.get(f"{CALENDAR['terms']}?school_year_id={school_year_id}")
+    assert list_terms.status_code == 200, list_terms.text
+    assert [item['name'] for item in list_terms.json()] == ['Fall Semester']
+
+
+@pytest.mark.asyncio
+async def test_school_year_wizard_creates_terms_and_holidays(authorized_client):
+    response = await authorized_client.post(WIZARD['create'], json=school_year_wizard_payload())
+    assert response.status_code == 201, response.text
+
+    payload = response.json()
+    assert payload['name'] == '2026-2027 School Year'
+    assert [term['name'] for term in payload['terms']] == ['Fall Semester', 'Spring Semester']
+    assert payload['terms'][0]['term_type'] == 'semester'
+
+    events = {(item['date'], item['name'], item['event_type']) for item in payload['calendar_events']}
+    assert ('2026-09-07', 'Labor Day', 'holiday') in events
+    assert ('2026-12-20', 'Christmas Break', 'holiday') in events
+    assert ('2027-01-02', 'Christmas Break', 'holiday') in events
+    assert ('2027-03-15', 'Spring Break', 'closure') in events
+    assert ('2026-10-15', 'Fall Break', 'closure') in events
+    assert ('2027-03-22', 'Easter Break', 'holiday') in events
+    assert ('2027-03-29', 'Easter Break', 'holiday') in events
+
+
+@pytest.mark.asyncio
+async def test_school_year_wizard_holiday_presets_are_calculated_for_year(authorized_client):
+    response = await authorized_client.get(f"{WIZARD['holidays']}?year=2026")
+    assert response.status_code == 200, response.text
+
+    payload = {item['key']: item for item in response.json()}
+    assert set(payload) == {'us_federal', 'christmas_break', 'easter_break', 'spring_break', 'fall_break'}
+    assert ('2026-09-07', 'Labor Day') in {
+        (event['date'], event['name']) for event in payload['us_federal']['events']
+    }
+    assert payload['christmas_break']['date_range'] == {
+        'start_date': '2026-12-20',
+        'end_date': '2027-01-02',
+    }
+    assert payload['spring_break']['date_range'] == {
+        'start_date': '2027-03-15',
+        'end_date': '2027-03-19',
+    }
+
+
+@pytest.mark.asyncio
+async def test_school_year_wizard_templates_and_permissions(authorized_client, secondary_client, create_family_user):
+    templates = await authorized_client.get(WIZARD['templates'])
+    assert templates.status_code == 200, templates.text
+    template_keys = {item['key'] for item in templates.json()}
+    assert {'traditional_aug_may', 'traditional_sep_jun', 'year_round_balanced', 'trimester_focus'} <= template_keys
+
+    me = await authorized_client.get(AUTH['me'])
+    family_id = me.json()['family']['id']
+    await create_family_user(
+        family_name='Test Family',
+        family_id=family_id,
+        email='viewer-wizard@example.com',
+        password='strongpass777',
+        display_name='Wizard Viewer',
+        role='student_viewer',
+    )
+
+    viewer_login = await secondary_client.post(
+        AUTH['login'],
+        json={'email': 'viewer-wizard@example.com', 'password': 'strongpass777', 'family_id': family_id},
+    )
+    assert viewer_login.status_code == 200, viewer_login.text
+    sync_csrf_header(secondary_client)
+
+    denied = await secondary_client.get(WIZARD['templates'])
+    assert denied.status_code == 403, denied.text

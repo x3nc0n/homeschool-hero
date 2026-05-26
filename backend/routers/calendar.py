@@ -10,25 +10,38 @@ from sqlalchemy.orm import selectinload
 from backend.database import get_db
 from backend.models.calendar import CalendarEvent, GradingPeriod, SchoolYear, Term
 from backend.schemas.calendar import (
+    CalendarEventBulkCreate,
     CalendarEventCreate,
     CalendarEventRead,
     CalendarEventUpdate,
     GradingPeriodCreate,
     GradingPeriodRead,
     GradingPeriodUpdate,
+    HolidayPresetRead,
     InstructionalDayCount,
     SchoolYearCreate,
     SchoolYearDetail,
     SchoolYearRead,
+    SchoolYearTemplateRead,
     SchoolYearUpdate,
+    SchoolYearWizardCreate,
+    TermBulkCreate,
     TermCreate,
     TermRead,
     TermUpdate,
 )
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import Capability, require_capabilities
+from backend.services.school_year_wizard import (
+    expand_break,
+    expand_selected_holidays,
+    generate_terms,
+    get_school_year_templates,
+    get_selectable_holiday_presets,
+)
 
 router = APIRouter(prefix='/calendar', tags=['calendar'])
+wizard_router = APIRouter(prefix='/school-years/wizard', tags=['school-year-wizard'])
 
 
 def _school_year_options():
@@ -97,6 +110,26 @@ def _ensure_within_range(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f'{name} dates must fall within the {parent_name} date range',
         )
+
+
+def _ensure_bulk_school_year_match(resource_name: str, path_school_year_id: int, payload_school_year_id: int) -> None:
+    if payload_school_year_id != path_school_year_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f'{resource_name} school_year_id must match the school year in the URL',
+        )
+
+
+def _ensure_calendar_event_within_school_year(event_date: date, school_year: SchoolYear) -> None:
+    if event_date < school_year.start_date or event_date > school_year.end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Calendar event dates must fall within the school year date range',
+        )
+
+
+def _term_ranges_overlap(start_date: date, end_date: date, other_start: date, other_end: date) -> bool:
+    return other_start <= end_date and other_end >= start_date
 
 
 async def _ensure_school_year_active_state(db: AsyncSession, family_id: int, school_year: SchoolYear) -> None:
@@ -195,6 +228,101 @@ def _calculate_instructional_day_count(school_year: SchoolYear) -> Instructional
     )
 
 
+@wizard_router.get('/holidays', response_model=list[HolidayPresetRead])
+async def list_school_year_wizard_holidays(
+    year: int = Query(..., ge=2024, le=2030),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage school year setup wizard')),
+) -> list[dict]:
+    del auth
+    return get_selectable_holiday_presets(year)
+
+
+@wizard_router.get('/templates', response_model=list[SchoolYearTemplateRead])
+async def list_school_year_wizard_templates(
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage school year setup wizard')),
+) -> list[dict]:
+    del auth
+    return get_school_year_templates()
+
+
+@wizard_router.post('', response_model=SchoolYearDetail, status_code=status.HTTP_201_CREATED)
+async def create_school_year_from_wizard(
+    payload: SchoolYearWizardCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage school year setup wizard')),
+) -> SchoolYear:
+    existing = await db.execute(
+        select(SchoolYear).where(SchoolYear.family_id == auth.family_id, SchoolYear.name == payload.name.strip())
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='School year already exists')
+
+    school_year = SchoolYear(
+        family_id=auth.family_id,
+        name=payload.name.strip(),
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        is_active=payload.is_active,
+    )
+    db.add(school_year)
+    await db.flush()
+
+    term_rows = generate_terms(
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        term_structure=payload.term_structure,
+    )
+    for term_row in term_rows:
+        db.add(
+            Term(
+                family_id=auth.family_id,
+                school_year_id=school_year.id,
+                name=term_row['name'],
+                start_date=term_row['start_date'],
+                end_date=term_row['end_date'],
+                term_type=term_row['term_type'],
+            )
+        )
+
+    try:
+        generated_events = expand_selected_holidays(payload.holidays, payload.start_date, payload.end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    for custom_break in payload.custom_breaks:
+        _ensure_within_range(
+            name='Custom break',
+            start_date=custom_break.start_date,
+            end_date=custom_break.end_date,
+            parent_name='school year',
+            parent_start=payload.start_date,
+            parent_end=payload.end_date,
+        )
+        generated_events.extend(expand_break(custom_break.name, custom_break.start_date, custom_break.end_date))
+
+    seen_events: set[tuple[date, str]] = set()
+    for event in sorted(generated_events, key=lambda item: (item['date'], item['name'])):
+        event_key = (event['date'], event['name'])
+        if event_key in seen_events:
+            continue
+        seen_events.add(event_key)
+        db.add(
+            CalendarEvent(
+                family_id=auth.family_id,
+                school_year_id=school_year.id,
+                date=event['date'],
+                event_type=event['event_type'],
+                name=event['name'],
+                is_instructional_day=event['is_instructional_day'],
+                notes=event['notes'],
+            )
+        )
+
+    await _ensure_school_year_active_state(db, auth.family_id, school_year)
+    await db.commit()
+    return await _get_school_year_or_404(db, school_year.id, auth.family_id)
+
+
 @router.get('/school-years', response_model=list[SchoolYearRead])
 async def list_school_years(
     db: AsyncSession = Depends(get_db),
@@ -273,11 +401,7 @@ async def update_school_year(
             parent_end=school_year.end_date,
         )
     for event in school_year.calendar_events:
-        if event.date < school_year.start_date or event.date > school_year.end_date:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail='Calendar event dates must fall within the school year date range',
-            )
+        _ensure_calendar_event_within_school_year(event.date, school_year)
 
     await _ensure_school_year_active_state(db, auth.family_id, school_year)
     await db.commit()
@@ -353,6 +477,66 @@ async def create_term(
     await db.commit()
     await db.refresh(term)
     return await _get_term_or_404(db, term.id, auth.family_id)
+
+
+@router.post('/school-years/{school_year_id}/terms/bulk', response_model=list[TermRead], status_code=status.HTTP_201_CREATED)
+async def bulk_create_terms(
+    school_year_id: int,
+    payload: TermBulkCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage academic calendar')),
+) -> list[Term]:
+    school_year = await _get_school_year_or_404(db, school_year_id, auth.family_id)
+    existing_names = {term.name for term in school_year.terms}
+    existing_ranges = [(term.start_date, term.end_date) for term in school_year.terms]
+    created_terms: list[Term] = []
+    pending_names: set[str] = set()
+    pending_ranges: list[tuple[date, date]] = []
+
+    for item in payload.root:
+        _ensure_bulk_school_year_match('Term', school_year_id, item.school_year_id)
+        normalized_name = item.name.strip()
+        if normalized_name in existing_names or normalized_name in pending_names:
+            continue
+        _ensure_within_range(
+            name='Term',
+            start_date=item.start_date,
+            end_date=item.end_date,
+            parent_name='school year',
+            parent_start=school_year.start_date,
+            parent_end=school_year.end_date,
+        )
+        for range_start, range_end in [*existing_ranges, *pending_ranges]:
+            if _term_ranges_overlap(item.start_date, item.end_date, range_start, range_end):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Term dates overlap an existing term')
+
+        created_terms.append(
+            Term(
+                family_id=auth.family_id,
+                school_year_id=school_year.id,
+                name=normalized_name,
+                start_date=item.start_date,
+                end_date=item.end_date,
+                term_type=item.term_type,
+            )
+        )
+        pending_names.add(normalized_name)
+        pending_ranges.append((item.start_date, item.end_date))
+
+    if not created_terms:
+        return []
+
+    db.add_all(created_terms)
+    await db.flush()
+    created_ids = [term.id for term in created_terms]
+    await db.commit()
+    result = await db.execute(
+        select(Term)
+        .options(selectinload(Term.grading_periods))
+        .where(Term.family_id == auth.family_id, Term.id.in_(created_ids))
+        .order_by(Term.start_date, Term.name)
+    )
+    return list(result.scalars().all())
 
 
 @router.get('/terms/{term_id}', response_model=TermRead)
@@ -551,11 +735,7 @@ async def create_calendar_event(
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage academic calendar')),
 ) -> CalendarEvent:
     school_year = await _get_school_year_or_404(db, payload.school_year_id, auth.family_id)
-    if payload.date < school_year.start_date or payload.date > school_year.end_date:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Calendar event dates must fall within the school year date range',
-        )
+    _ensure_calendar_event_within_school_year(payload.date, school_year)
     event = CalendarEvent(
         family_id=auth.family_id,
         school_year_id=school_year.id,
@@ -569,6 +749,53 @@ async def create_calendar_event(
     await db.commit()
     await db.refresh(event)
     return event
+
+
+@router.post('/school-years/{school_year_id}/events/bulk', response_model=list[CalendarEventRead], status_code=status.HTTP_201_CREATED)
+async def bulk_create_calendar_events(
+    school_year_id: int,
+    payload: CalendarEventBulkCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage academic calendar')),
+) -> list[CalendarEvent]:
+    school_year = await _get_school_year_or_404(db, school_year_id, auth.family_id)
+    existing_keys = {(event.date, event.name) for event in school_year.calendar_events}
+    created_events: list[CalendarEvent] = []
+    pending_keys: set[tuple[date, str]] = set()
+
+    for item in payload.root:
+        _ensure_bulk_school_year_match('Calendar event', school_year_id, item.school_year_id)
+        _ensure_calendar_event_within_school_year(item.date, school_year)
+        normalized_name = item.name.strip()
+        event_key = (item.date, normalized_name)
+        if event_key in existing_keys or event_key in pending_keys:
+            continue
+        created_events.append(
+            CalendarEvent(
+                family_id=auth.family_id,
+                school_year_id=school_year.id,
+                date=item.date,
+                event_type=item.event_type,
+                name=normalized_name,
+                is_instructional_day=item.is_instructional_day,
+                notes=item.notes.strip() if item.notes else None,
+            )
+        )
+        pending_keys.add(event_key)
+
+    if not created_events:
+        return []
+
+    db.add_all(created_events)
+    await db.flush()
+    created_ids = [event.id for event in created_events]
+    await db.commit()
+    result = await db.execute(
+        select(CalendarEvent)
+        .where(CalendarEvent.family_id == auth.family_id, CalendarEvent.id.in_(created_ids))
+        .order_by(CalendarEvent.date, CalendarEvent.name)
+    )
+    return list(result.scalars().all())
 
 
 @router.get('/events/{event_id}', response_model=CalendarEventRead)
@@ -589,11 +816,7 @@ async def update_calendar_event(
 ) -> CalendarEvent:
     event = await _get_event_or_404(db, event_id, auth.family_id)
     school_year = await _get_school_year_or_404(db, event.school_year_id, auth.family_id)
-    if payload.date < school_year.start_date or payload.date > school_year.end_date:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Calendar event dates must fall within the school year date range',
-        )
+    _ensure_calendar_event_within_school_year(payload.date, school_year)
     event.date = payload.date
     event.event_type = payload.event_type
     event.name = payload.name.strip()
