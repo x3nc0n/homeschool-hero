@@ -110,6 +110,10 @@ _COMPATIBILITY_ALIASES: dict[Capability, set[Capability]] = {
         Capability.manage_household,
         Capability.manage_platform,
     },
+    Capability.manage_curriculum: {
+        Capability.manage_curriculum,
+        Capability.manage_platform,
+    },
 }
 
 

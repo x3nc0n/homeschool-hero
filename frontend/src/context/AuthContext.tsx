@@ -79,6 +79,7 @@ const CAPABILITY_ALIASES: Record<string, string[]> = {
   manage_family: ['manage_family', 'manage_household', 'manage_platform'],
   manage_household: ['manage_household', 'manage_family'],
   manage_students: ['manage_students', 'manage_household', 'manage_family', 'manage_platform'],
+  manage_curriculum: ['manage_curriculum', 'manage_platform'],
   manage_grading: ['manage_grading', 'grade_assignments'],
   view_own_progress: ['view_own_progress', 'read_grades', 'read_curriculum', 'read_submissions', 'read_students'],
 }

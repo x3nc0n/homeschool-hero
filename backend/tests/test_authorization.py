@@ -207,6 +207,22 @@ def test_external_teacher_role_is_narrower_than_parent_membership_without_admin(
     assert not has_capability(auth, Capability.manage_platform)
 
 
+def test_manage_curriculum_accepts_manage_platform_for_legacy_admin_sessions() -> None:
+    auth = AuthSession(
+        user_id=1,
+        family_id=1,
+        email='legacy-admin@example.com',
+        display_name='Legacy Admin',
+        auth_provider='oidc',
+        family_role='student_viewer',
+        app_roles=['admin'],
+        family_name='Test Family',
+        effective_capabilities={Capability.manage_platform.value},
+    )
+
+    assert has_capability(auth, Capability.manage_curriculum)
+
+
 @pytest.mark.asyncio
 async def test_bearer_token_takes_precedence_over_cookie_session(authorized_client, secondary_client, seeded_student, monkeypatch):
     monkeypatch.setattr(settings, 'jwt_enabled', True, raising=False)
