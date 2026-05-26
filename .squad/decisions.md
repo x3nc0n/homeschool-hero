@@ -363,6 +363,32 @@
 - **Why:** Dependabot PR #92 (`@eslint/js` 10) conflicts with ESLint 9 because `@eslint/js@10.0.1` declares `peerOptional eslint@^10.0.0`. Dependabot PR #136 (`eslint` 10) should not land separately from the `@eslint/js` major bump because the flat config imports `@eslint/js` directly. `eslint-plugin-jsx-a11y@6.10.2` is still the latest release and only declares peer support through ESLint 9, but linting still passes with ESLint 10 in this repo. The `.npmrc` shim keeps `npm install` working without dropping accessibility lint coverage.
 - **Validation:** `cd frontend && npm install`, `cd frontend && npm run lint`, `cd frontend && npm run build`.
 
+### Egon GitHub Pages Documentation Site Structure (2026-05-24)
+- **Date:** 2026-05-24
+- **Author:** Egon (Lead)
+- **Status:** Proposed
+- **Decision:** Create a comprehensive GitHub Pages documentation site with six major sections: Getting Started, User Guides, Features, API Reference, Administration, and Developer Guide. Reorganize existing 16 documentation files into a clear hierarchy, identify critical content gaps (troubleshooting, RBAC/multi-family, email config, API webhooks, security/compliance), and implement using Jekyll + GitHub Pages for native GitHub workflow.
+- **Implementation:** Phase 1 (restructuring + organization), Phase 2 (critical content gaps), Phase 3 (polish/optimization). Proposed sidebar structure organized 3 levels deep max. Success criteria: all 16 docs integrated, high-priority gaps filled, navigation responsive, first-time users find Getting Started within 2 clicks.
+- **Key Decisions:** Single site for all audiences (simplifies deployment/search); docs-as-code in Git (version control + PR reviews); Jekyll + GitHub Pages (free, GitHub-native, minimal setup); hierarchical structure with deep nesting (supports diverse audiences); separate API reference (OpenAPI-driven).
+- **Dependencies:** RBAC documentation depends on finalized role model; email provider choice affects configuration guide; GitHub Pages workflow requires setup.
+- **Approval:** Pending review by John (user guides), Ray (API/dev sections), Venkman (UI/feature descriptions), Tully (admin/security sections).
+- **Impact:** Creates searchable, organized documentation for parents, teachers, students, admins, and developers without confusion or buried content.
+
+### Ray Curriculum Platform Alias (2026-05-25)
+- **Date:** 2026-05-25T18:45:49.686-05:00
+- **Requested by:** John
+- **Decision:** Treat `manage_platform` as a compatibility alias for `manage_curriculum` checks. Calendar and term APIs already use `manage_curriculum`, and admin is the intended superset role. Azure/SSO sessions can present older or narrower capability payloads that include `manage_platform` but omit `manage_curriculum`, blocking term creation despite admin role.
+- **Scope:** `backend\services\rbac.py`, `frontend\src\context\AuthContext.tsx`, `backend\tests\test_authorization.py`
+- **Notes:** Compatibility bridge, not new source-of-truth capability model. Terms remain part of curriculum management rather than introducing a separate `manage_terms` permission.
+- **Impact:** Admin users no longer blocked from term creation due to capability payload drift from older Azure/SSO identity providers.
+
+### Venkman VitePress Docs Site Scaffold (2026-05-24)
+- **Date:** 2026-05-24T14:56:36.726-05:00
+- **Author:** Venkman
+- **Context:** Repository had populated `docs/` directory with guides/reference but no static-site scaffold for GitHub Pages.
+- **Decision:** Create standalone VitePress site rooted in `docs/`, keep all existing markdown files in place, deploy generated `.vitepress/dist` output to `x3nc0n.github.io/homeschool-hero` project site with GitHub Actions workflow. Use `/homeschool-hero/` base path and simple default nav/sidebar organizing current guides, architecture, and reference pages without moving files.
+- **Impact:** Documentation can be previewed locally from `docs/` and published automatically to GitHub Pages while preserving compatibility with existing markdown content.
+
 ## Governance
 
 - All meaningful changes require team consensus
