@@ -109,6 +109,14 @@ function emptyEventForm(): EventForm {
   return { date: '', event_type: 'holiday', name: '', is_instructional_day: false, notes: '' }
 }
 
+function isDateRangeInvalid(startDate: string, endDate: string) {
+  return toLocalDate(startDate) > toLocalDate(endDate)
+}
+
+function getFormErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
+}
+
 export function CalendarPage() {
   const [schoolYears, setSchoolYears] = useState<SchoolYear[]>([])
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState<number | null>(null)
@@ -124,6 +132,10 @@ export function CalendarPage() {
   const [termForm, setTermForm] = useState<TermForm>(emptyTermForm)
   const [gradingPeriodForm, setGradingPeriodForm] = useState<GradingPeriodForm>(emptyGradingPeriodForm())
   const [eventForm, setEventForm] = useState<EventForm>(emptyEventForm)
+  const [schoolYearFormError, setSchoolYearFormError] = useState('')
+  const [termFormError, setTermFormError] = useState('')
+  const [gradingPeriodFormError, setGradingPeriodFormError] = useState('')
+  const [eventFormError, setEventFormError] = useState('')
   const [calendarMonth, setCalendarMonth] = useState('')
 
   const loadSchoolYears = async (preferredId?: number | null) => {
@@ -179,21 +191,25 @@ export function CalendarPage() {
 
   const resetSchoolYearForm = () => {
     setEditingSchoolYearId(null)
+    setSchoolYearFormError('')
     setSchoolYearForm(emptySchoolYearForm())
   }
 
   const resetTermForm = () => {
     setEditingTermId(null)
+    setTermFormError('')
     setTermForm(emptyTermForm())
   }
 
   const resetGradingPeriodForm = () => {
     setEditingGradingPeriodId(null)
+    setGradingPeriodFormError('')
     setGradingPeriodForm(emptyGradingPeriodForm(selectedSchoolYear?.terms[0] ? String(selectedSchoolYear.terms[0].id) : ''))
   }
 
   const resetEventForm = () => {
     setEditingEventId(null)
+    setEventFormError('')
     setEventForm(emptyEventForm())
   }
 
@@ -204,52 +220,123 @@ export function CalendarPage() {
       end_date: schoolYearForm.end_date,
       is_active: schoolYearForm.is_active,
     }
-    if (!payload.name || !payload.start_date || !payload.end_date) return
-    if (editingSchoolYearId) {
-      await api.updateSchoolYear(editingSchoolYearId, payload)
-      await load(editingSchoolYearId)
-    } else {
-      const created = await api.createSchoolYear(payload)
-      await load(created.id)
+
+    setSchoolYearFormError('')
+    if (!payload.name) {
+      setSchoolYearFormError('School year name is required')
+      return
     }
-    resetSchoolYearForm()
+    if (!payload.start_date || !payload.end_date) {
+      setSchoolYearFormError('Start and end dates are required')
+      return
+    }
+    if (isDateRangeInvalid(payload.start_date, payload.end_date)) {
+      setSchoolYearFormError('Start date must be before end date')
+      return
+    }
+
+    try {
+      if (editingSchoolYearId) {
+        await api.updateSchoolYear(editingSchoolYearId, payload)
+        await load(editingSchoolYearId)
+      } else {
+        const created = await api.createSchoolYear(payload)
+        await load(created.id)
+      }
+      resetSchoolYearForm()
+    } catch (saveError) {
+      setSchoolYearFormError(getFormErrorMessage(saveError, 'Unable to save school year'))
+    }
   }
 
   const saveTerm = async () => {
-    if (!selectedSchoolYearId || !termForm.name.trim() || !termForm.start_date || !termForm.end_date) return
     const payload = {
       name: termForm.name.trim(),
       start_date: termForm.start_date,
       end_date: termForm.end_date,
       term_type: termForm.term_type,
     }
-    if (editingTermId) {
-      await api.updateTerm(editingTermId, payload)
-    } else {
-      await api.createTerm({ ...payload, school_year_id: selectedSchoolYearId })
+
+    setTermFormError('')
+    if (!selectedSchoolYearId || !selectedSchoolYear) {
+      setTermFormError('Select a school year before saving a term')
+      return
     }
-    await load(selectedSchoolYearId)
-    resetTermForm()
+    if (!payload.name) {
+      setTermFormError('Term name is required')
+      return
+    }
+    if (!payload.start_date || !payload.end_date) {
+      setTermFormError('Start and end dates are required')
+      return
+    }
+    if (isDateRangeInvalid(payload.start_date, payload.end_date)) {
+      setTermFormError('Start date must be before end date')
+      return
+    }
+    if (payload.start_date < selectedSchoolYear.start_date || payload.end_date > selectedSchoolYear.end_date) {
+      setTermFormError(
+        `Term dates must be within the school year (${formatDateLabel(selectedSchoolYear.start_date)} – ${formatDateLabel(selectedSchoolYear.end_date)})`,
+      )
+      return
+    }
+
+    try {
+      if (editingTermId) {
+        await api.updateTerm(editingTermId, payload)
+      } else {
+        await api.createTerm({ ...payload, school_year_id: selectedSchoolYearId })
+      }
+      await load(selectedSchoolYearId)
+      resetTermForm()
+    } catch (saveError) {
+      setTermFormError(getFormErrorMessage(saveError, 'Unable to save term'))
+    }
   }
 
   const saveGradingPeriod = async () => {
-    if (!selectedSchoolYearId || !gradingPeriodForm.term_id || !gradingPeriodForm.name.trim() || !gradingPeriodForm.start_date || !gradingPeriodForm.end_date) return
     const payload = {
       name: gradingPeriodForm.name.trim(),
       start_date: gradingPeriodForm.start_date,
       end_date: gradingPeriodForm.end_date,
     }
-    if (editingGradingPeriodId) {
-      await api.updateGradingPeriod(editingGradingPeriodId, payload)
-    } else {
-      await api.createGradingPeriod({ ...payload, term_id: Number(gradingPeriodForm.term_id) })
+
+    setGradingPeriodFormError('')
+    if (!selectedSchoolYearId) {
+      setGradingPeriodFormError('Select a school year before saving a grading period')
+      return
     }
-    await load(selectedSchoolYearId)
-    resetGradingPeriodForm()
+    if (!gradingPeriodForm.term_id) {
+      setGradingPeriodFormError('Select a term before saving a grading period')
+      return
+    }
+    if (!payload.name) {
+      setGradingPeriodFormError('Grading period name is required')
+      return
+    }
+    if (!payload.start_date || !payload.end_date) {
+      setGradingPeriodFormError('Start and end dates are required')
+      return
+    }
+    if (isDateRangeInvalid(payload.start_date, payload.end_date)) {
+      setGradingPeriodFormError('Start date must be before end date')
+      return
+    }
+
+    try {
+      if (editingGradingPeriodId) {
+        await api.updateGradingPeriod(editingGradingPeriodId, payload)
+      } else {
+        await api.createGradingPeriod({ ...payload, term_id: Number(gradingPeriodForm.term_id) })
+      }
+      await load(selectedSchoolYearId)
+      resetGradingPeriodForm()
+    } catch (saveError) {
+      setGradingPeriodFormError(getFormErrorMessage(saveError, 'Unable to save grading period'))
+    }
   }
 
   const saveEvent = async () => {
-    if (!selectedSchoolYearId || !eventForm.date || !eventForm.name.trim()) return
     const payload = {
       date: eventForm.date,
       event_type: eventForm.event_type,
@@ -257,13 +344,32 @@ export function CalendarPage() {
       is_instructional_day: eventForm.is_instructional_day,
       notes: eventForm.notes.trim() || null,
     }
-    if (editingEventId) {
-      await api.updateCalendarEvent(editingEventId, payload)
-    } else {
-      await api.createCalendarEvent({ ...payload, school_year_id: selectedSchoolYearId })
+
+    setEventFormError('')
+    if (!selectedSchoolYearId) {
+      setEventFormError('Select a school year before saving an event')
+      return
     }
-    await load(selectedSchoolYearId)
-    resetEventForm()
+    if (!payload.name) {
+      setEventFormError('Event name is required')
+      return
+    }
+    if (!payload.date) {
+      setEventFormError('Event date is required')
+      return
+    }
+
+    try {
+      if (editingEventId) {
+        await api.updateCalendarEvent(editingEventId, payload)
+      } else {
+        await api.createCalendarEvent({ ...payload, school_year_id: selectedSchoolYearId })
+      }
+      await load(selectedSchoolYearId)
+      resetEventForm()
+    } catch (saveError) {
+      setEventFormError(getFormErrorMessage(saveError, 'Unable to save calendar event'))
+    }
   }
 
   const monthEvents = useMemo(() => {
@@ -353,6 +459,7 @@ export function CalendarPage() {
                 </Button>
               ) : null}
             </div>
+            {schoolYearFormError ? <p role="alert" className="text-sm text-destructive">{schoolYearFormError}</p> : null}
           </CardContent>
         </Card>
 
@@ -519,6 +626,7 @@ export function CalendarPage() {
                     </Button>
                   ) : null}
                 </div>
+                {termFormError ? <p role="alert" className="text-sm text-destructive">{termFormError}</p> : null}
               </CardContent>
             </Card>
 
@@ -582,6 +690,7 @@ export function CalendarPage() {
                     </Button>
                   ) : null}
                 </div>
+                {gradingPeriodFormError ? <p role="alert" className="text-sm text-destructive">{gradingPeriodFormError}</p> : null}
               </CardContent>
             </Card>
           </div>
@@ -734,6 +843,7 @@ export function CalendarPage() {
                     </Button>
                   ) : null}
                 </div>
+                {eventFormError ? <p role="alert" className="text-sm text-destructive">{eventFormError}</p> : null}
               </CardContent>
             </Card>
           </div>
