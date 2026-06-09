@@ -112,6 +112,9 @@ export function FileUpload({
 
   const isImage = previewKind === 'image'
   const isPdf = previewKind === 'pdf'
+  // Validate URL scheme at render time so taint analysis can confirm only blob: URLs
+  // reach the src/data HTML attributes (guards against javascript: URI injection).
+  const safePreviewUrl = previewUrl.startsWith('blob:') ? previewUrl : ''
   const visibleAssignments = useMemo(
     () =>
       assignments.filter((assignment) => {
@@ -313,12 +316,12 @@ export function FileUpload({
           <div className="rounded-lg border bg-muted/20 p-3 text-sm">
             <p className="font-medium">Selected: {file.name}</p>
             <p className="text-muted-foreground">{formatBytes(file.size)}</p>
-            {previewUrl ? (
+            {safePreviewUrl ? (
               <div className="mt-3">
                 {isImage ? (
-                  <img alt="Submission preview" src={previewUrl} className="max-h-56 rounded-md border object-contain" />
+                  <img alt="Submission preview" src={safePreviewUrl} className="max-h-56 rounded-md border object-contain" />
                 ) : isPdf ? (
-                  <object aria-label="PDF preview" data={previewUrl} type="application/pdf" className="h-64 w-full rounded-md border">
+                  <object aria-label="PDF preview" data={safePreviewUrl} type="application/pdf" className="h-64 w-full rounded-md border">
                     <p className="p-4 text-xs text-muted-foreground">PDF preview is unavailable in this browser.</p>
                   </object>
                 ) : (
