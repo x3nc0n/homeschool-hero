@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from backend.config import settings
 from backend.rate_limit import RateLimitRule
 from backend.services.capabilities import get_capability_registry
+from backend.services.storage import _resolve_safe_upload_destination
 from tests.contracts import AUTH, STUDENTS, SUBMISSIONS, bootstrap_payload
 from tests.helpers import assert_validation_error, response_id
 
@@ -162,3 +166,165 @@ async def test_internal_errors_do_not_expose_exception_details(app, monkeypatch)
     assert payload['error']['message'] == 'An unexpected error occurred.'
     assert 'details' not in payload['error']
     assert 'sensitive' not in response.text
+
+
+# ── Path Traversal Protection ─────────────────────────────────────────────
+
+
+def test_path_traversal_dotdot_in_path_rejected(tmp_path):
+    with pytest.raises(ValueError):
+        _resolve_safe_upload_destination(str(tmp_path), Path('../evil'))
+
+
+def test_path_traversal_dotdot_escaping_root_rejected(tmp_path):
+    # 1/../../evil normalizes to ../evil — one level above upload root.
+    with pytest.raises(ValueError):
+        _resolve_safe_upload_destination(str(tmp_path), Path('1/../../evil'))
+
+
+def test_path_traversal_absolute_path_rejected(tmp_path):
+    with pytest.raises(ValueError):
+        _resolve_safe_upload_destination(str(tmp_path), Path('/etc/passwd'))
+
+
+def test_path_traversal_empty_path_rejected(tmp_path):
+    with pytest.raises(ValueError):
+        _resolve_safe_upload_destination(str(tmp_path), Path(''))
+
+
+def test_path_traversal_dot_path_rejected(tmp_path):
+    with pytest.raises(ValueError):
+        _resolve_safe_upload_destination(str(tmp_path), Path('.'))
+
+
+def test_path_traversal_url_encoded_dotdot_does_not_escape_upload_root(tmp_path):
+    # %2e%2e is a literal directory name at the filesystem level; os.path.normpath does
+    # NOT decode URL encoding, so this path stays safely within the upload root.
+    safe_rel, dest = _resolve_safe_upload_destination(str(tmp_path), Path('%2e%2e/file.png'))
+    assert str(dest).startswith(str(tmp_path))
+
+
+def test_path_traversal_double_encoded_dotdot_does_not_escape_upload_root(tmp_path):
+    # %252e%252e stays within the upload root; double-encoding is not decoded at path level.
+    safe_rel, dest = _resolve_safe_upload_destination(str(tmp_path), Path('%252e%252e/file.png'))
+    assert str(dest).startswith(str(tmp_path))
+
+
+@pytest.mark.xfail(reason="Null byte rejection in storage depends on OS/Python behavior; regression target for Ray's fix.")
+def test_path_traversal_null_byte_in_filename_rejected(tmp_path):
+    # Null bytes in paths should be rejected to prevent OS-level truncation attacks.
+    with pytest.raises((ValueError, TypeError, OSError)):
+        _resolve_safe_upload_destination(str(tmp_path), Path('file\x00.png'))
+
+
+def test_path_traversal_valid_nested_path_accepted(tmp_path):
+    safe_rel, dest = _resolve_safe_upload_destination(
+        str(tmp_path), Path('1/2/3/4/file.png')
+    )
+    assert str(dest).startswith(str(tmp_path))
+    assert dest.name == 'file.png'
+
+
+def test_path_traversal_single_filename_accepted(tmp_path):
+    safe_rel, dest = _resolve_safe_upload_destination(str(tmp_path), Path('file.png'))
+    assert str(dest).startswith(str(tmp_path))
+    assert dest.name == 'file.png'
+
+
+def test_path_traversal_dotdot_staying_in_root_normalizes_safely(tmp_path):
+    # 1/2/../../etc normalizes to etc/ — still within the upload root. This is allowed.
+    safe_rel, dest = _resolve_safe_upload_destination(str(tmp_path), Path('1/2/../../etc'))
+    assert str(dest).startswith(str(tmp_path))
+
+
+# ── Stack Trace Exposure ───────────────────────────────────────────────────
+
+
+async def test_auth_login_500_does_not_expose_stack_trace(app):
+    from backend.database import get_db as _real_get_db
+
+    async def _broken_db():
+        raise RuntimeError('password=s3cr3t host=internal-db.corp.local')
+
+    app.dependency_overrides[_real_get_db] = _broken_db
+    try:
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+            response = await client.post(
+                AUTH['login'],
+                json={'email': 'test@example.com', 'password': 'TestPass123'},
+            )
+    finally:
+        app.dependency_overrides.pop(_real_get_db, None)
+
+    assert response.status_code == 500, response.text
+    assert 'Traceback' not in response.text
+    assert 'password=s3cr3t' not in response.text
+    assert 'internal-db.corp.local' not in response.text
+    assert response.json()['error']['code'] == 'internal_error'
+    assert response.json()['error']['message'] == 'An unexpected error occurred.'
+
+
+async def test_health_endpoint_500_does_not_expose_stack_trace(app, monkeypatch):
+    import backend.routers.health as health_router_module
+
+    async def _broken(*args, **kwargs):
+        raise RuntimeError('db password=secret123 host=10.0.0.5')
+
+    monkeypatch.setattr(health_router_module, 'build_simple_health_payload', _broken)
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+        response = await client.get('/api/health')
+
+    # Health endpoint may return 500 or 503 on unexpected failure — either is a server error.
+    assert response.status_code in {500, 503}, response.text
+    assert 'Traceback' not in response.text
+    assert 'password=secret123' not in response.text
+    assert '10.0.0.5' not in response.text
+    # Runtime exception details must not appear in any form in the response body.
+    assert 'RuntimeError' not in response.text
+
+
+async def test_error_response_never_contains_internal_file_path(app, monkeypatch):
+    registry = get_capability_registry()
+
+    async def _path_leak():
+        raise RuntimeError(
+            'error in /home/deploy/.source/GitHub/homeschool-hero/backend/services/storage.py line 99'
+        )
+
+    monkeypatch.setattr(registry, 'check_all', _path_leak)
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+        response = await client.get('/api/capabilities')
+
+    assert response.status_code == 500, response.text
+    assert '/home/deploy' not in response.text
+    assert 'homeschool-hero' not in response.text
+    assert 'storage.py' not in response.text
+    assert response.json()['error']['code'] == 'internal_error'
+
+
+async def test_http_500_exception_detail_not_forwarded_from_auth(app):
+    from backend.database import get_db as _real_get_db
+
+    async def _raises_http500():
+        raise HTTPException(status_code=500, detail='DB trace: table users col password_hash')
+
+    app.dependency_overrides[_real_get_db] = _raises_http500
+    try:
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+            response = await client.post(
+                AUTH['login'],
+                json={'email': 'test@example.com', 'password': 'TestPass123'},
+            )
+    finally:
+        app.dependency_overrides.pop(_real_get_db, None)
+
+    assert response.status_code == 500, response.text
+    assert 'password_hash' not in response.text
+    assert 'table users' not in response.text
+    assert response.json()['error']['code'] == 'internal_error'

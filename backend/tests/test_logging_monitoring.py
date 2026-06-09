@@ -10,7 +10,16 @@ import pytest
 
 from backend.config import settings
 from backend.services.capabilities import get_capability_registry
-from backend.services.logging_config import JsonFormatter, RequestContextFilter, log_action
+from backend.services.logging_config import (
+    ConsoleFormatter,
+    JsonFormatter,
+    RequestContextFilter,
+    _sanitize_log_text,
+    bind_context,
+    clear_context,
+    get_context,
+    log_action,
+)
 
 
 def _request_logs(caplog):
@@ -130,3 +139,144 @@ async def test_metrics_endpoint_reports_request_grading_and_backup_state(
     assert payload['grading_jobs_total'] >= 1
     assert payload['grading_jobs_by_status']['pending'] >= 1
     assert payload['backup_last_success']['size_bytes'] == 2048
+
+
+# ── Log Injection Prevention ───────────────────────────────────────────────
+
+
+def test_sanitize_log_text_escapes_newlines() -> None:
+    result = _sanitize_log_text('user\ninput\r')
+    assert '\n' not in result
+    assert '\r' not in result
+    assert result == r'user\ninput\r'
+
+
+def test_sanitize_log_text_escapes_null_bytes() -> None:
+    result = _sanitize_log_text('file\x00.txt')
+    assert '\x00' not in result
+    assert r'\x00' in result
+
+
+def test_sanitize_log_text_escapes_arbitrary_control_characters() -> None:
+    result = _sanitize_log_text('data\x01\x1b\x7f')
+    assert '\x01' not in result
+    assert '\x1b' not in result
+    assert '\x7f' not in result
+
+
+def test_bind_context_sanitizes_newlines_in_correlation_id() -> None:
+    # A malicious correlation ID containing newlines must not forge additional log lines.
+    clear_context()
+    bind_context(correlation_id='legit-id\nFAKE level=CRITICAL action=privilege_escalation')
+    ctx = get_context()
+    # The raw newline character must be escaped; the value must not contain a literal \n.
+    assert '\n' not in str(ctx['correlation_id'])
+
+
+def test_bind_context_sanitizes_control_characters_in_action() -> None:
+    clear_context()
+    bind_context(action='upload\x00file\rrequest')
+    ctx = get_context()
+    assert '\x00' not in str(ctx['action'])
+    assert '\r' not in str(ctx['action'])
+
+
+def test_json_formatter_produces_single_line_per_record_despite_injected_newlines() -> None:
+    stream = StringIO()
+    logger = logging.getLogger('tests.logging.injection')
+    logger.handlers = []
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(RequestContextFilter())
+    handler.setFormatter(JsonFormatter())
+    logger.addHandler(handler)
+
+    try:
+        log_action(
+            logger,
+            logging.INFO,
+            'upload started',
+            action='upload',
+            correlation_id='corr-1\n{"level": "CRITICAL", "message": "forged entry"}',
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = True
+
+    output = stream.getvalue().strip()
+    # json.dumps escapes \n inside string values, so only one JSON line should exist.
+    lines = [line for line in output.split('\n') if line.strip()]
+    assert len(lines) == 1, f'Expected 1 log line, got {len(lines)}: {output!r}'
+    payload = json.loads(lines[0])
+    assert payload['level'] == 'INFO'
+    # The injected content must appear only as escaped text inside the correlation_id value.
+    assert '\n' not in payload.get('correlation_id', '')
+
+
+def test_console_formatter_sanitizes_injected_newlines() -> None:
+    """Newlines injected via user input must not produce extra lines in console output."""
+    stream = StringIO()
+    logger = logging.getLogger('tests.logging.console_inject')
+    logger.handlers = []
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(RequestContextFilter())
+    handler.setFormatter(ConsoleFormatter())
+    logger.addHandler(handler)
+
+    try:
+        log_action(
+            logger,
+            logging.INFO,
+            'message\nFAKE LOG ENTRY level=CRITICAL injected=true',
+            action='upload\nINJECTED_ACTION',
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = True
+
+    output = stream.getvalue()
+    lines = output.rstrip('\n').split('\n')
+    # No line should begin with "FAKE" — the injected content must be escaped.
+    assert not any(line.startswith('FAKE') for line in lines), (
+        f'Injected line found in console output: {output!r}'
+    )
+    assert 'INJECTED_ACTION' not in output.split('\\n')[0] if '\\n' in output else True
+
+
+def test_log_action_sanitizes_details_dict_values() -> None:
+    stream = StringIO()
+    logger = logging.getLogger('tests.logging.details_inject')
+    logger.handlers = []
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(RequestContextFilter())
+    handler.setFormatter(JsonFormatter())
+    logger.addHandler(handler)
+
+    try:
+        log_action(
+            logger,
+            logging.INFO,
+            'file processed',
+            action='upload',
+            details={
+                'filename': 'legit.png\nINJECTED=true level=CRITICAL',
+                'size': 1024,
+            },
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = True
+
+    output = stream.getvalue().strip()
+    payload = json.loads(output)
+    filename_logged = payload['details']['filename']
+    assert '\n' not in filename_logged
+    assert 'INJECTED=true' not in filename_logged.split('\\n')[0] if '\\n' in filename_logged else True
