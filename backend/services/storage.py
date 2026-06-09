@@ -87,19 +87,24 @@ def extract_file_metadata(content_type: str, contents: bytes) -> tuple[int | Non
 
 
 def _resolve_safe_upload_destination(upload_root: str, relative_path: Path) -> tuple[Path, Path]:
-    upload_root_path = Path(upload_root).resolve()
+    # Use os.path.realpath() to fully resolve symlinks and normalise the root
+    upload_root_real = os.path.realpath(upload_root)
+    upload_root_prefix = upload_root_real + os.sep
+
     normalized_relative_path = os.path.normpath(os.fspath(relative_path))
     candidate = Path(normalized_relative_path)
     if normalized_relative_path in {'', '.', os.curdir} or os.path.isabs(normalized_relative_path) or candidate.anchor:
         raise ValueError('Invalid upload path')
     if any(part == '..' for part in candidate.parts):
         raise ValueError('Invalid upload path')
-    destination = (upload_root_path / candidate).resolve()
-    try:
-        destination.relative_to(upload_root_path)
-    except ValueError as exc:
-        raise ValueError('Path traversal detected') from exc
-    return candidate, destination
+
+    # Resolve the full destination path, then verify it is strictly inside the upload root.
+    # startswith(prefix) with a trailing separator prevents prefix-collision attacks
+    # (e.g. /uploads-evil would not match /uploads/).
+    destination_real = os.path.realpath(os.path.join(upload_root_real, normalized_relative_path))
+    if not (destination_real == upload_root_real or destination_real.startswith(upload_root_prefix)):
+        raise ValueError('Path traversal detected')
+    return candidate, Path(destination_real)
 
 
 def store_submission_file(

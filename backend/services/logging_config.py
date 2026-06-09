@@ -157,16 +157,22 @@ def log_action(
     details: dict[str, Any] | None = None,
     exc_info: Any = None,
 ) -> None:
+    # Pre-compute sanitized values before passing to logger to ensure no raw
+    # user-controlled content (which could contain newlines or other control
+    # characters) reaches the log sink.
     sanitized_message = _sanitize_log_text(message)
+    sanitized_correlation_id = _coerce_log_value(correlation_id)
+    sanitized_action = _coerce_log_value(action)
+    sanitized_details = _coerce_details(details)
     logger.log(
         level,
         sanitized_message,
         extra={
-            'correlation_id': _coerce_log_value(correlation_id),
+            'correlation_id': sanitized_correlation_id,
             'user_id': user_id,
             'family_id': family_id,
-            'action': _coerce_log_value(action),
-            'details': _coerce_details(details),
+            'action': sanitized_action,
+            'details': sanitized_details,
         },
         exc_info=exc_info,
     )

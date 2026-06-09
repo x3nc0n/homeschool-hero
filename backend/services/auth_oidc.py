@@ -41,8 +41,9 @@ def _oidc_provider_error_detail(exc: Exception) -> str | None:
         return f'provider discovery returned HTTP {exc.response.status_code}'
     if isinstance(exc, httpx.RequestError):
         return 'provider discovery endpoint is unreachable'
-    detail = str(exc).strip()
-    return detail or None
+    # Do not expose raw exception messages for unknown error types — log server-side only.
+    logger.debug('Unclassified OIDC provider error: %s', exc)
+    return None
 
 
 def _oidc_login_error_message(exc: Exception) -> str:

@@ -563,8 +563,12 @@ def create_app() -> FastAPI:
 
     @app.get('/health', include_in_schema=False)
     async def health_alias() -> JSONResponse:
-        status_code, payload = await build_simple_health_payload(app)
-        return JSONResponse(status_code=status_code, content=payload)
+        try:
+            status_code, payload = await build_simple_health_payload(app)
+            return JSONResponse(status_code=status_code, content=payload)
+        except Exception:
+            logger.exception('Health alias check failed unexpectedly')
+            return JSONResponse(status_code=503, content={'status': 'error', 'ready': False})
 
     @app.get(f'{API_PREFIX}/capabilities')
     async def api_capabilities() -> dict[str, object]:
