@@ -5,9 +5,11 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
+from starlette.requests import Request
 
 from backend.config import settings
 from backend.rate_limit import RateLimitRule
+from backend.security import get_request_ip, is_secure_request
 from backend.services.capabilities import get_capability_registry
 from backend.services.storage import _resolve_safe_upload_destination
 from tests.contracts import AUTH, STUDENTS, SUBMISSIONS, bootstrap_payload
@@ -15,11 +17,16 @@ from tests.helpers import assert_validation_error, response_id
 
 
 async def test_cookie_security_and_headers(async_client) -> None:
-    response = await async_client.post(
-        AUTH['register'],
-        json=bootstrap_payload(),
-        headers={'x-forwarded-proto': 'https'},
-    )
+    original = settings.trust_proxy_headers
+    settings.trust_proxy_headers = True
+    try:
+        response = await async_client.post(
+            AUTH['register'],
+            json=bootstrap_payload(),
+            headers={'x-forwarded-proto': 'https'},
+        )
+    finally:
+        settings.trust_proxy_headers = original
     assert response.status_code == 201, response.text
     set_cookie_headers = response.headers.get_list('set-cookie')
     assert any(settings.session_cookie_name in header and 'HttpOnly' in header and 'SameSite=lax' in header and 'Secure' in header for header in set_cookie_headers)
@@ -28,6 +35,48 @@ async def test_cookie_security_and_headers(async_client) -> None:
     assert response.headers['x-frame-options'] == 'DENY'
     assert 'frame-ancestors' in response.headers['content-security-policy']
     assert response.headers['strict-transport-security'].startswith('max-age=')
+
+
+def test_is_secure_request_ignores_forwarded_proto_without_proxy_trust(monkeypatch):
+    monkeypatch.setattr(settings, 'trust_proxy_headers', False)
+    request = Request(
+        {
+            'type': 'http',
+            'scheme': 'http',
+            'path': '/',
+            'headers': [(b'x-forwarded-proto', b'https')],
+            'client': ('10.0.0.10', 5000),
+        }
+    )
+    assert is_secure_request(request) is False
+
+
+def test_get_request_ip_defaults_to_client_host_when_proxy_headers_untrusted(monkeypatch):
+    monkeypatch.setattr(settings, 'trust_proxy_headers', False)
+    request = Request(
+        {
+            'type': 'http',
+            'scheme': 'http',
+            'path': '/',
+            'headers': [(b'x-forwarded-for', b'203.0.113.10, 10.0.0.2')],
+            'client': ('10.0.0.2', 5000),
+        }
+    )
+    assert get_request_ip(request) == '10.0.0.2'
+
+
+def test_get_request_ip_uses_forwarded_for_when_proxy_headers_trusted(monkeypatch):
+    monkeypatch.setattr(settings, 'trust_proxy_headers', True)
+    request = Request(
+        {
+            'type': 'http',
+            'scheme': 'http',
+            'path': '/',
+            'headers': [(b'x-forwarded-for', b'203.0.113.10, 10.0.0.2')],
+            'client': ('10.0.0.2', 5000),
+        }
+    )
+    assert get_request_ip(request) == '203.0.113.10'
 
 
 async def test_csrf_protection_blocks_state_changes(authorized_client):

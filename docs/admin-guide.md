@@ -593,6 +593,7 @@ HSTS_ENABLED=true
 HSTS_MAX_AGE_SECONDS=31536000
 HSTS_INCLUDE_SUBDOMAINS=true
 HSTS_PRELOAD=false
+TRUST_PROXY_HEADERS=true
 ```
 
 The app also sets:
@@ -600,6 +601,8 @@ The app also sets:
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - a restrictive `Content-Security-Policy`
+
+Only enable `TRUST_PROXY_HEADERS` when Homeschool Hero is behind a trusted reverse proxy that sets `X-Forwarded-*` headers correctly; otherwise leave it `false` so rate limiting and secure-cookie detection use the direct client connection.
 
 ### Authentication controls
 

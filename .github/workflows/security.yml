@@ -113,7 +113,7 @@ jobs:
         if: steps.build.outcome == 'success'
         id: trivy-policy
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.SECURITY_IMAGE_NAME }}
           scan-type: image
@@ -127,7 +127,7 @@ jobs:
 
       - name: Generate Trivy JSON report
         if: always() && steps.build.outcome == 'success'
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.SECURITY_IMAGE_NAME }}
           scan-type: image
@@ -150,7 +150,7 @@ jobs:
 
       - name: Generate Trivy SARIF
         if: always() && steps.build.outcome == 'success'
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.SECURITY_IMAGE_NAME }}
           scan-type: image

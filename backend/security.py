@@ -142,10 +142,11 @@ def is_secure_request(request: Request | None = None) -> bool:
         return True
     if request is None:
         return False
-    forwarded_proto = request.headers.get('x-forwarded-proto', '')
-    if forwarded_proto:
-        proto = forwarded_proto.split(',')[0].strip().lower()
-        return proto == 'https'
+    if settings.trust_proxy_headers:
+        forwarded_proto = request.headers.get('x-forwarded-proto', '')
+        if forwarded_proto:
+            proto = forwarded_proto.split(',')[0].strip().lower()
+            return proto == 'https'
     return request.url.scheme == 'https'
 
 
@@ -242,9 +243,12 @@ def require_csrf(request: Request, claims: SessionClaims) -> None:
 
 
 def get_request_ip(request: Request) -> str:
-    forwarded_for = request.headers.get('x-forwarded-for', '')
-    if forwarded_for:
-        return forwarded_for.split(',')[0].strip()
+    if settings.trust_proxy_headers:
+        forwarded_for = request.headers.get('x-forwarded-for', '')
+        if forwarded_for:
+            client_ip = forwarded_for.split(',')[0].strip()
+            if client_ip:
+                return client_ip
     client = request.client
     return client.host if client else 'unknown'
 

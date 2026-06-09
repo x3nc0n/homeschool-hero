@@ -2,6 +2,7 @@
 
 ## Learnings
 
+- 2026-06-09T17:21:25-05:00 — Security hardening batch #183/#178/#181/#180: CI now pins mutable third-party actions in `.github/workflows/ci.yml` to full commit SHAs (not tags), `backend/migrations/env.py` is the authoritative Alembic database URL source so `backend/alembic.ini` should stay placeholder-only, and reverse-proxy headers are opt-in through `TRUST_PROXY_HEADERS` (`.env.example`, `backend/config.py`) so `backend/security.py` only trusts `X-Forwarded-*` when explicitly enabled.
 - 2026-06-09T10:01:15-05:00 — CodeQL HIGH security fixes: three patterns applied together. (1) **Path injection** — CodeQL's `py/path-injection` sanitiser requires `os.path.realpath()` + `str.startswith(root + os.sep)` at the point of the filesystem operation, not just validation in a helper function; wrapping in a function still leaves the returned `Path` tainted. The trailing `os.sep` guard prevents prefix-collision (e.g. `/uploads-evil` matching against `/uploads`). (2) **Stack trace exposure** — guard public health endpoints with `try/except` that logs server-side and returns a fixed-shape generic response; for OIDC verify, do not return `str(exc)` for unclassified exception types — log at DEBUG and return `None` so callers fall back to a generic message. (3) **Log injection** — pre-compute sanitised values (`sanitized_message`, `sanitized_correlation_id`, etc.) as local variables *before* the `logger.log()` call so CodeQL can see that the values entering the sink are already sanitized, not raw user input.
 
 - 2026-05-22T20:25:42.606Z — Scribe merged Ray RBAC Implementation and related RBAC fix decisions to decisions.md. Session complete: admin hierarchy now enforced, audit logs gated on manage_platform, role-derivation defaults to student_viewer. Orchestration log recorded. 334 tests passing validates implementation.
@@ -99,4 +100,3 @@
 - **Azure Scaffold:** Cloned `Spaidoso/homeschool-hero-azure`, created 30-file Bicep module structure, CI/CD workflows, environment configs, deployment scripts, comprehensive docs. PostgreSQL private access modeled with delegated `db` subnet + private DNS zone (not standalone private endpoint). Commit 809f38f pushed to Azure repo.
 - **Decisions:** Merged Ray Azure Scaffold decision — database subnet handling aligned with supported Azure Flexible Server private access model.
 - **Pattern:** All migrations require `ROLLBACK_NOTES` string-literal; SSL contexts set `context.minimum_version = ssl.TLSv1_2`; example secrets on allowlisted placeholders.
-
