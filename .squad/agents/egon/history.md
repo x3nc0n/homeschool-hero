@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-06-09T09:58:09.392-05:00 — **Security Triage Wave 1 (9 CodeQL findings).** Processed squad assignment for 9 open security issues from automated CodeQL scanning. Routing: Frontend DOM-XSS issues → Venkman (squad:venkman) (#167, #168 in FileUpload.tsx); Backend issues → Ray (squad:ray) — 1× log-injection (#169, logging_config.py:164), 3× path-injection (#170–172, storage.py), 3× stack-trace-exposure (#173–175, main.py/auth.py/health.py). All labels added; triage comments posted with remediation guidance and grouping rationale.
+
 - 2026-05-22T20:25:42.606Z — Scribe merged Egon RBAC Hierarchy Redesign decision and 6 supporting decisions (Ray guardrail, role-derivation fixes, Tully OIDC/security fixes, Venkman SW denylist) to decisions.md. Orchestration logs recorded. decisions.md: 35145 → 44191 bytes (+9046). Ray's RBAC implementation complete with 334 tests passing.
 
 - 2026-05-22T15:25:42.606-05:00 — Analyzed the RBAC regression blocking admin-parent sessions from educational routes. Wrote the hierarchy redesign decision in `.squad/decisions/inbox/egon-rbac-hierarchy-redesign.md`: admin becomes a true superset, parent/teacher share the educator bundle, `require_any_role` gains admin implication, and impacted routes/tests are enumerated.

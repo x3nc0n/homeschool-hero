@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-06-09T10:01:15-05:00 — CodeQL HIGH security fixes: three patterns applied together. (1) **Path injection** — CodeQL's `py/path-injection` sanitiser requires `os.path.realpath()` + `str.startswith(root + os.sep)` at the point of the filesystem operation, not just validation in a helper function; wrapping in a function still leaves the returned `Path` tainted. The trailing `os.sep` guard prevents prefix-collision (e.g. `/uploads-evil` matching against `/uploads`). (2) **Stack trace exposure** — guard public health endpoints with `try/except` that logs server-side and returns a fixed-shape generic response; for OIDC verify, do not return `str(exc)` for unclassified exception types — log at DEBUG and return `None` so callers fall back to a generic message. (3) **Log injection** — pre-compute sanitised values (`sanitized_message`, `sanitized_correlation_id`, etc.) as local variables *before* the `logger.log()` call so CodeQL can see that the values entering the sink are already sanitized, not raw user input.
+
 - 2026-05-22T20:25:42.606Z — Scribe merged Ray RBAC Implementation and related RBAC fix decisions to decisions.md. Session complete: admin hierarchy now enforced, audit logs gated on manage_platform, role-derivation defaults to student_viewer. Orchestration log recorded. 334 tests passing validates implementation.
 
 - 2026-05-15T07:10:40.494-05:00 — Auth capabilities now separate the primary login method (`AUTH_PROVIDER`) from provider visibility: OIDC shows when `OIDC_CLIENT_ID` is set, SAML shows when all SAML settings are present, and `AUTH_BREAKGLASS_LOCAL` controls whether local auth stays exposed as the fallback option.
