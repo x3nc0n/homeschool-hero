@@ -1,0 +1,449 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "8294671558870300933"
+    }
+  },
+  "parameters": {
+    "workspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Log Analytics workspace with Microsoft Sentinel enabled."
+      }
+    },
+    "enableRules": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable all analytics rules on deployment. Set to false to deploy in disabled state."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-upload-enum')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – Upload Path Enumeration (SAST-PYTHON-001)",
+        "description": "The /uploads endpoint serves student files without authentication.\r\nThis rule detects enumeration or bulk access patterns against /uploads/ paths,\r\nwhich may indicate an attacker harvesting student submissions, homework, or portfolio files.\r\nMapped to: SAST-PYTHON-001 (CVSS 9.5), DAST-CONFIG-001 (CVSS 8.0) | CWE-284",
+        "severity": "High",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Detect high-volume requests to /uploads/ from a single source\r\nlet threshold = 20;\r\nlet timeWindow = 5m;\r\n// AppRequests from Application Insights connector\r\nAppRequests\r\n| where TimeGenerated > ago(1h)\r\n| where Url has \"/uploads/\"\r\n| summarize\r\n    RequestCount = count(),\r\n    DistinctPaths = dcount(Url),\r\n    Paths = make_set(Url, 25),\r\n    FirstSeen = min(TimeGenerated),\r\n    LastSeen = max(TimeGenerated)\r\n  by ClientIP, bin(TimeGenerated, timeWindow)\r\n| where RequestCount > threshold or DistinctPaths > 10\r\n| extend\r\n    AlertDetail = strcat(\"IP \", ClientIP, \" made \", RequestCount,\r\n                         \" requests to \", DistinctPaths, \" distinct /uploads/ paths in \", timeWindow)\r\n| project TimeGenerated, ClientIP, RequestCount, DistinctPaths, Paths, FirstSeen, LastSeen, AlertDetail\r\n",
+        "queryFrequency": "PT5M",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Collection",
+          "Discovery"
+        ],
+        "techniques": [
+          "T1083",
+          "T1530"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ClientIP"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "RequestCount": "RequestCount",
+          "DistinctPaths": "DistinctPaths"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-default-creds')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – Default Credential Usage (SAST-PYTHON-002)",
+        "description": "POSTGRES_PASSWORD and FAMILY_PASSWORD default to \"changeme\" with no startup\r\nenforcement. This rule detects authentication activity associated with known default\r\ncredentials or well-known weak passwords targeting the application.\r\nMapped to: SAST-PYTHON-002, DAST-CONFIG-002 (CVSS 8.0) | CWE-798",
+        "severity": "High",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Detect auth requests that may use default/weak credentials\r\n// Looks for login attempts followed by immediate success (credential stuffing with defaults)\r\nlet knownDefaults = dynamic([\"changeme\", \"dev-secret-change-me\", \"demo1234\"]);\r\n// Application traces from the auth module\r\nAppTraces\r\n| where TimeGenerated > ago(1h)\r\n| where Message has_any (\"login\", \"authenticate\", \"sign_in\", \"family_password\")\r\n| where Message has_any (knownDefaults)\r\n    or Message has \"default password\"\r\n    or Message has \"FAMILY_PASSWORD\"\r\n| summarize\r\n    AttemptCount = count(),\r\n    Messages = make_set(Message, 10)\r\n  by ClientIP, bin(TimeGenerated, 5m)\r\n| project TimeGenerated, ClientIP, AttemptCount, Messages\r\n// Also check for successful auth from bootstrap/default owner email\r\n| union (\r\n  AppRequests\r\n  | where TimeGenerated > ago(1h)\r\n  | where Url has \"/api/auth/login\"\r\n  | where ResultCode == 200\r\n  | join kind=inner (\r\n      AppTraces\r\n      | where TimeGenerated > ago(1h)\r\n      | where Message has \"owner@homeschool-hero.local\"\r\n  ) on ClientIP\r\n  | project TimeGenerated, ClientIP, AttemptCount = 1, Messages = pack_array(\"Login with default owner email\")\r\n)\r\n",
+        "queryFrequency": "PT10M",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "InitialAccess",
+          "CredentialAccess"
+        ],
+        "techniques": [
+          "T1078",
+          "T1110"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ClientIP"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-db-direct-access')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – Direct Database Access Attempt (SAST-PYTHON-003)",
+        "description": "alembic.ini contains hardcoded PostgreSQL credentials. This rule detects\r\ndirect connection attempts to the PostgreSQL service from unexpected sources,\r\nindicating potential exploitation of leaked credentials.\r\nMapped to: SAST-PYTHON-003 (CVSS 8.0) | CWE-312",
+        "severity": "High",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Detect connections to PostgreSQL port (5432) from non-application sources\r\nlet allowedSources = dynamic([\"backend\", \"alembic\", \"10.0.0.0/8\"]);\r\n// Network flow logs or firewall logs\r\nCommonSecurityLog\r\n| where TimeGenerated > ago(1h)\r\n| where DestinationPort == 5432\r\n| where DeviceAction != \"Deny\"\r\n| where not(SourceIP matches regex @\"^10\\.\\d+\\.\\d+\\.\\d+$\")\r\n| where not(SourceIP matches regex @\"^172\\.(1[6-9]|2\\d|3[01])\\.\\d+\\.\\d+$\")\r\n| summarize\r\n    ConnectionCount = count(),\r\n    SourceIPs = make_set(SourceIP, 10),\r\n    FirstSeen = min(TimeGenerated),\r\n    LastSeen = max(TimeGenerated)\r\n  by DestinationIP, DestinationPort, bin(TimeGenerated, 5m)\r\n| where ConnectionCount > 0\r\n| project TimeGenerated, DestinationIP, DestinationPort, ConnectionCount, SourceIPs, FirstSeen, LastSeen\r\n// Also check container logs for unexpected psql connections\r\n| union (\r\n  ContainerLog\r\n  | where TimeGenerated > ago(1h)\r\n  | where LogEntry has \"postgresql\" and LogEntry has_any (\"connection received\", \"password authentication\")\r\n  | where LogEntry !has \"backend\"\r\n  | project TimeGenerated, DestinationIP = \"\", DestinationPort = 5432,\r\n            ConnectionCount = 1, SourceIPs = dynamic([\"\"]),\r\n            FirstSeen = TimeGenerated, LastSeen = TimeGenerated\r\n)\r\n",
+        "queryFrequency": "PT5M",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "LateralMovement",
+          "CredentialAccess"
+        ],
+        "techniques": [
+          "T1210",
+          "T1552"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "DestinationIP"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-demo-account')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – Demo Account Login in Production (SAST-PYTHON-004)",
+        "description": "Demo accounts are seeded with password \"demo1234\" which bypasses the app password\r\npolicy. This rule fires when demo/seed accounts are used for authentication,\r\nespecially in non-demo environments — indicating credential stuffing or reuse.\r\nMapped to: SAST-PYTHON-004 (CVSS 8.0) | CWE-521",
+        "severity": "Medium",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Detect logins using demo/seed accounts\r\nlet demoIndicators = dynamic([\"demo\", \"seed\", \"test_family\", \"demo_student\"]);\r\nAppRequests\r\n| where TimeGenerated > ago(1h)\r\n| where Url has \"/api/auth/login\"\r\n| where ResultCode in (200, 401, 403)\r\n| join kind=inner (\r\n    AppTraces\r\n    | where TimeGenerated > ago(1h)\r\n    | where Message has_any (demoIndicators)\r\n    | where Message has_any (\"login\", \"authenticate\", \"session\")\r\n) on OperationId\r\n| summarize\r\n    LoginAttempts = count(),\r\n    SuccessCount = countif(ResultCode == 200),\r\n    FailCount = countif(ResultCode != 200),\r\n    DistinctIPs = dcount(ClientIP)\r\n  by ClientIP, bin(TimeGenerated, 15m)\r\n| project TimeGenerated, ClientIP, LoginAttempts, SuccessCount, FailCount, DistinctIPs\r\n",
+        "queryFrequency": "PT15M",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "InitialAccess"
+        ],
+        "techniques": [
+          "T1078.001"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ClientIP"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-ip-spoof')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – X-Forwarded-For Spoofing / Rate Limit Bypass (SAST-PYTHON-005)",
+        "description": "The rate limiter trusts X-Forwarded-For without validation. This rule detects\r\npatterns where a single source IP rotates through many X-Forwarded-For values\r\nto bypass rate limiting on auth endpoints, or where auth failures exceed the\r\nconfigured limit (5/60s) suggesting successful bypass.\r\nMapped to: SAST-PYTHON-005 (CVSS 8.0) | CWE-348",
+        "severity": "High",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Detect auth brute-force that exceeds the app rate limit (5 req/60s)\r\n// If an IP sends >5 failed logins per minute, the rate limiter was bypassed\r\nlet authRateLimit = 5;\r\nAppRequests\r\n| where TimeGenerated > ago(1h)\r\n| where Url has_any (\"/api/auth/login\", \"/api/auth/family\")\r\n| where ResultCode in (401, 403, 429)\r\n| summarize\r\n    FailedAttempts = count(),\r\n    DistinctUrls = dcount(Url),\r\n    FirstSeen = min(TimeGenerated),\r\n    LastSeen = max(TimeGenerated)\r\n  by ClientIP, bin(TimeGenerated, 1m)\r\n| where FailedAttempts > authRateLimit\r\n| extend\r\n    BypassIndicator = iff(FailedAttempts > authRateLimit * 2,\r\n                          \"Strong indicator of rate limit bypass via X-Forwarded-For spoofing\",\r\n                          \"Possible rate limit bypass\")\r\n| project TimeGenerated, ClientIP, FailedAttempts, DistinctUrls, FirstSeen, LastSeen, BypassIndicator\r\n",
+        "queryFrequency": "PT5M",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "CredentialAccess",
+          "DefenseEvasion"
+        ],
+        "techniques": [
+          "T1110",
+          "T1090"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ClientIP"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "FailedAttempts": "FailedAttempts",
+          "BypassIndicator": "BypassIndicator"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-clickjack-xss')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – Clickjacking / XSS Attempt (SAST-NGINX-001)",
+        "description": "Nginx is missing CSP, X-Frame-Options, and X-Content-Type-Options headers.\r\nThis rule detects potential exploitation via iframe embedding (clickjacking)\r\nor cross-site scripting payloads targeting the unprotected application.\r\nMapped to: SAST-NGINX-001 (CVSS 8.0) | CWE-693",
+        "severity": "Medium",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Detect XSS/clickjacking exploitation attempts\r\nlet xssPatterns = dynamic([\"<script\", \"javascript:\", \"onerror=\", \"onload=\",\r\n                           \"eval(\", \"document.cookie\", \"alert(\", \"String.fromCharCode\"]);\r\nlet iframePatterns = dynamic([\"<iframe\", \"<frame\", \"<object\", \"<embed\"]);\r\nAppRequests\r\n| where TimeGenerated > ago(1h)\r\n| where Url has_any (xssPatterns) or Name has_any (xssPatterns)\r\n| summarize\r\n    XSSAttempts = count(),\r\n    Payloads = make_set(Url, 20),\r\n    DistinctPaths = dcount(Url)\r\n  by ClientIP, bin(TimeGenerated, 5m)\r\n| project TimeGenerated, ClientIP, XSSAttempts, DistinctPaths, Payloads,\r\n          AttackType = \"XSS Attempt (no CSP protection)\"\r\n| union (\r\n  // Detect Referer headers from external sites embedding this app (clickjacking)\r\n  AppRequests\r\n  | where TimeGenerated > ago(1h)\r\n  | extend Referer = tostring(Properties[\"Referer\"])\r\n  | where isnotempty(Referer)\r\n  | where Referer !has \"homeschool-hero\" and Referer !has \"localhost\"\r\n  | where Url has \"/api/auth\" or Url has \"/api/family\"\r\n  | summarize\r\n      EmbedAttempts = count(),\r\n      Referers = make_set(Referer, 10)\r\n    by ClientIP, bin(TimeGenerated, 15m)\r\n  | where EmbedAttempts > 3\r\n  | project TimeGenerated, ClientIP, XSSAttempts = EmbedAttempts,\r\n            DistinctPaths = 0, Payloads = Referers,\r\n            AttackType = \"Clickjacking (no X-Frame-Options)\"\r\n)\r\n",
+        "queryFrequency": "PT5M",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "InitialAccess",
+          "Execution"
+        ],
+        "techniques": [
+          "T1189",
+          "T1059.007"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ClientIP"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "AttackType": "AttackType"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-container-privesc')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – Container Privilege Escalation (SAST-DOCKER-003)",
+        "description": "The nginx container lacks \"no-new-privileges\" and \"cap_drop: ALL\" hardening.\r\nThis rule detects privilege escalation, capability acquisition, or escape attempts\r\nfrom the container runtime environment.\r\nMapped to: SAST-DOCKER-003 (CVSS 8.0) | CWE-250",
+        "severity": "High",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Detect privilege escalation or suspicious commands inside containers\r\nlet privescIndicators = dynamic([\"setuid\", \"setgid\", \"cap_add\", \"nsenter\",\r\n    \"mount\", \"chroot\", \"/proc/self\", \"/proc/1\", \"docker.sock\",\r\n    \"SYS_ADMIN\", \"SYS_PTRACE\", \"NET_RAW\", \"CAP_\"]);\r\nContainerLog\r\n| where TimeGenerated > ago(1h)\r\n| where ContainerID has_any (\"nginx\", \"homeschool\")\r\n| where LogEntry has_any (privescIndicators)\r\n| summarize\r\n    EventCount = count(),\r\n    Entries = make_set(LogEntry, 15),\r\n    Containers = make_set(ContainerID, 5)\r\n  by Computer, bin(TimeGenerated, 5m)\r\n| project TimeGenerated, Computer, EventCount, Containers, Entries\r\n| union (\r\n  // Syslog-based detection for container escape via kernel exploits\r\n  Syslog\r\n  | where TimeGenerated > ago(1h)\r\n  | where SyslogMessage has_any (\"container\", \"docker\", \"runc\")\r\n  | where SyslogMessage has_any (\"escape\", \"breakout\", \"privilege\", \"exploit\", \"capability\")\r\n  | project TimeGenerated, Computer, EventCount = 1,\r\n            Containers = dynamic([\"\"]),\r\n            Entries = pack_array(SyslogMessage)\r\n)\r\n",
+        "queryFrequency": "PT5M",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "PrivilegeEscalation",
+          "Execution"
+        ],
+        "techniques": [
+          "T1611",
+          "T1068"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "Host",
+            "fieldMappings": [
+              {
+                "identifier": "HostName",
+                "columnName": "Computer"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-cicd-tamper')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – CI/CD Workflow Tampering (SAST-CICD-001)",
+        "description": "Third-party GitHub Actions are referenced by mutable tags, not pinned SHAs.\r\nThis rule detects modifications to workflow files, unexpected workflow runs, or\r\nchanges to Actions referenced in the pipeline — potential supply chain attacks.\r\nMapped to: SAST-CICD-001 (CVSS 8.0) | CWE-829",
+        "severity": "High",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Detect modifications to GitHub Actions workflow files\r\n// Requires: GitHub Audit Log connector or GitHubAuditLogPolling data connector\r\nlet workflowPaths = dynamic([\".github/workflows/ci.yml\", \".github/workflows/release.yml\",\r\n    \".github/workflows/squad-auto-patch.yml\"]);\r\n// GitHub audit log events for push/commit to workflow files\r\nGitHubAuditData\r\n| where TimeGenerated > ago(1h)\r\n| where Action in (\"git.push\", \"workflows.completed_workflow_run\", \"repo.edit\")\r\n| where RawEventData has \".github/workflows\"\r\n| extend\r\n    Actor = tostring(RawEventData.actor),\r\n    Repo = tostring(RawEventData.repo),\r\n    ModifiedFiles = tostring(RawEventData.modified_files)\r\n| where ModifiedFiles has_any (workflowPaths) or RawEventData has \"workflow\"\r\n| summarize\r\n    ChangeCount = count(),\r\n    Actors = make_set(Actor, 10),\r\n    Actions = make_set(Action, 5)\r\n  by Repo, bin(TimeGenerated, 1h)\r\n| project TimeGenerated, Repo, ChangeCount, Actors, Actions,\r\n          RiskNote = \"Unpinned Actions are vulnerable to tag hijacking — verify commit SHAs\"\r\n",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT24H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "InitialAccess",
+          "Execution"
+        ],
+        "techniques": [
+          "T1195.002"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "Name",
+                "columnName": "Repo"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "Actors": "Actors",
+          "RiskNote": "RiskNote"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-brute-force')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – Distributed Auth Brute Force (SAST-PYTHON-005)",
+        "description": "The in-memory rate limiter resets on restart and is per-worker only.\r\nThis rule detects distributed brute-force attacks where multiple IPs target\r\nthe same auth endpoints — an attack pattern the app rate limiter cannot stop.\r\nMapped to: SAST-PYTHON-005 + DAST-CONFIG-004/005 | CWE-307",
+        "severity": "Medium",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Distributed brute-force: many IPs hitting auth endpoints with high failure rate\r\nAppRequests\r\n| where TimeGenerated > ago(1h)\r\n| where Url has_any (\"/api/auth/login\", \"/api/auth/family\", \"/api/auth/register\")\r\n| where ResultCode in (401, 403, 422)\r\n| summarize\r\n    TotalFailures = count(),\r\n    DistinctIPs = dcount(ClientIP),\r\n    IPs = make_set(ClientIP, 50),\r\n    TargetedEndpoints = make_set(Url, 5)\r\n  by bin(TimeGenerated, 10m)\r\n| where TotalFailures > 30 and DistinctIPs > 5\r\n| extend Severity = iff(DistinctIPs > 20, \"Critical — large-scale distributed attack\",\r\n                        \"High — multi-source brute force\")\r\n| project TimeGenerated, TotalFailures, DistinctIPs, IPs, TargetedEndpoints, Severity\r\n",
+        "queryFrequency": "PT10M",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "CredentialAccess"
+        ],
+        "techniques": [
+          "T1110.003",
+          "T1110.004"
+        ],
+        "customDetails": {
+          "TotalFailures": "TotalFailures",
+          "DistinctIPs": "DistinctIPs",
+          "Severity": "Severity"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.SecurityInsights/alertRules",
+      "apiVersion": "2023-11-01",
+      "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(subscription().subscriptionId, resourceGroup().id, 'hsh-data-exfil')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Homeschool Hero – Student Data Exfiltration via Uploads (SAST-PYTHON-001)",
+        "description": "With unauthenticated uploads and potential path traversal, an attacker can\r\nbulk-download student submissions, OCR documents, and portfolio files. This rule\r\ndetects high-volume successful downloads or path traversal attempts against /uploads/.\r\nMapped to: SAST-PYTHON-001 (CVSS 9.5), SAST-PYTHON-009 (CVSS 5.5) | CWE-200",
+        "severity": "High",
+        "enabled": "[parameters('enableRules')]",
+        "query": "// Bulk download or path traversal against /uploads/\r\nlet traversalPatterns = dynamic([\"../\", \"..%2f\", \"..%5c\", \"%2e%2e\", \"..\\\\\",\r\n    \"/etc/passwd\", \"/proc/self\"]);\r\nAppRequests\r\n| where TimeGenerated > ago(1h)\r\n| where Url has \"/uploads/\"\r\n| where ResultCode == 200\r\n| summarize\r\n    SuccessfulDownloads = count(),\r\n    TotalBytes = sum(toint(Properties[\"ResponseSize\"])),\r\n    DistinctFiles = dcount(Url),\r\n    SamplePaths = make_set(Url, 20)\r\n  by ClientIP, bin(TimeGenerated, 15m)\r\n| where SuccessfulDownloads > 15 or DistinctFiles > 10\r\n| extend ExfilMB = round(TotalBytes / 1048576.0, 2)\r\n| project TimeGenerated, ClientIP, SuccessfulDownloads, DistinctFiles, ExfilMB, SamplePaths,\r\n          AlertType = \"Bulk data exfiltration via unauthenticated /uploads/\"\r\n| union (\r\n  // Path traversal attempts\r\n  AppRequests\r\n  | where TimeGenerated > ago(1h)\r\n  | where Url has \"/uploads/\" and Url has_any (traversalPatterns)\r\n  | summarize\r\n      TraversalAttempts = count(),\r\n      Payloads = make_set(Url, 20)\r\n    by ClientIP, bin(TimeGenerated, 5m)\r\n  | project TimeGenerated, ClientIP, SuccessfulDownloads = TraversalAttempts,\r\n            DistinctFiles = 0, ExfilMB = 0.0, SamplePaths = Payloads,\r\n            AlertType = \"Path traversal attempt against /uploads/\"\r\n)\r\n",
+        "queryFrequency": "PT10M",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Exfiltration",
+          "Collection"
+        ],
+        "techniques": [
+          "T1530",
+          "T1083"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ClientIP"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "AlertType": "AlertType",
+          "ExfilMB": "ExfilMB",
+          "SuccessfulDownloads": "SuccessfulDownloads"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "deployedRules": {
+      "type": "array",
+      "value": [
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-upload-enum'))]",
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-default-creds'))]",
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-db-direct-access'))]",
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-demo-account'))]",
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-ip-spoof'))]",
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-clickjack-xss'))]",
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-container-privesc'))]",
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-cicd-tamper'))]",
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-brute-force'))]",
+        "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(subscription().subscriptionId, resourceGroup().id, 'hsh-data-exfil'))]"
+      ]
+    },
+    "ruleCount": {
+      "type": "int",
+      "value": 10
+    }
+  }
+}
