@@ -38,3 +38,8 @@
 - 2026-05-17T21:57:29.677-05:00 — `backend/main.py` should treat every 5xx response path as generic `internal_error` output; exception specifics belong only in logs, even when an `HTTPException` carries custom detail.
 - 2026-05-18T07:28:45.785-05:00 — `backend/routers/auth.py` + `backend/services/auth_oidc.py` must fail closed on OIDC login/callback exceptions: log the diagnostic, redirect users back to `/login?error=...`, and keep `/api/auth/oidc/verify` public so infra can distinguish discovery outages from SPA redirect noise.
 - 2026-05-18T07:28:45.785-05:00 — The SPA catch-all in `backend/main.py` is not winning route resolution for `/api/auth/oidc/login`; if OIDC initiation redirects to `/login`, clients that follow redirects will finish on the SPA `index.html`, which matches the HAR symptom.
+### 2026-06-09 Security Awareness
+- Security batch (#183, #178, #181, #180, #169-#175) resolved by Ray and Venkman
+- Key patterns: fail-closed defaults, sanitization at data sinks, no sensitive info in responses/logs
+- Frontend: render-site XSS sanitization. Backend: path validation, exception redaction, log sanitization
+
