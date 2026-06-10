@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import enum
 from datetime import date, datetime
-from pathlib import Path
 
 from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin
+from backend.services.storage import build_authenticated_file_url
 
 
 class PortfolioEntryType(str, enum.Enum):
@@ -55,7 +55,7 @@ class PortfolioEntry(TimestampMixin, Base):
 
     @property
     def attachment_urls(self) -> list[str]:
-        return [f"/uploads/{Path(item).as_posix().lstrip('/')}" for item in self.attachments or []]
+        return [build_authenticated_file_url(item) for item in self.attachments or []]
 
 
 class PortfolioCollection(Base):

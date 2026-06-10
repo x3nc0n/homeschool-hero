@@ -1,10 +1,9 @@
 from datetime import datetime
-from pathlib import Path
-
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin
+from backend.services.storage import build_authenticated_file_url
 
 
 class Submission(TimestampMixin, Base):
@@ -48,7 +47,7 @@ class Submission(TimestampMixin, Base):
 
     @property
     def file_url(self) -> str:
-        return f"/uploads/{Path(self.file_path).as_posix().lstrip('/')}"
+        return build_authenticated_file_url(self.file_path)
 
     @property
     def version_root_id(self) -> int:

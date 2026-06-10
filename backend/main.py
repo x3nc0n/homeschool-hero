@@ -32,6 +32,7 @@ from backend.routers import (
     dashboard_router,
     exports_router,
     family_settings_router,
+    files_router,
     gradebook_router,
     grades_router,
     invitations_router,
@@ -340,7 +341,6 @@ def create_app() -> FastAPI:
         assets_dir = FRONTEND_DIST_DIR / 'assets'
         if assets_dir.exists():
             app.mount('/assets', StaticFiles(directory=assets_dir), name='frontend-assets')
-    app.mount('/uploads', StaticFiles(directory=settings.upload_dir, check_dir=False), name='uploads')
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
@@ -598,6 +598,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router, prefix=API_PREFIX)
     app.include_router(backups_router, prefix=API_PREFIX)
     app.include_router(exports_router, prefix=API_PREFIX)
+    app.include_router(files_router, prefix=API_PREFIX)
     app.include_router(family_settings_router, prefix=API_PREFIX)
     app.include_router(gradebook_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)

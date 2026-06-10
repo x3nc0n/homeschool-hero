@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.config import settings
 from backend.models import (
     Assignment,
     AssignmentCategory,
@@ -314,6 +315,9 @@ def _subject_display_name(spec: StudentSpec, subject_title: str) -> str:
 
 
 async def seed_demo_data(session: AsyncSession) -> bool:
+    if not settings.demo_mode:
+        raise RuntimeError('Demo seed data is only available when DEMO_MODE=true.')
+
     demo_family = (
         await session.execute(
             select(Family.id).where(

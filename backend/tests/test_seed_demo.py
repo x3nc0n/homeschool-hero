@@ -20,7 +20,8 @@ from backend.seed_demo import seed_demo_data
 
 
 @pytest.mark.asyncio
-async def test_seed_demo_data_populates_empty_database() -> None:
+async def test_seed_demo_data_populates_empty_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main_module.settings, 'demo_mode', True, raising=False)
     async with AsyncSessionLocal() as session:
         seeded = await seed_demo_data(session)
 
@@ -66,7 +67,8 @@ async def test_seed_demo_data_populates_empty_database() -> None:
 
 
 @pytest.mark.asyncio
-async def test_seed_demo_data_is_idempotent() -> None:
+async def test_seed_demo_data_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main_module.settings, 'demo_mode', True, raising=False)
     async with AsyncSessionLocal() as session:
         assert await seed_demo_data(session) is True
 
@@ -93,3 +95,12 @@ async def test_maybe_seed_demo_data_respects_setting(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(main_module.settings, 'demo_mode', True, raising=False)
     assert await main_module.maybe_seed_demo_data() is True
     assert calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_seed_demo_data_requires_demo_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main_module.settings, 'demo_mode', False, raising=False)
+
+    async with AsyncSessionLocal() as session:
+        with pytest.raises(RuntimeError, match='DEMO_MODE=true'):
+            await seed_demo_data(session)

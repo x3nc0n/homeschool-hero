@@ -90,6 +90,20 @@ def _validate_secret_key(config: Settings) -> None:
         )
 
 
+def _validate_default_credentials(config: Settings, *, database_driver: str) -> None:
+    if config.demo_mode or config.testing:
+        return
+
+    errors: list[str] = []
+    if database_driver.startswith('postgresql') and config.postgres_password.strip() == 'changeme':
+        errors.append('POSTGRES_PASSWORD is using the default value "changeme". Set a strong password before startup.')
+    if config.legacy_family_password.strip() == 'changeme':
+        errors.append('FAMILY_PASSWORD is using the default value "changeme". Set a strong password before startup.')
+
+    if errors:
+        raise StartupValidationError('\n'.join(errors))
+
+
 def _validate_migration_mode(config: Settings) -> str:
     mode = str(getattr(config, 'migration_mode', os.getenv('MIGRATION_MODE', 'apply'))).strip().lower()
     if mode not in _VALID_MIGRATION_MODES:
@@ -220,6 +234,11 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
 
     try:
         _validate_secret_key(config)
+    except StartupValidationError as exc:
+        errors.append(str(exc))
+
+    try:
+        _validate_default_credentials(config, database_driver=database_summary.get('driver', ''))
     except StartupValidationError as exc:
         errors.append(str(exc))
 
