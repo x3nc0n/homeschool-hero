@@ -339,14 +339,14 @@ jobs:
       - frontend-tests
     steps:
       - name: Download junit artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: backend-junit-*
           path: artifacts/junit
           merge-multiple: true
 
       - name: Download coverage artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: backend-coverage
           path: artifacts/coverage
