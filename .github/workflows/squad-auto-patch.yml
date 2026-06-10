@@ -166,7 +166,7 @@ jobs:
         run: docker build --pull -t "${CI_IMAGE_NAME}" .
 
       - name: Scan patched image with Trivy
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.CI_IMAGE_NAME }}
           scan-type: image
@@ -179,7 +179,7 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2.3.9
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
@@ -223,7 +223,7 @@ jobs:
 
       - name: Create auto-generated PR
         id: create-pr
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
           branch: ${{ steps.patch.outputs.branch_name }}
           commit-message: ${{ steps.patch.outputs.commit_message }}

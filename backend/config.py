@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     session_max_age_seconds: int = Field(28800, alias='SESSION_MAX_AGE_SECONDS')
     session_cookie_secure: bool = Field(False, alias='SESSION_COOKIE_SECURE')
     session_rotation_seconds: int = Field(1800, alias='SESSION_ROTATION_SECONDS')
+    trust_proxy_headers: bool = Field(False, alias='TRUST_PROXY_HEADERS')
     tls_enabled: bool = Field(False, alias='TLS_ENABLED')
     https_redirect_enabled: bool = Field(False, alias='HTTPS_REDIRECT_ENABLED')
     hsts_enabled: bool = Field(True, alias='HSTS_ENABLED')

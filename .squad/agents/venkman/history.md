@@ -112,3 +112,9 @@
 - Route and navigation gating now key off capabilities/AppRoles in `frontend/src/App.tsx`, `frontend/src/components/layout/AppShell.tsx`, and tabbed hub pages (`CurriculumHubPage.tsx`, `DataManagementPage.tsx`, `GradebookPage.tsx`) instead of raw `FamilyRole` string checks.
 - The server-side OIDC flow remains backend-owned; the frontend just redirects to `/api/auth/oidc/login`, listens for `?error=` on `LoginPage.tsx`, and globally handles expired cookie sessions through `frontend/src/lib/api.ts` 401 dispatch plus AuthContext reset.
 - Frontend validation is `cd frontend && npm run lint && npm run build`; backend regression check is `cd backend && python -m pytest -q`.
+### 2026-06-09 Frontend Security Hardening
+- Fixed DOM-based XSS issues (#167, #168) in FileUpload.tsx
+- Applied render-site sanitization pattern: explicit safety checks at JSX callsite, not just event handlers
+- CodeQL taint analysis now verifies safety through React state flow
+- Committed b3ef0b5 with XSS pattern guardrail for future maintainers
+
