@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import enum
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Enum, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, text
@@ -9,6 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin
+from backend.services.storage import build_authenticated_file_url
 
 json_type = JSON().with_variant(JSONB, 'postgresql')
 
@@ -129,7 +129,7 @@ class Resource(TimestampMixin, Base):
     def file_url(self) -> str | None:
         if not self.file_path:
             return None
-        return f'/uploads/{Path(self.file_path).name}'
+        return build_authenticated_file_url(self.file_path)
 
     @property
     def lesson_ids(self) -> list[int]:

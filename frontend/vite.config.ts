@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'node:path'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const serviceWorkerNavigationDenylist = [/^\/api\//, /^\/uploads\//, /^\/health(?:\/|$)/]
+const serviceWorkerNavigationDenylist = [/^\/api\//, /^\/health(?:\/|$)/]
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -26,7 +26,6 @@ export default defineConfig({
             urlPattern: ({ request, url }) =>
               request.mode === 'navigate' &&
               !/^\/api\//.test(url.pathname) &&
-              !/^\/uploads\//.test(url.pathname) &&
               !/^\/health(?:\/|$)/.test(url.pathname),
             handler: 'NetworkFirst',
             options: {

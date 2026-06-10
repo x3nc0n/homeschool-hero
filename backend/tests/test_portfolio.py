@@ -183,7 +183,7 @@ async def test_portfolio_attachment_handling(
     attached = attach_response.json()
     assert len(attached['attachments']) == 2
     assert all(item.startswith('portfolio\\') or item.startswith('portfolio/') for item in attached['attachments'])
-    assert all(url.startswith('/uploads/portfolio/') for url in attached['attachment_urls'])
+    assert all(url.startswith('/api/files/portfolio/') for url in attached['attachment_urls'])
 
 
 async def test_student_viewer_can_manage_only_own_portfolio(
