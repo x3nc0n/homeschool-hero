@@ -288,9 +288,11 @@ async def build_simple_health_payload(app: FastAPI, config: Settings = settings)
     database_status = payload['services'].get('database', {}).get('status')
     ready = payload['ready'] and database_status != 'unhealthy'
     status_code = 200 if ready else 503
+    maintenance = bool(payload.get('maintenance', {}).get('active', False))
     return status_code, {
         'status': 'ok' if ready else 'error',
         'ready': ready,
+        'maintenance': maintenance,
     }
 
 

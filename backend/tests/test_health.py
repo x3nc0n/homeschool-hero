@@ -54,7 +54,7 @@ def test_health_endpoint_reports_degraded_when_optional_service_is_down(app, mon
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload == {'status': 'ok', 'ready': True}
+    assert payload == {'status': 'ok', 'ready': True, 'maintenance': False}
 
 
 def test_health_endpoint_reports_unhealthy_when_required_service_fails(app, monkeypatch) -> None:
@@ -74,7 +74,7 @@ def test_health_endpoint_reports_unhealthy_when_required_service_fails(app, monk
 
     assert response.status_code == 503
     payload = response.json()
-    assert payload == {'status': 'error', 'ready': False}
+    assert payload == {'status': 'error', 'ready': False, 'maintenance': False}
 
 
 def test_detailed_health_requires_authentication(app) -> None:

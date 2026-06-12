@@ -8,6 +8,7 @@ def test_health_endpoint(app) -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert "ready" in payload
+    assert "maintenance" in payload
 
 
 def test_capabilities_endpoint_returns_current_flags(app) -> None:

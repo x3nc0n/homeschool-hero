@@ -33,6 +33,7 @@ class HealthSummaryRead(BaseModel):
 class SimpleHealthRead(BaseModel):
     status: Literal['ok', 'error']
     ready: bool
+    maintenance: bool
 
 
 class ReadinessRead(BaseModel):
