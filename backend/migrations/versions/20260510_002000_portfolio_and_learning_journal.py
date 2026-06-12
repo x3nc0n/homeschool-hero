@@ -40,7 +40,11 @@ def _add_postgres_enum_values() -> None:
         'portfolio_collection_delete',
         'portfolio_share',
     ):
-        op.execute(sa.text(f"ALTER TYPE audit_action ADD VALUE IF NOT EXISTS '{value}'"))
+        op.execute(
+            sa.text('ALTER TYPE audit_action ADD VALUE IF NOT EXISTS :value').bindparams(
+                sa.bindparam('value', value=value, type_=sa.String(), literal_execute=True)
+            )
+        )
 
 
 def upgrade() -> None:

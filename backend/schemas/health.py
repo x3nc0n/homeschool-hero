@@ -31,11 +31,8 @@ class HealthSummaryRead(BaseModel):
 
 
 class SimpleHealthRead(BaseModel):
-    status: OverallHealthLevel
+    status: Literal['ok', 'error']
     ready: bool
-    checked_at: datetime
-    transport: dict[str, bool]
-    maintenance: dict[str, Any]
 
 
 class ReadinessRead(BaseModel):

@@ -83,7 +83,7 @@ async def test_family_feature_flags_flow_through_session_and_login(authorized_cl
 
     login = await secondary_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
     assert login.status_code == 200, login.text
     assert login.json()['family']['enabled_features'] == {'attendance': False, 'planner': True, 'quizzes': False}

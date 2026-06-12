@@ -6,7 +6,7 @@ from pathlib import Path
 from time import perf_counter
 import uuid
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -314,7 +314,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
-        openapi_url=OPENAPI_PATH,
+        openapi_url=OPENAPI_PATH if settings.public_api_docs else None,
     )
     app.state.started_at = datetime.now(UTC)
     app.state.database_migrated = settings.testing
@@ -327,6 +327,7 @@ def create_app() -> FastAPI:
         api_prefix=API_PREFIX,
         session_cookie_name=settings.session_cookie_name,
         csrf_cookie_name=settings.csrf_cookie_name,
+        expose_ui=settings.public_api_docs,
     )
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     app.add_middleware(
@@ -401,6 +402,7 @@ def create_app() -> FastAPI:
         started_at = perf_counter()
         is_public = _is_public_api_path(path)
         session = None
+        response: Response | None = None
         try:
             if _should_redirect_to_https(request):
                 response = RedirectResponse(url=_https_redirect_url(request), status_code=307)
@@ -538,8 +540,8 @@ def create_app() -> FastAPI:
             return response
         finally:
             duration_ms = round((perf_counter() - started_at) * 1000, 2)
-            status_code = getattr(locals().get('response', None), 'status_code', 500)
-            if 'response' in locals():
+            status_code = response.status_code if response is not None else 500
+            if response is not None:
                 response.headers['X-Correlation-ID'] = correlation_id
             if path not in HEALTH_PATHS:
                 slow_request = duration_ms > 1000
