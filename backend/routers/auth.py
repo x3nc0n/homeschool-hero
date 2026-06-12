@@ -29,6 +29,7 @@ from backend.security import (
     get_auth_session,
     get_login_membership,
     hash_password,
+    SessionClaims,
     set_session_cookies,
     verify_password,
 )
@@ -40,6 +41,13 @@ from backend.services.gradebook import ensure_default_grade_scale
 from backend.services.maintenance import get_maintenance_status, membership_can_bypass_maintenance
 from backend.services.notifications import create_security_alert_for_user
 from backend.services.preferences import DEFAULT_USER_PREFERENCES, serialize_user_preferences
+from backend.services.security_events import (
+    emit_auth_failure,
+    emit_auth_success,
+    emit_breakglass_login,
+    emit_session_created,
+    emit_session_destroyed,
+)
 
 router = APIRouter(prefix='/auth', tags=['auth'])
 logger = logging.getLogger(__name__)
@@ -52,8 +60,8 @@ def _set_session_cookie(
     user_id: int,
     family_id: int,
     app_roles: list[str] | None = None,
-) -> None:
-    set_session_cookies(response, request, user_id=user_id, family_id=family_id, app_roles=app_roles)
+) -> SessionClaims:
+    return set_session_cookies(response, request, user_id=user_id, family_id=family_id, app_roles=app_roles)
 
 
 def _auth_session_from_record(
@@ -204,7 +212,15 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
         student_id=membership.student_id,
         ui_preferences=serialize_user_preferences(user_preferences),
     )
-    _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
+    session_claims = _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
+    emit_session_created(
+        logger,
+        request=request,
+        subject=auth,
+        session_id=session_claims.get('sid'),
+        family_id=family.id,
+        auth_provider=user.auth_provider,
+    )
     return _session_response(auth, message='Owner account created')
 
 
@@ -221,21 +237,61 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
         user = await _find_user_by_email(db, payload.email)
         if user is not None:
             if _is_locked(user):
+                emit_auth_failure(
+                    logger,
+                    request=request,
+                    email=payload.email,
+                    family_id=payload.family_id,
+                    reason='locked_account',
+                    user_id=user.id,
+                )
                 raise HTTPException(status_code=status.HTTP_423_LOCKED, detail='Account temporarily locked. Try again later.')
             await _register_failed_login(db, user)
+            emit_auth_failure(
+                logger,
+                request=request,
+                email=payload.email,
+                family_id=payload.family_id,
+                reason='bad_password',
+                user_id=user.id,
+            )
+        else:
+            emit_auth_failure(
+                logger,
+                request=request,
+                email=payload.email,
+                family_id=payload.family_id,
+                reason='unknown_user',
+            )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid email or password')
 
     user, membership, family, state_code, enabled_features, preferences = membership_row
     if _is_locked(user):
+        emit_auth_failure(
+            logger,
+            request=request,
+            email=payload.email,
+            family_id=family.id,
+            reason='locked_account',
+            user_id=user.id,
+        )
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail='Account temporarily locked. Try again later.')
     if not verify_password(payload.password, user.password_hash):
         await _register_failed_login(db, user)
+        emit_auth_failure(
+            logger,
+            request=request,
+            email=payload.email,
+            family_id=family.id,
+            reason='bad_password',
+            user_id=user.id,
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid email or password')
 
     await _reset_failed_login(db, user)
     if _is_breakglass_local_login():
         logger.warning("Breakglass local login used while AUTH_PROVIDER=%s", settings.auth_provider)
-    _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
+    session_claims = _set_session_cookie(response, request, user_id=user.id, family_id=family.id)
     auth = AuthSession(
         user_id=user.id,
         family_id=family.id,
@@ -250,6 +306,32 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
         student_id=membership.student_id,
         ui_preferences=serialize_user_preferences(preferences),
     )
+    emit_auth_success(
+        logger,
+        request=request,
+        subject=auth,
+        family_id=family.id,
+        provider=user.auth_provider,
+        target_resource='/api/auth/login',
+        target_id=str(user.id),
+    )
+    emit_session_created(
+        logger,
+        request=request,
+        subject=auth,
+        session_id=session_claims.get('sid'),
+        family_id=family.id,
+        auth_provider=user.auth_provider,
+    )
+    if _is_breakglass_local_login():
+        emit_breakglass_login(
+            logger,
+            request=request,
+            subject=auth,
+            configured_provider=settings.auth_provider,
+            family_id=family.id,
+            target_id=str(user.id),
+        )
     await log_event(
         db,
         action=AuditAction.login,
@@ -278,6 +360,7 @@ async def logout(
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(get_auth_session),
 ) -> dict[str, str]:
+    session_claims = getattr(request.state, 'session', None)
     await log_event(
         db,
         action=AuditAction.logout,
@@ -296,6 +379,14 @@ async def logout(
         request=request,
     )
     await db.commit()
+    emit_session_destroyed(
+        logger,
+        request=request,
+        subject=auth,
+        session_id=session_claims.get('sid') if isinstance(session_claims, dict) else None,
+        family_id=auth.family_id,
+        auth_provider=auth.auth_provider,
+    )
     clear_session_cookies(response, request)
     return {'status': 'logged_out'}
 
@@ -317,12 +408,30 @@ async def _complete_external_login(
         return _redirect_to_login_error(maintenance.message)
     app_roles = list(identity.roles) if identity.roles else None
     response = _redirect_to_app()
-    _set_session_cookie(
+    session_claims = _set_session_cookie(
         response,
         request,
         user_id=provisioned.user.id,
         family_id=provisioned.family.id,
         app_roles=app_roles,
+    )
+    auth = _auth_session_from_record(provisioned.user, provisioned.membership, provisioned.family)
+    emit_auth_success(
+        logger,
+        request=request,
+        subject=auth,
+        family_id=provisioned.family.id,
+        provider=identity.provider,
+        target_resource=f'/api/auth/{identity.provider}/callback',
+        target_id=str(provisioned.user.id),
+    )
+    emit_session_created(
+        logger,
+        request=request,
+        subject=auth,
+        session_id=session_claims.get('sid'),
+        family_id=provisioned.family.id,
+        auth_provider=identity.provider,
     )
     return response
 

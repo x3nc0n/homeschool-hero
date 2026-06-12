@@ -88,13 +88,25 @@ class RequestContextFilter(logging.Filter):
         record.action = _coerce_log_value(getattr(record, 'action', None) or context['action'])
         details = getattr(record, 'details', None)
         record.details = _coerce_details(context['details'] if details is None else details)
+        event_timestamp = getattr(record, 'event_timestamp', None)
+        record.event_timestamp = _coerce_log_value(event_timestamp) if event_timestamp is not None else None
+        record.event_category = _coerce_log_value(getattr(record, 'event_category', None))
+        record.event_type = _coerce_log_value(getattr(record, 'event_type', None))
+        actor = getattr(record, 'actor', None)
+        record.actor = _coerce_details(actor) if actor is not None else None
+        target = getattr(record, 'target', None)
+        record.target = _coerce_details(target) if target is not None else None
+        record.result = _coerce_log_value(getattr(record, 'result', None))
+        record.source_ip = _coerce_log_value(getattr(record, 'source_ip', None))
+        record.user_agent = _coerce_log_value(getattr(record, 'user_agent', None))
         return True
 
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        timestamp = getattr(record, 'event_timestamp', None) or datetime.fromtimestamp(record.created, tz=UTC).isoformat()
         payload: dict[str, Any] = {
-            'timestamp': datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
+            'timestamp': timestamp,
             'level': record.levelname,
             'logger': record.name,
             'message': _sanitize_log_text(record.getMessage()),
@@ -103,6 +115,13 @@ class JsonFormatter(logging.Formatter):
             'family_id': getattr(record, 'family_id', None),
             'action': getattr(record, 'action', None),
             'details': getattr(record, 'details', None),
+            'event_category': getattr(record, 'event_category', None),
+            'event_type': getattr(record, 'event_type', None),
+            'actor': getattr(record, 'actor', None),
+            'target': getattr(record, 'target', None),
+            'result': getattr(record, 'result', None),
+            'source_ip': getattr(record, 'source_ip', None),
+            'user_agent': getattr(record, 'user_agent', None),
         }
         if record.exc_info:
             payload['exception'] = self.formatException(record.exc_info)
@@ -116,7 +135,10 @@ class ConsoleFormatter(logging.Formatter):
         action = getattr(record, 'action', None) or '-'
         details = getattr(record, 'details', None)
         details_suffix = f' details={json.dumps(details, default=str)}' if details is not None else ''
-        return f'{timestamp} {record.levelname:<8} [{correlation_id}] {action} {_sanitize_log_text(record.getMessage())}{details_suffix}'
+        event_category = getattr(record, 'event_category', None)
+        event_type = getattr(record, 'event_type', None)
+        security_suffix = f' event={event_category}:{event_type}' if event_category and event_type else ''
+        return f'{timestamp} {record.levelname:<8} [{correlation_id}] {action}{security_suffix} {_sanitize_log_text(record.getMessage())}{details_suffix}'
 
 
 def should_use_json_logging(config: Settings = settings) -> bool:
