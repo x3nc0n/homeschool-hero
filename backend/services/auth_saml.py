@@ -9,6 +9,7 @@ from fastapi import Request
 from backend.config import settings
 from backend.security import normalize_email, resolve_external_app_roles
 from backend.services.auth_provisioning import ExternalIdentity
+from backend.services.security_events import emit_role_mapping_failure
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,13 @@ def _role_attribute_names() -> tuple[str, ...]:
     return tuple(names)
 
 
-def _extract_roles(attributes: Mapping[str, list[str]]) -> tuple[str, ...]:
+def _extract_roles(
+    attributes: Mapping[str, list[str]],
+    *,
+    request: Request | None = None,
+    email: str | None = None,
+    external_id: str | None = None,
+) -> tuple[str, ...]:
     external_roles = _attribute_values(attributes, *_role_attribute_names())
     if not external_roles:
         return ()
@@ -159,10 +166,19 @@ def _extract_roles(attributes: Mapping[str, list[str]]) -> tuple[str, ...]:
     )
     if unmapped:
         logger.warning('SAML assertion contained unmapped role values: %s', ', '.join(unmapped))
+        emit_role_mapping_failure(
+            logger,
+            provider='saml',
+            source='assertion roles',
+            request=request,
+            email=email,
+            external_id=external_id,
+            unmapped_roles=unmapped,
+        )
     return tuple(resolve_external_app_roles(list(external_roles)))
 
 
-def extract_identity(auth: OneLogin_Saml2_Auth) -> ExternalIdentity:
+def extract_identity(auth: OneLogin_Saml2_Auth, *, request: Request | None = None) -> ExternalIdentity:
     attributes = auth.get_attributes()
     email = _first_attribute(
         attributes,
@@ -188,12 +204,13 @@ def extract_identity(auth: OneLogin_Saml2_Auth) -> ExternalIdentity:
     ) or email.split('@', 1)[0]
 
     external_id = auth.get_nameid() or email
+    normalized_email = normalize_email(email)
     return ExternalIdentity(
         provider='saml',
         external_id=external_id,
-        email=normalize_email(email),
+        email=normalized_email,
         display_name=display_name,
-        roles=_extract_roles(attributes),
+        roles=_extract_roles(attributes, request=request, email=normalized_email, external_id=external_id),
     )
 
 
@@ -216,4 +233,4 @@ async def complete_saml_login(request: Request) -> ExternalIdentity:
         raise SAMLConfigurationError(f'SAML sign-in failed: {detail}')
     if not auth.is_authenticated():
         raise SAMLConfigurationError('SAML assertion could not be authenticated.')
-    return extract_identity(auth)
+    return extract_identity(auth, request=request)

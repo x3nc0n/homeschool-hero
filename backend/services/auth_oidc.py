@@ -10,6 +10,7 @@ from fastapi import Request
 from backend.config import settings
 from backend.security import normalize_email, resolve_external_app_roles
 from backend.services.auth_provisioning import ExternalIdentity
+from backend.services.security_events import emit_role_mapping_failure
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,14 @@ def _claim_values(claims: Mapping[str, object], *names: str) -> tuple[str, ...]:
     return tuple(values)
 
 
-def _warn_unmapped_roles(external_roles: tuple[str, ...], *, source: str) -> None:
+def _warn_unmapped_roles(
+    external_roles: tuple[str, ...],
+    *,
+    source: str,
+    request: Request | None = None,
+    email: str | None = None,
+    external_id: str | None = None,
+) -> None:
     unmapped = sorted(
         {
             role
@@ -128,12 +136,28 @@ def _warn_unmapped_roles(external_roles: tuple[str, ...], *, source: str) -> Non
     )
     if unmapped:
         logger.warning('OIDC %s contained unmapped role values: %s', source, ', '.join(unmapped))
+        emit_role_mapping_failure(
+            logger,
+            provider='oidc',
+            source=source,
+            request=request,
+            email=email,
+            external_id=external_id,
+            unmapped_roles=unmapped,
+        )
 
 
-def _normalize_external_roles(external_roles: tuple[str, ...], *, source: str) -> tuple[str, ...]:
+def _normalize_external_roles(
+    external_roles: tuple[str, ...],
+    *,
+    source: str,
+    request: Request | None = None,
+    email: str | None = None,
+    external_id: str | None = None,
+) -> tuple[str, ...]:
     if not external_roles:
         return ()
-    _warn_unmapped_roles(external_roles, source=source)
+    _warn_unmapped_roles(external_roles, source=source, request=request, email=email, external_id=external_id)
     return tuple(resolve_external_app_roles(list(external_roles)))
 
 
@@ -153,7 +177,13 @@ def _groups_overage_detected(claims: Mapping[str, object]) -> bool:
     return True
 
 
-def _roles_from_groups(claims: Mapping[str, object]) -> tuple[str, ...]:
+def _roles_from_groups(
+    claims: Mapping[str, object],
+    *,
+    request: Request | None = None,
+    email: str | None = None,
+    external_id: str | None = None,
+) -> tuple[str, ...]:
     groups_claim = (settings.oidc_groups_claim or 'groups').strip() or 'groups'
     if _groups_overage_detected(claims):
         logger.warning('OIDC groups overage detected; skipping groups fallback and relying on roles claim only.')
@@ -170,10 +200,16 @@ def _roles_from_groups(claims: Mapping[str, object]) -> tuple[str, ...]:
         for group in groups
         if group.casefold() in casefold_group_roles
     ]
-    return _normalize_external_roles(tuple(external_roles), source=f'{groups_claim} fallback')
+    return _normalize_external_roles(
+        tuple(external_roles),
+        source=f'{groups_claim} fallback',
+        request=request,
+        email=email,
+        external_id=external_id,
+    )
 
 
-def extract_identity(claims: Mapping[str, object]) -> ExternalIdentity:
+def extract_identity(claims: Mapping[str, object], *, request: Request | None = None) -> ExternalIdentity:
     email = _coalesce_claim(claims, 'email', 'preferred_username', 'upn', 'unique_name')
     if not email:
         raise OIDCConfigurationError('OIDC provider did not return an email claim.')
@@ -192,9 +228,17 @@ def extract_identity(claims: Mapping[str, object]) -> ExternalIdentity:
     roles = _normalize_external_roles(
         _claim_values(claims, roles_claim, 'roles'),
         source=f'{roles_claim} claim',
+        request=request,
+        email=normalize_email(email),
+        external_id=external_id,
     )
     if not roles:
-        roles = _roles_from_groups(claims)
+        roles = _roles_from_groups(
+            claims,
+            request=request,
+            email=normalize_email(email),
+            external_id=external_id,
+        )
 
     return ExternalIdentity(
         provider='oidc',
@@ -237,7 +281,7 @@ async def complete_oidc_login(request: Request) -> ExternalIdentity:
     if claims is None:
         raise OIDCConfigurationError('OIDC provider did not return user claims.')
 
-    return extract_identity(claims)
+    return extract_identity(claims, request=request)
 
 
 async def verify_oidc_configuration() -> dict[str, Any]:
