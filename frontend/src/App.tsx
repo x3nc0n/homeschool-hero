@@ -23,6 +23,7 @@ import { AuditLogPage } from '@/pages/AuditLogPage'
 import { CalendarPage } from '@/pages/CalendarPage'
 import { CompliancePage } from '@/pages/CompliancePage'
 import { ComplianceReportsPage } from '@/pages/ComplianceReportsPage'
+import { CurriculumImportDetailPage } from '@/pages/CurriculumImportDetailPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotificationPreferencesPage } from '@/pages/NotificationPreferencesPage'
@@ -123,6 +124,7 @@ function ProtectedRoutes() {
           element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} feature="planner" element={<PlannerPage />} />}
         />
         <Route path="/curriculum" element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<CurriculumHubPage />} />} />
+        <Route path="/curriculum/:curriculumId" element={<AccessRoute anyCapabilities={TEACHER_CAPABILITIES} element={<CurriculumImportDetailPage />} />} />
         <Route
           path="/lesson-plans"
           element={<AccessRoute anyCapabilities={[...TEACHER_CAPABILITIES, ...STUDENT_CAPABILITIES]} anyRoles={['student']} element={<Navigate to="/curriculum?tab=lesson-plans" replace />} />}

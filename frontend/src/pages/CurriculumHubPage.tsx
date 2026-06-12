@@ -2,11 +2,12 @@ import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/context/AuthContext'
+import { CurriculumImportLibraryPage } from './CurriculumImportLibraryPage'
 import { CurriculumPage } from './CurriculumPage'
 import { LessonPlansPage } from './LessonPlansPage'
 import { ResourceLibraryPage } from './ResourceLibraryPage'
 
-const TABS = ['curriculum', 'lesson-plans', 'resources'] as const
+const TABS = ['library', 'packages', 'lesson-plans', 'resources'] as const
 
 type TabValue = (typeof TABS)[number]
 
@@ -15,12 +16,15 @@ export default function CurriculumHubPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const canViewStudentWorkspace = hasCapability('view_own_progress') || hasCapability('read_curriculum') || hasRole('student')
   const availableTabs = TABS.filter((tab) => {
+    if (tab === 'library' || tab === 'packages' || tab === 'resources') {
+      return canManageCurriculum
+    }
     if (tab === 'lesson-plans') {
       return canManageCurriculum || canViewStudentWorkspace
     }
-    return canManageCurriculum
+    return false
   })
-  const fallbackTab = availableTabs[0] ?? 'curriculum'
+  const fallbackTab = availableTabs[0] ?? 'lesson-plans'
   const requestedTab = searchParams.get('tab')
   const activeTab = availableTabs.includes(requestedTab as TabValue) ? (requestedTab as TabValue) : fallbackTab
 
@@ -42,12 +46,18 @@ export default function CurriculumHubPage() {
       <h1 className="text-3xl font-bold">Curriculum</h1>
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
-          {availableTabs.includes('curriculum') ? <TabsTrigger value="curriculum">Packages</TabsTrigger> : null}
+          {availableTabs.includes('library') ? <TabsTrigger value="library">Library</TabsTrigger> : null}
+          {availableTabs.includes('packages') ? <TabsTrigger value="packages">Packages</TabsTrigger> : null}
           <TabsTrigger value="lesson-plans">Lesson Plans</TabsTrigger>
           {availableTabs.includes('resources') ? <TabsTrigger value="resources">Resources</TabsTrigger> : null}
         </TabsList>
-        {availableTabs.includes('curriculum') ? (
-          <TabsContent value="curriculum">
+        {availableTabs.includes('library') ? (
+          <TabsContent value="library">
+            <CurriculumImportLibraryPage />
+          </TabsContent>
+        ) : null}
+        {availableTabs.includes('packages') ? (
+          <TabsContent value="packages">
             <CurriculumPage />
           </TabsContent>
         ) : null}
