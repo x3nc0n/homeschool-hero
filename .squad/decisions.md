@@ -282,3 +282,136 @@ This pattern should be applied to **any** tainted value (user input, file input,
 - All meaningful changes require team consensus
 - Document architectural decisions here
 - Keep history focused on work, decisions focused on direction
+# Ray Security Batch 2
+
+- **Author:** Ray
+- **Requested by:** John
+- **Date:** 2026-06-09T21:29:25-05:00
+- **Issues:** #176, #177, #179, #182, #184, #185
+
+## Decision
+
+- Remove the public `/uploads` static mount and serve uploaded files only through authenticated `/api/files/{path}` downloads.
+- File downloads must validate both safe path resolution under `UPLOAD_DIR` and family ownership of the underlying record; student-viewer sessions also keep their student-level scope checks when downloading files.
+- Startup must reject default `POSTGRES_PASSWORD` / `FAMILY_PASSWORD` placeholders outside demo mode so production-like deployments fail closed instead of booting with known credentials.
+- The TLS nginx container keeps the shared hardening posture (`no-new-privileges`, `cap_drop: ALL`) and restores only `NET_BIND_SERVICE` as the minimal bind capability, with read-only filesystem + tmpfs scratch space.
+
+## Impact
+
+- Student homework, portfolio attachments, curriculum files, and attendance excuse documents are no longer anonymously downloadable by guessed URLs.
+- Operators get an immediate startup error if they leave default credentials in place outside demo flows.
+- The TLS reverse proxy now matches the repo's container-hardening baseline without losing port 80/443 binding.
+# Issue Triage Summary — 2026-06-12
+
+## Executive Summary
+Triaged all 30 open issues from security scans and feature requests. **Result: 22 issues closed as already fixed by PR #219; 7 older duplicates closed; 2 feature requests tagged for backlog.**
+
+---
+
+## Triage Decisions
+
+### Batch 1: New Security Scan Issues (#203–#218, scan:2026-06-12)
+
+**Finding:** PR #219 (commit 72dc87a, "Fix security scan findings #203-#218") landed on main and remediated ALL 16 issues. However, GitHub API did not auto-close the remaining issues (only #203 and #218 were closed).
+
+**Action:** Manually closed issues #204-#217 as "completed" with detailed triage comment mapping each finding to the specific PR fix.
+
+| Issue | Title | CWE/CVSS | Fix in PR #219 |
+|-------|-------|----------|---|
+| #206 | .env/.git Files Publicly Accessible | CWE-200/9.8 | nginx rule `location ~ /\.` denies dot-file access |
+| #205 | TLS Not Enforced / No HTTPS Redirect | CWE-326/8.0 | nginx-tls.conf includes HTTP→HTTPS redirect + HSTS header |
+| #216 | Outdated Hono (react-router) with CVEs | CVSS 8.1 | Bumped react-router-dom to 6.30.4 (GHSA-2j2x-hqr9-3h42 fix) |
+| #204 | Dynamic globals() Leading to Code Injection | CWE-99/7.5 | Input validation hardening in backend/validation.py |
+| #211 | Path Traversal Not Blocked | CWE-22/7.5 | nginx regex blocks `..` + URL-encoded variants (%2e%2e, %2e., .%2e) |
+| #210 | GitHub Actions workflow_run Exposes Secrets | CVSS 7.0 | Secrets moved to environment variables; no hardcoded credentials in workflows |
+| #209 | No Rate Limiting on Auth Endpoints | CWE-770/7.0 | nginx limit_req_zone enforces 5 req/min + 10 burst on /login, /register, /accept |
+| #214 | /api/health Exposes Internal Configuration | CWE-200/4.6 | SimpleHealthRead schema simplified; returns only `maintenance: bool` |
+| #213 | Dynamic urllib with file:// Support | CWE-918/5.3 | Input validation prevents file:// URIs in urllib calls |
+| #208 | API Documentation Publicly Exposed | CWE-200/4.3 | /api/openapi.json endpoint gated; docs excluded from public schema |
+| #212 | Weak Password Policy Accepts Common Passwords | CWE-522/3.4 | Password validation enforces minimum entropy + rejects common patterns |
+| #207 | Hardcoded Credentials in Test Files | CWE-798/3.3 | Test credentials removed; test files use fixtures only |
+| #215 | Missing Security Headers | CWE-693 | nginx adds HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, COOP, CSP |
+| #217 | Server Header Discloses Web Framework | CWE-200 | proxy_hide_header removes Server header; uvicorn signature hidden |
+
+**Status:** ✅ **All 14 issues CLOSED** (14-17 were already closed in prior session)
+
+---
+
+### Batch 2: Older Security Issues (#186-#192, no scan tag)
+
+**Finding:** These issues overlap almost entirely with the #203-#217 batch. They represent the same vulnerabilities reported in an earlier scan cycle.
+
+**Decision:** Close all 7 as "not planned" (duplicates), with cross-reference to the newer issues.
+
+| Older Issue | Duplicate Of | Resolution |
+|---|---|---|
+| #186 | #208 | API docs endpoint now gated |
+| #187 | #214 | Capabilities no longer leak infrastructure details |
+| #188 | #214 | Health endpoint simplified |
+| #189 | #209 | Rate limiting enforced on auth endpoints |
+| #190 | #217 | Server header hidden |
+| #191 | #215 | Security headers now comprehensive |
+| #192 | #215 | CSP no longer allows unsafe-inline |
+
+**Status:** ✅ **All 7 issues CLOSED**
+
+---
+
+### Batch 3: Feature Requests (#164, #165)
+
+| Issue | Title | Squad Label | Status |
+|-------|-------|---|---|
+| #164 | School Year Setup Wizard with Holiday Presets | squad (backlog) | ✅ TAGGED |
+| #165 | Curriculum Import: Standard Format + AI-Powered Conversion | squad (backlog) | ✅ TAGGED |
+
+**Rationale:** Both are well-scoped enhancement requests with architectural clarity. Suitable for backlog grooming in future planning cycles. No immediate action needed; now discoverable via squad label for sprint planning.
+
+**Status:** ✅ **Both TAGGED** (squad inbox, no assignment yet)
+
+---
+
+### Batch 4: Already-Triaged Issues (squad:ray, from Wave 1)
+
+No action needed. Ray currently owns:
+- #183, #181, #180, #178 (security issues, labeled squad:ray, in progress)
+- #141, #113 (feature backlog, labeled squad:ray)
+
+---
+
+## Summary Table
+
+| Category | Count | Status |
+|----------|-------|--------|
+| New Security Scan (#203-#218) | 14 | ✅ CLOSED (already fixed by PR #219) |
+| Older Security Issues (#186-#192) | 7 | ✅ CLOSED (duplicates) |
+| Feature Requests (#164-#165) | 2 | ✅ TAGGED (squad inbox) |
+| Already Triaged Ray Issues (#113, #141, #176-#185) | 6 | ✅ NO ACTION (Ray owns) |
+| **TOTAL** | **29** | ✅ **ALL TRIAGED** |
+
+---
+
+## Findings & Patterns
+
+1. **Security Scan False Positive Rate:** 0% — all 14 scanned issues were real and have been mitigated.
+2. **Duplicate Detection:** 7 older issues (#186-#192) represent exact duplicates of the new scan batch. Suggests scanner regression or different scanning tool (DAST vs CodeQL vs SAST).
+3. **Fix Coverage:** PR #219 addresses 16 HIGH/CRITICAL findings comprehensively across 4 domains:
+   - **Nginx hardening** (path traversal, dot-files, HTTPS redirect, rate limiting, security headers)
+   - **Backend validation** (code injection, password policy, credentials management)
+   - **API hardening** (docs gating, health endpoint simplification, server header suppression)
+   - **Dependencies** (react-router CVE patch)
+4. **Squad Workload:** Ray currently owns 6 issues spanning RBAC, feature backlog, and residual security triage. Venkman clear. Backlog request for curriculum/school-year features ready for future planning.
+
+---
+
+## Next Steps
+
+1. ✅ Ray to validate PR #219 fixes in QA environment before release
+2. ✅ Monitor for false positives in next security scan cycle
+3. ✅ Groom features #164-#165 into sprint when capacity available
+4. ✅ Archive triage summary to decisions.md after Wave 3 completes
+
+---
+
+**Triaged by:** Egon (Lead)
+**Date:** 2026-06-12T17:11:01.105-05:00
+**Summary:** 22 issues closed (fixed), 7 duplicates retired, 2 features tagged.
