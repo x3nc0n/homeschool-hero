@@ -25,6 +25,7 @@ from backend.routers.report_cards import router as report_cards_router
 from backend.routers.restore import router as restore_router
 from backend.routers.reviews import router as reviews_router
 from backend.routers.schedule import router as schedule_router
+from backend.routers.scim import router as scim_router
 from backend.routers.search import router as search_router
 from backend.routers.students import router as students_router
 from backend.routers.subjects import router as subjects_router
@@ -60,6 +61,7 @@ __all__ = [
     'restore_router',
     'reviews_router',
     'schedule_router',
+    'scim_router',
     'search_router',
     'students_router',
     'subjects_router',

@@ -17,6 +17,7 @@ class User(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text('true'))
     auth_provider: Mapped[str] = mapped_column(String(32), nullable=False, default='local', server_default='local')
     external_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    scim_external_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text('0'))
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

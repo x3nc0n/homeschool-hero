@@ -44,6 +44,7 @@ from backend.routers import (
     restore_router,
     reviews_router,
     schedule_router,
+    scim_router,
     search_router,
     students_router,
     subjects_router,
@@ -51,6 +52,7 @@ from backend.routers import (
     transcripts_router,
     users_router,
 )
+from backend.routers.scim import SCIM_BASE_PATH, ScimError, build_scim_error_response
 from backend.routers.calendar import router as calendar_router
 from backend.routers.grading import router as grading_router
 from backend.routers.health import router as health_router
@@ -159,6 +161,10 @@ async def lifespan(app: FastAPI):
 
 def _is_api_path(path: str) -> bool:
     return path == API_PREFIX or path.startswith(f'{API_PREFIX}/')
+
+
+def _is_scim_path(path: str) -> bool:
+    return path == SCIM_BASE_PATH or path.startswith(f'{SCIM_BASE_PATH}/')
 
 
 def _is_public_api_path(path: str) -> bool:
@@ -345,6 +351,8 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        if _is_scim_path(request.url.path):
+            return build_scim_error_response(request, status_code=exc.status_code, detail='SCIM request failed')
         if exc.status_code >= 500:
             return _build_internal_error_response(request, status_code=exc.status_code, headers=exc.headers)
 
@@ -362,8 +370,25 @@ def create_app() -> FastAPI:
         _apply_transport_headers(request, response)
         return response
 
+    @app.exception_handler(ScimError)
+    async def scim_exception_handler(request: Request, exc: ScimError) -> JSONResponse:
+        return build_scim_error_response(
+            request,
+            status_code=exc.status_code,
+            detail=exc.detail,
+            scim_type=exc.scim_type,
+            headers=exc.headers,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        if _is_scim_path(request.url.path):
+            return build_scim_error_response(
+                request,
+                status_code=400,
+                detail='Invalid SCIM request payload.',
+                scim_type='invalidSyntax',
+            )
         response = JSONResponse(
             status_code=422,
             content=build_error_payload(
@@ -390,6 +415,8 @@ def create_app() -> FastAPI:
             details={'path': request.url.path, 'method': request.method},
             exc_info=exc,
         )
+        if _is_scim_path(request.url.path):
+            return build_scim_error_response(request, status_code=500, detail='An unexpected SCIM error occurred.')
         return _build_internal_error_response(request)
 
     @app.middleware('http')
@@ -621,6 +648,7 @@ def create_app() -> FastAPI:
     app.include_router(schedule_router, prefix=API_PREFIX)
     app.include_router(grading_router, prefix=API_PREFIX)
     app.include_router(reviews_router, prefix=API_PREFIX)
+    app.include_router(scim_router)
     app.include_router(search_router, prefix=API_PREFIX)
     app.include_router(users_router, prefix=API_PREFIX)
 

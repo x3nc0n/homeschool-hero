@@ -181,6 +181,14 @@ def _validate_auth_config(config: Settings) -> dict[str, str]:
     return {'auth_provider': provider, 'auth_auto_provision_mode': auto_provision_mode}
 
 
+def _validate_scim_config(config: Settings) -> dict[str, bool]:
+    scim_enabled = bool(config.scim_enabled)
+    scim_bearer_token = (config.scim_bearer_token or '').strip()
+    if scim_enabled and not scim_bearer_token:
+        raise StartupValidationError('SCIM_BEARER_TOKEN is required when SCIM_ENABLED=true.')
+    return {'scim_enabled': scim_enabled}
+
+
 def _looks_like_entra_url(value: str) -> bool:
     return value.strip().startswith(_ENTRA_ISSUER_PREFIX)
 
@@ -223,6 +231,7 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
     errors: list[str] = []
     database_summary: dict[str, str] = {}
     auth_summary: dict[str, str] = {}
+    scim_summary: dict[str, bool] = {}
     backup_summary: dict[str, object] = {}
     upload_dir = config.upload_dir
     migration_mode = str(getattr(config, 'migration_mode', os.getenv('MIGRATION_MODE', 'apply')))
@@ -258,6 +267,11 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
         errors.append(str(exc))
 
     try:
+        scim_summary = _validate_scim_config(config)
+    except StartupValidationError as exc:
+        errors.append(str(exc))
+
+    try:
         _validate_jwt_config(config)
     except StartupValidationError as exc:
         errors.append(str(exc))
@@ -281,6 +295,7 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
         'ai_provider': config.ai_provider.strip().lower() or 'ollama',
         'auth_provider': auth_summary.get('auth_provider', 'local'),
         'auth_auto_provision_mode': auth_summary.get('auth_auto_provision_mode', 'default_family'),
+        'scim_enabled': bool(scim_summary.get('scim_enabled', False)),
         'smtp_configured': bool(config.smtp_host and config.smtp_from_email),
         'backup_configured': bool(config.backup_target),
         'backup_destination': str(getattr(backup_summary.get('destination'), 'value', backup_summary.get('destination') or 'local')),
@@ -292,7 +307,7 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
 def log_validated_config_summary(summary: dict[str, object]) -> None:
     logger.info(
         'Validated runtime config: database_driver=%s database_name=%s upload_dir=%s ai_provider=%s '
-        'auth_provider=%s auth_auto_provision_mode=%s smtp_configured=%s backup_configured=%s backup_destination=%s '
+        'auth_provider=%s auth_auto_provision_mode=%s scim_enabled=%s smtp_configured=%s backup_configured=%s backup_destination=%s '
         'migration_mode=%s testing=%s',
         summary.get('database_driver'),
         summary.get('database_name') or '(default)',
@@ -300,6 +315,7 @@ def log_validated_config_summary(summary: dict[str, object]) -> None:
         summary.get('ai_provider'),
         summary.get('auth_provider'),
         summary.get('auth_auto_provision_mode'),
+        summary.get('scim_enabled'),
         summary.get('smtp_configured'),
         summary.get('backup_configured'),
         summary.get('backup_destination'),

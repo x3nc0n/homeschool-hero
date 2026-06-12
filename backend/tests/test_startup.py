@@ -88,6 +88,45 @@ def test_startup_validation_requires_saml_settings(tmp_path: Path) -> None:
     assert 'SAML auth requires these settings' in str(excinfo.value)
 
 
+def test_startup_validation_requires_scim_bearer_token_when_enabled(tmp_path: Path) -> None:
+    config = settings.model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': True,
+            'scim_enabled': True,
+            'scim_bearer_token': '',
+        }
+    )
+
+    with pytest.raises(StartupValidationError) as excinfo:
+        validate_runtime_config(config)
+
+    assert 'SCIM_BEARER_TOKEN is required when SCIM_ENABLED=true.' in str(excinfo.value)
+
+
+def test_startup_validation_reports_scim_summary_when_enabled(tmp_path: Path) -> None:
+    config = settings.model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': True,
+            'scim_enabled': True,
+            'scim_bearer_token': 'test-scim-token',
+            'smtp_host': None,
+            'smtp_from_email': None,
+            'backup_target': None,
+            'openai_api_key': None,
+        }
+    )
+
+    summary = validate_runtime_config(config)
+
+    assert summary['scim_enabled'] is True
+
+
 
 def test_startup_validation_requires_oidc_settings_when_secondary_provider_is_exposed(tmp_path: Path) -> None:
     config = settings.model_copy(
