@@ -35,3 +35,5 @@ Egon triaged all 23 open GitHub issues and closed 21:
 - Backlog items #113, #141 (no action needed at this time)
 
 **Note:** The new security scan (#203–#218) and older batch (#186–#192) have been fully triaged and closed. Next scan cycle will be monitored for false-positive patterns.
+
+- 2026-06-12T23:15:42Z — **Curriculum import Phase 1 COMPLETE.** Delivered JSON schema validation, SQLAlchemy models for nested subjects/units/lessons/resources, Alembic migration schema, and full CRUD + activate API endpoints at `/api/curriculum/`. All 375 backend tests passing. PR #229 opened for review. API contract documented in `.squad/decisions.md` with complete schema specification, endpoint signatures, request/response shapes. Handoff: frontend (Venkman) UI can now integrate with live endpoints; backend awaits PR merge before Winston unskips 16 integration tests. Product team must lock 5 contract decisions (empty curriculum behavior, access semantics, activation repeat strategy, calendar linkage, size/concurrency guarantees) so test suite can be finalized.
