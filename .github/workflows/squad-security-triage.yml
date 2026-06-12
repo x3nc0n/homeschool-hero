@@ -38,7 +38,7 @@ jobs:
             --output security-triage.json
 
       - name: Apply triage labels and comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
