@@ -95,6 +95,15 @@ async def test_password_policy_rejects_weak_password(async_client):
     assert response.json()['error']['code'] == 'validation_error'
 
 
+async def test_password_policy_rejects_common_password(async_client):
+    response = await async_client.post(
+        AUTH['register'],
+        json=bootstrap_payload(password='Password1234'),
+    )
+    assert_validation_error(response)
+    assert 'too common' in response.text
+
+
 async def test_password_policy_rejects_passwords_over_bcrypt_limit(async_client):
     response = await async_client.post(
         AUTH['register'],

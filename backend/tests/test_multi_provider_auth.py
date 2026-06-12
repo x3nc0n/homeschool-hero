@@ -5,7 +5,7 @@ import pytest
 from backend.config import settings
 from backend.services.auth_oidc import OIDCConfigurationError
 from backend.services.capabilities import get_auth_providers
-from tests.contracts import AUTH
+from tests.contracts import AUTH, bootstrap_payload
 
 
 def _set_auth_settings(monkeypatch, **updates) -> None:
@@ -97,7 +97,7 @@ async def test_local_login_works_when_auth_provider_oidc(authorized_client, seco
 
     login = await secondary_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
 
     assert login.status_code == 200, login.text
@@ -110,7 +110,7 @@ async def test_local_login_returns_403_when_breakglass_disabled_for_sso(authoriz
 
     login = await secondary_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
 
     assert login.status_code == 403, login.text
@@ -123,7 +123,7 @@ async def test_breakglass_login_logs_warning(authorized_client, secondary_client
 
     login = await secondary_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
 
     assert login.status_code == 200, login.text
@@ -135,14 +135,14 @@ async def test_breakglass_no_privilege_escalation(authorized_client, secondary_c
     _set_auth_settings(monkeypatch, auth_provider='local')
     normal_login = await secondary_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
     assert normal_login.status_code == 200, normal_login.text
 
     _set_auth_settings(monkeypatch, auth_provider='oidc', oidc_client_id='client-id')
     breakglass_login = await tertiary_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
 
     assert breakglass_login.status_code == 200, breakglass_login.text

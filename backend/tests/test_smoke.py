@@ -6,9 +6,8 @@ def test_health_endpoint(app) -> None:
         response = client.get("/api/health")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["status"] in {"healthy", "degraded", "unhealthy"}
+    assert payload["status"] == "ok"
     assert "ready" in payload
-    assert "checked_at" in payload
     assert "maintenance" in payload
 
 

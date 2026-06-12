@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     app_name: str = 'Homeschool Hero API'
     api_prefix: str = '/api'
+    public_api_docs: bool = Field(False, alias='PUBLIC_API_DOCS')
 
     database_url: str = Field('sqlite+aiosqlite:///./homeschool.db', alias='DATABASE_URL')
 

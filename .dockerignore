@@ -17,3 +17,5 @@ homeschool.db
 *.db
 *.log
 .env
+.env.*
+!.env.example

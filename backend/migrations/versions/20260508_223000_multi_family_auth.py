@@ -46,7 +46,8 @@ def _hash_legacy_password() -> str:
 
 def _add_family_column(table_name: str, family_id: int) -> None:
     op.add_column(table_name, sa.Column('family_id', sa.Integer(), nullable=True))
-    op.execute(sa.text(f'UPDATE {table_name} SET family_id = :family_id').bindparams(family_id=family_id))
+    table = sa.table(table_name, sa.column('family_id', sa.Integer()))
+    op.execute(sa.update(table).values(family_id=family_id))
 
 
 def upgrade() -> None:
