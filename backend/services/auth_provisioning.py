@@ -90,7 +90,7 @@ async def _get_pending_invitation(db: AsyncSession, *, email: str) -> Invitation
     return result.scalars().first()
 
 
-async def _ensure_default_family(db: AsyncSession) -> Family:
+async def ensure_default_family(db: AsyncSession) -> Family:
     family_name = settings.auth_default_family_name.strip()
     result = await db.execute(select(Family).where(Family.name == family_name).order_by(Family.id))
     family = result.scalars().first()
@@ -209,7 +209,7 @@ async def provision_external_identity(db: AsyncSession, identity: ExternalIdenti
             detail='No matching account or invitation exists for this identity provider user.',
         )
 
-    family = await _ensure_default_family(db)
+    family = await ensure_default_family(db)
     normalized_app_roles = normalize_external_app_roles(
         identity.roles,
         external_role_mappings=settings.external_role_mappings,

@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     )
     auth_auto_provision_mode: str = Field('default_family', alias='AUTH_AUTO_PROVISION_MODE')
     auth_default_family_name: str = Field('SSO Users', alias='AUTH_DEFAULT_FAMILY_NAME')
+    scim_enabled: bool = Field(False, alias='SCIM_ENABLED')
+    scim_bearer_token: str | None = Field(default=None, alias='SCIM_BEARER_TOKEN')
     role_mapping_admin_raw: str = Field('Admin', alias='ROLE_MAPPING_ADMIN')
     role_mapping_teacher_raw: str = Field('Teacher', alias='ROLE_MAPPING_TEACHER')
     role_mapping_student_raw: str = Field('Student', alias='ROLE_MAPPING_STUDENT')

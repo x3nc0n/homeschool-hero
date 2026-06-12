@@ -39,6 +39,7 @@ from backend.models.quiz import Quiz, QuizAttempt
 from backend.models.report_card import ReportCard, ReportCardEntry, ReportCardStatus
 from backend.models.review import ReviewComment, ReviewItem, ReviewItemStatus, ReviewPriority
 from backend.models.schedule import Schedule, ScheduleBlock, ScheduleOverride, ScheduleOverrideType
+from backend.models.scim import ScimGroup
 from backend.models.student import Student
 from backend.models.subject import Subject
 from backend.models.submission import Submission
@@ -123,6 +124,7 @@ __all__ = [
     'ScheduleBlock',
     'ScheduleOverride',
     'ScheduleOverrideType',
+    'ScimGroup',
     'SchoolYear',
     'Student',
     'SubjectGradingMode',
