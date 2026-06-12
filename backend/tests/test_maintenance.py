@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from backend.config import settings
-from tests.contracts import AUTH, STUDENTS
+from tests.contracts import AUTH, STUDENTS, bootstrap_payload
 from tests.helpers import sync_csrf_header
 
 MAINTENANCE = '/api/admin/maintenance'
@@ -88,7 +88,10 @@ async def test_non_admin_login_is_blocked_during_maintenance_but_admin_login_sti
     tutor_login = await secondary_client.post(AUTH['login'], json={'email': 'tutor@example.com', 'password': 'strongpass456'})
     assert tutor_login.status_code == 503, tutor_login.text
 
-    admin_login = await tertiary_client.post(AUTH['login'], json={'email': 'owner@example.com', 'password': 'strongpass123'})
+    admin_login = await tertiary_client.post(
+        AUTH['login'],
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
+    )
     assert admin_login.status_code == 200, admin_login.text
 
 

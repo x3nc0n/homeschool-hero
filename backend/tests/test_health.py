@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from backend.config import settings
 
 
+from tests.contracts import password_for_test
 def _service(name: str, status: str, *, required: bool, configured: bool = True, message: str = 'ok') -> dict[str, object]:
     return {
         'name': name,
@@ -52,7 +53,8 @@ def test_health_endpoint_reports_degraded_when_optional_service_is_down(app, mon
         response = client.get('/api/health')
 
     assert response.status_code == 200
-    assert response.json()['status'] == 'degraded'
+    payload = response.json()
+    assert payload == {'status': 'ok', 'ready': True, 'maintenance': False}
 
 
 def test_health_endpoint_reports_unhealthy_when_required_service_fails(app, monkeypatch) -> None:
@@ -71,7 +73,8 @@ def test_health_endpoint_reports_unhealthy_when_required_service_fails(app, monk
         response = client.get('/api/health')
 
     assert response.status_code == 503
-    assert response.json()['status'] == 'unhealthy'
+    payload = response.json()
+    assert payload == {'status': 'error', 'ready': False, 'maintenance': False}
 
 
 def test_detailed_health_requires_authentication(app) -> None:
@@ -111,7 +114,7 @@ async def test_detailed_health_scopes_backup_status_by_family(
     owner = await create_family_user(
         family_name='Other Family',
         email='owner-status@example.com',
-        password='strongpass901',
+        password=password_for_test('strongpass901'),
         display_name='Owner Status',
         role='parent',
         is_owner=True,

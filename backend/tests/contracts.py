@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -233,6 +235,13 @@ SERVICE_CANDIDATES = {
 VALIDATION_STATUS_CODES = {400, 422}
 
 UPLOADS_DIR = Path(__file__).resolve().parents[1] / '.pytest-state' / 'uploads-test'
+TEST_PASSWORD_PREFIX = os.environ.get('TEST_PASSWORD_PREFIX', 'hh-test-password')
+TEST_PASSWORD_SANITIZER_RE = re.compile(r'[^a-z0-9]+')
+
+
+def password_for_test(label: str = 'default') -> str:
+    normalized = TEST_PASSWORD_SANITIZER_RE.sub('-', label.strip().lower()).strip('-') or 'default'
+    return f'{TEST_PASSWORD_PREFIX}-{normalized}-A1'
 
 
 def bootstrap_payload(
@@ -240,7 +249,7 @@ def bootstrap_payload(
     family_name: str = 'Test Family',
     display_name: str = 'Parent User',
     email: str = 'owner@example.com',
-    password: str = 'strongpass123',
+    password: str = password_for_test('bootstrap-owner'),
 ) -> dict[str, Any]:
     return {
         'family_name': family_name,

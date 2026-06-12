@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-06-09T10:03:03-05:00 — **Security regression tests written** for Ray and Venkman's security fixes. 20 new tests added: 10 path traversal unit tests in `test_security_hardening.py` (covering `..`, absolute paths, URL-encoded `..`, double-encoded `..`, null bytes, valid paths), 6 stack trace exposure tests (auth and health routes via `app.dependency_overrides` and module-level monkeypatching), and 7 log injection tests in `test_logging_monitoring.py` (bind_context sanitization, ConsoleFormatter, JsonFormatter single-line enforcement, details dict injection). Key patterns: use `app.dependency_overrides[dep]` (not module-level monkeypatch) to override FastAPI `Depends()` in tests; monkeypatching module imports works for functions called directly but NOT for captured `Depends()` references. Null byte path test marked `xfail` — platform-dependent and targets Ray's fix. 38 pass + 1 xfail against security files; 359 passed full suite.
+
 - 2026-05-15T14:09:23-05:00 — **PR #109 MERGED & v0.9.2 RELEASED.** Breakglass enforcement fix (commit b1fd05c) included in merge. All 300 backend tests passing. Issue #105 (PyJWT CVE-2026-32597) closed. v0.9.2 tag pushed.
 
 - 2026-05-15T10:06:44-05:00 — Breakglass local auth must be enforced at `POST /api/auth/login`, not just hidden in capabilities; `AUTH_BREAKGLASS_LOCAL` now defaults to true and the SSO-only path is covered by a 403 regression test in `backend/tests/test_multi_provider_auth.py`.

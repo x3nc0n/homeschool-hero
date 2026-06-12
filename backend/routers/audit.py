@@ -34,7 +34,7 @@ async def list_audit_events(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_family, action='view audit logs')),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_platform, action='view audit logs')),
 ) -> AuditEventListResponse:
     stmt = (
         select(AuditEvent, User.display_name, User.email)

@@ -189,7 +189,7 @@ async def test_local_auth_still_works_when_provider_is_local(async_client, monke
     await async_client.post(AUTH['logout'])
     login = await async_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
 
     assert login.status_code == 200, login.text
@@ -208,7 +208,7 @@ async def test_local_login_remains_available_when_provider_is_oidc(async_client,
 
     login = await async_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
 
     assert login.status_code == 200, login.text
@@ -228,7 +228,7 @@ async def test_breakglass_local_login_logs_warning_when_sso_provider_enabled(asy
 
     login = await async_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
 
     assert login.status_code == 200, login.text

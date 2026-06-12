@@ -180,3 +180,46 @@ def test_startup_validation_requires_entra_v2_issuer_match(tmp_path: Path) -> No
         validate_runtime_config(config)
 
     assert 'JWT_ISSUER must match the Entra v2.0 issuer for JWT_TENANT_ID.' in str(excinfo.value)
+
+
+def test_startup_validation_rejects_default_credentials_outside_demo_mode(tmp_path: Path) -> None:
+    config = settings.model_copy(
+        update={
+            'database_url': 'postgresql+asyncpg://homeschool:changeme@db:5432/homeschool_hero',
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': False,
+            'demo_mode': False,
+            'postgres_password': 'changeme',
+            'legacy_family_password': 'changeme',
+        }
+    )
+
+    with pytest.raises(StartupValidationError) as excinfo:
+        validate_runtime_config(config)
+
+    message = str(excinfo.value)
+    assert 'POSTGRES_PASSWORD is using the default value "changeme"' in message
+    assert 'FAMILY_PASSWORD is using the default value "changeme"' in message
+
+
+def test_startup_validation_allows_default_credentials_in_demo_mode(tmp_path: Path) -> None:
+    config = settings.model_copy(
+        update={
+            'database_url': 'postgresql+asyncpg://homeschool:changeme@db:5432/homeschool_hero',
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': False,
+            'demo_mode': True,
+            'postgres_password': 'changeme',
+            'legacy_family_password': 'changeme',
+            'smtp_host': None,
+            'smtp_from_email': None,
+            'backup_target': None,
+            'openai_api_key': None,
+        }
+    )
+
+    summary = validate_runtime_config(config)
+
+    assert summary['database_driver'] == 'postgresql+asyncpg'

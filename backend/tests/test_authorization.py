@@ -52,13 +52,13 @@ async def test_rbac_enforces_role_permissions(authorized_client, secondary_clien
     tutor_assignment = await secondary_client.post(ASSIGNMENTS['collection'], json=assignment_payload(response_id(seeded_subject)))
     assert tutor_assignment.status_code == 201, tutor_assignment.text
 
-    tutor_student = await secondary_client.post(STUDENTS['collection'], json=student_payload('Tutor Cannot Add'))
-    assert tutor_student.status_code == 403, tutor_student.text
-    assert 'manage students' in tutor_student.json()['detail']
+    tutor_student = await secondary_client.post(STUDENTS['collection'], json=student_payload('Tutor Can Add'))
+    assert tutor_student.status_code == 201, tutor_student.text
+    assert tutor_student.json()['name'] == 'Tutor Can Add'
 
     tutor_invite = await secondary_client.post(INVITATIONS['collection'], json={'email': 'blocked@example.com', 'role': 'tutor', 'expires_in_days': 7})
-    assert tutor_invite.status_code == 403, tutor_invite.text
-    assert 'create invitations' in tutor_invite.json()['detail']
+    assert tutor_invite.status_code == 201, tutor_invite.text
+    assert tutor_invite.json()['role'] == 'tutor'
 
     await secondary_client.post(AUTH['logout'])
     viewer_login = await secondary_client.post(AUTH['login'], json={'email': 'viewer@example.com', 'password': 'strongpass456', 'family_id': family_id})

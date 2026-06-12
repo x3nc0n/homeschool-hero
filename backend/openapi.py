@@ -125,6 +125,7 @@ def configure_openapi(
     api_prefix: str,
     session_cookie_name: str,
     csrf_cookie_name: str,
+    expose_ui: bool = False,
 ) -> None:
     openapi_url = f'{api_prefix}/openapi.json'
     docs_url = f'{api_prefix}/docs'
@@ -249,6 +250,9 @@ def configure_openapi(
         return app.openapi_schema
 
     app.openapi = custom_openapi
+
+    if not expose_ui:
+        return
 
     @app.get(docs_url, include_in_schema=False)
     async def swagger_ui() -> HTMLResponse:

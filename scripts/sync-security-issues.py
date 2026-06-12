@@ -18,7 +18,15 @@ FINGERPRINT_RE = re.compile(r'<!-- security-finding:([a-f0-9]+) -->')
 SCANNER_RE = re.compile(r'<!-- security-scanner:([a-z0-9_-]+) -->')
 
 
+def _require_https_url(url: str) -> str:
+    parsed = parse.urlsplit(url)
+    if parsed.scheme != 'https' or not parsed.netloc:
+        raise ValueError(f'Only https:// URLs are allowed: {url}')
+    return url
+
+
 def github_request(method: str, url: str, token: str, payload: dict[str, Any] | None = None) -> Any:
+    url = _require_https_url(url)
     data = None if payload is None else json.dumps(payload).encode('utf-8')
     req = request.Request(
         url,

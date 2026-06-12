@@ -8,6 +8,7 @@ from pathlib import Path
 import fitz
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from backend.config import settings
 from backend.validation import sanitize_filename
 
 UPLOAD_EXTENSION_MIME_MAP: dict[str, set[str]] = {
@@ -34,6 +35,12 @@ class StoredUpload:
     image_width: int | None = None
     image_height: int | None = None
     page_count: int | None = None
+
+
+def _upload_root_parts(upload_root: str) -> tuple[str, str]:
+    upload_root_real = os.path.realpath(upload_root)
+    upload_root_prefix = upload_root_real + os.sep
+    return upload_root_real, upload_root_prefix
 
 
 def normalize_upload_type(filename: str, content_type: str, allowed_mime_types: set[str]) -> tuple[str, str]:
@@ -87,19 +94,48 @@ def extract_file_metadata(content_type: str, contents: bytes) -> tuple[int | Non
 
 
 def _resolve_safe_upload_destination(upload_root: str, relative_path: Path) -> tuple[Path, Path]:
-    upload_root_path = Path(upload_root).resolve()
+    # Use os.path.realpath() to fully resolve symlinks and normalise the root
+    upload_root_real, upload_root_prefix = _upload_root_parts(upload_root)
+
     normalized_relative_path = os.path.normpath(os.fspath(relative_path))
     candidate = Path(normalized_relative_path)
     if normalized_relative_path in {'', '.', os.curdir} or os.path.isabs(normalized_relative_path) or candidate.anchor:
         raise ValueError('Invalid upload path')
     if any(part == '..' for part in candidate.parts):
         raise ValueError('Invalid upload path')
-    destination = (upload_root_path / candidate).resolve()
-    try:
-        destination.relative_to(upload_root_path)
-    except ValueError as exc:
-        raise ValueError('Path traversal detected') from exc
-    return candidate, destination
+
+    # Resolve the full destination path, then verify it is strictly inside the upload root.
+    # startswith(prefix) with a trailing separator prevents prefix-collision attacks
+    # (e.g. /uploads-evil would not match /uploads/).
+    destination_real = os.path.realpath(os.path.join(upload_root_real, normalized_relative_path))
+    if not (destination_real == upload_root_real or destination_real.startswith(upload_root_prefix)):
+        raise ValueError('Path traversal detected')
+    return candidate, Path(destination_real)
+
+
+def resolve_stored_upload_path(upload_root: str, stored_path: str | Path) -> tuple[Path, Path]:
+    raw_path = os.fspath(stored_path).strip()
+    if not raw_path:
+        raise ValueError('Invalid upload path')
+
+    upload_root_real, upload_root_prefix = _upload_root_parts(upload_root)
+    if os.path.isabs(raw_path):
+        absolute_real = os.path.realpath(raw_path)
+        if not (absolute_real == upload_root_real or absolute_real.startswith(upload_root_prefix)):
+            raise ValueError('Path traversal detected')
+        relative_value = os.path.relpath(absolute_real, upload_root_real)
+        relative_path = Path(relative_value)
+        if relative_value in {'', '.', os.curdir} or any(part == '..' for part in relative_path.parts):
+            raise ValueError('Invalid upload path')
+        return relative_path, Path(absolute_real)
+
+    return _resolve_safe_upload_destination(upload_root, Path(raw_path))
+
+
+def build_authenticated_file_url(stored_path: str | Path) -> str:
+    relative_path, _ = resolve_stored_upload_path(settings.upload_dir, stored_path)
+    api_prefix = settings.api_prefix.rstrip('/')
+    return f'{api_prefix}/files/{relative_path.as_posix()}'
 
 
 def store_submission_file(

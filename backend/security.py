@@ -24,6 +24,7 @@ from backend.services.rbac import (
     synthesize_app_roles,
     validate_app_role_assignment,
 )
+from backend.validation import validate_bcrypt_password_length
 
 serializer = URLSafeTimedSerializer(settings.secret_key, salt='homeschool-session')
 ModelT = TypeVar('ModelT')
@@ -94,10 +95,15 @@ def normalize_email(email: str) -> str:
 
 
 def hash_password(password: str) -> str:
+    password = validate_bcrypt_password_length(password)
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        password = validate_bcrypt_password_length(password)
+    except ValueError:
+        return False
     return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
 
@@ -136,10 +142,11 @@ def is_secure_request(request: Request | None = None) -> bool:
         return True
     if request is None:
         return False
-    forwarded_proto = request.headers.get('x-forwarded-proto', '')
-    if forwarded_proto:
-        proto = forwarded_proto.split(',')[0].strip().lower()
-        return proto == 'https'
+    if settings.trust_proxy_headers:
+        forwarded_proto = request.headers.get('x-forwarded-proto', '')
+        if forwarded_proto:
+            proto = forwarded_proto.split(',')[0].strip().lower()
+            return proto == 'https'
     return request.url.scheme == 'https'
 
 
@@ -236,9 +243,12 @@ def require_csrf(request: Request, claims: SessionClaims) -> None:
 
 
 def get_request_ip(request: Request) -> str:
-    forwarded_for = request.headers.get('x-forwarded-for', '')
-    if forwarded_for:
-        return forwarded_for.split(',')[0].strip()
+    if settings.trust_proxy_headers:
+        forwarded_for = request.headers.get('x-forwarded-for', '')
+        if forwarded_for:
+            client_ip = forwarded_for.split(',')[0].strip()
+            if client_ip:
+                return client_ip
     client = request.client
     return client.host if client else 'unknown'
 

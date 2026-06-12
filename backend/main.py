@@ -6,7 +6,7 @@ from pathlib import Path
 from time import perf_counter
 import uuid
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -32,6 +32,7 @@ from backend.routers import (
     dashboard_router,
     exports_router,
     family_settings_router,
+    files_router,
     gradebook_router,
     grades_router,
     invitations_router,
@@ -313,7 +314,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
-        openapi_url=OPENAPI_PATH,
+        openapi_url=OPENAPI_PATH if settings.public_api_docs else None,
     )
     app.state.started_at = datetime.now(UTC)
     app.state.database_migrated = settings.testing
@@ -326,6 +327,7 @@ def create_app() -> FastAPI:
         api_prefix=API_PREFIX,
         session_cookie_name=settings.session_cookie_name,
         csrf_cookie_name=settings.csrf_cookie_name,
+        expose_ui=settings.public_api_docs,
     )
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     app.add_middleware(
@@ -340,7 +342,6 @@ def create_app() -> FastAPI:
         assets_dir = FRONTEND_DIST_DIR / 'assets'
         if assets_dir.exists():
             app.mount('/assets', StaticFiles(directory=assets_dir), name='frontend-assets')
-    app.mount('/uploads', StaticFiles(directory=settings.upload_dir, check_dir=False), name='uploads')
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
@@ -401,6 +402,7 @@ def create_app() -> FastAPI:
         started_at = perf_counter()
         is_public = _is_public_api_path(path)
         session = None
+        response: Response | None = None
         try:
             if _should_redirect_to_https(request):
                 response = RedirectResponse(url=_https_redirect_url(request), status_code=307)
@@ -538,8 +540,8 @@ def create_app() -> FastAPI:
             return response
         finally:
             duration_ms = round((perf_counter() - started_at) * 1000, 2)
-            status_code = getattr(locals().get('response', None), 'status_code', 500)
-            if 'response' in locals():
+            status_code = response.status_code if response is not None else 500
+            if response is not None:
                 response.headers['X-Correlation-ID'] = correlation_id
             if path not in HEALTH_PATHS:
                 slow_request = duration_ms > 1000
@@ -563,8 +565,12 @@ def create_app() -> FastAPI:
 
     @app.get('/health', include_in_schema=False)
     async def health_alias() -> JSONResponse:
-        status_code, payload = await build_simple_health_payload(app)
-        return JSONResponse(status_code=status_code, content=payload)
+        try:
+            status_code, payload = await build_simple_health_payload(app)
+            return JSONResponse(status_code=status_code, content=payload)
+        except Exception:
+            logger.exception('Health alias check failed unexpectedly')
+            return JSONResponse(status_code=503, content={'status': 'error', 'ready': False})
 
     @app.get(f'{API_PREFIX}/capabilities')
     async def api_capabilities() -> dict[str, object]:
@@ -594,6 +600,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router, prefix=API_PREFIX)
     app.include_router(backups_router, prefix=API_PREFIX)
     app.include_router(exports_router, prefix=API_PREFIX)
+    app.include_router(files_router, prefix=API_PREFIX)
     app.include_router(family_settings_router, prefix=API_PREFIX)
     app.include_router(gradebook_router, prefix=API_PREFIX)
     app.include_router(students_router, prefix=API_PREFIX)

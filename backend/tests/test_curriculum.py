@@ -231,7 +231,7 @@ async def test_resource_crud_file_upload_search_and_linking(authorized_client):
     assert file_resource_create.status_code == 201, file_resource_create.text
     file_resource_payload = file_resource_create.json()
     file_resource_id = response_id(file_resource_payload)
-    assert file_resource_payload['file_url'].startswith('/uploads/')
+    assert file_resource_payload['file_url'].startswith('/api/files/resources/')
 
     search = await authorized_client.get(f"{RESOURCES['collection']}?tag=worksheet&search=Printable")
     assert search.status_code == 200, search.text

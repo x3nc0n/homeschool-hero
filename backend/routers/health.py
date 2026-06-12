@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
 from backend.database import get_db
 from backend.schemas.health import DetailedHealthRead, ReadinessRead, SimpleHealthRead, SystemStatusRead
@@ -15,12 +16,17 @@ from backend.services.health import (
 )
 
 router = APIRouter(tags=['health'])
+logger = logging.getLogger(__name__)
 
 
 @router.get('/health', response_model=SimpleHealthRead)
 async def health(request: Request) -> JSONResponse:
-    status_code, payload = await build_simple_health_payload(request.app)
-    return JSONResponse(status_code=status_code, content=payload)
+    try:
+        status_code, payload = await build_simple_health_payload(request.app)
+        return JSONResponse(status_code=status_code, content=payload)
+    except Exception:
+        logger.exception('Health check failed unexpectedly')
+        return JSONResponse(status_code=503, content={'status': 'error', 'ready': False})
 
 
 @router.get('/health/detailed', response_model=DetailedHealthRead)

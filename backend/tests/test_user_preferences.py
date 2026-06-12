@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.contracts import AUTH, USERS
+from tests.contracts import AUTH, USERS, bootstrap_payload
 from tests.helpers import sync_csrf_header
 
 
@@ -41,7 +41,7 @@ async def test_user_preferences_endpoint_persists_changes(authorized_client, sec
 
     login = await secondary_client.post(
         AUTH['login'],
-        json={'email': 'owner@example.com', 'password': 'strongpass123'},
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
     )
     assert login.status_code == 200, login.text
     sync_csrf_header(secondary_client)

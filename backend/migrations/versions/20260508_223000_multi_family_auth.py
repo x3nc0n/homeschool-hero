@@ -33,17 +33,21 @@ ROLLBACK_NOTES = """
 """
 
 family_role = postgresql.ENUM('parent', 'co-parent', 'tutor', 'student_viewer', name='family_role', create_type=False)
+BCRYPT_PASSWORD_MAX_BYTES = 72
 
 
 def _hash_legacy_password() -> str:
     if settings.legacy_family_password_hash:
         return settings.legacy_family_password_hash
+    if len(settings.legacy_family_password.encode('utf-8')) > BCRYPT_PASSWORD_MAX_BYTES:
+        raise ValueError(f'FAMILY_PASSWORD must be {BCRYPT_PASSWORD_MAX_BYTES} bytes or fewer for bcrypt')
     return bcrypt.hashpw(settings.legacy_family_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def _add_family_column(table_name: str, family_id: int) -> None:
     op.add_column(table_name, sa.Column('family_id', sa.Integer(), nullable=True))
-    op.execute(sa.text(f'UPDATE {table_name} SET family_id = :family_id').bindparams(family_id=family_id))
+    table = sa.table(table_name, sa.column('family_id', sa.Integer()))
+    op.execute(sa.update(table).values(family_id=family_id))
 
 
 def upgrade() -> None:

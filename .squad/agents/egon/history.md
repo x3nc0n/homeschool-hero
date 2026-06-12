@@ -2,6 +2,14 @@
 
 ## Learnings
 
+- 2026-06-09T11:13:09.334-05:00 — **Security Triage Wave 2 (10 DAST/SAST findings).** Processed 10 security issues from DAST+SAST scan (#176–#185). **Routing:** All 10 issues → Ray (squad:ray). **Findings:** 2× CRITICAL (unauthenticated upload serving #176/#184, X-Forwarded-For bypass #180); 6× HIGH (hardcoded credentials, Docker/Nginx hardening, CI pinning, default weak passwords); 2× duplicate findings. **Remediation Assessment:** 5 issues auto-fixable (config validation, CSP headers, action pinning, demo password, Docker caps), 5 require human decisions (upload auth strategy, alembic env-var extraction with cred rotation, defaults in .env.example). Triage comments posted for each issue with priority, domain, and guidance for Ray.
+
+- 2026-06-09T09:58:09.392-05:00 — **Security Triage Wave 1 (9 CodeQL findings).** Processed squad assignment for 9 open security issues from automated CodeQL scanning. Routing: Frontend DOM-XSS issues → Venkman (squad:venkman) (#167, #168 in FileUpload.tsx); Backend issues → Ray (squad:ray) — 1× log-injection (#169, logging_config.py:164), 3× path-injection (#170–172, storage.py), 3× stack-trace-exposure (#173–175, main.py/auth.py/health.py). All labels added; triage comments posted with remediation guidance and grouping rationale.
+
+- 2026-05-22T20:25:42.606Z — Scribe merged Egon RBAC Hierarchy Redesign decision and 6 supporting decisions (Ray guardrail, role-derivation fixes, Tully OIDC/security fixes, Venkman SW denylist) to decisions.md. Orchestration logs recorded. decisions.md: 35145 → 44191 bytes (+9046). Ray's RBAC implementation complete with 334 tests passing.
+
+- 2026-05-22T15:25:42.606-05:00 — Analyzed the RBAC regression blocking admin-parent sessions from educational routes. Wrote the hierarchy redesign decision in `.squad/decisions/inbox/egon-rbac-hierarchy-redesign.md`: admin becomes a true superset, parent/teacher share the educator bundle, `require_any_role` gains admin implication, and impacted routes/tests are enumerated.
+
 - 2026-05-15T14:09:23-05:00 — **PR #109 MERGED & v0.9.2 RELEASED.** Coordinator merged PR #109 (squash c131e4d) after Winston's fix (b1fd05c) and Tully's PyJWT hardening (720200f). All 300 backend tests passing. Frontend auth gating complete. Issue #105 (CVE-2026-32597) closed. Release tag v0.9.2 pushed.
 
 - 2026-05-15T14:09:23-05:00 — Re-reviewed PR #109 after Winston's fix commit b1fd05c. All 3 findings resolved: default corrected to `True`, 403 gate added to `POST /login`, naming confirmed clear. 300 tests pass, frontend build clean. Approved (posted as comment due to self-review restriction on repo).
@@ -79,4 +87,9 @@
 - **Venkman:** Reviewed 5 frontend dependency PRs; auto-merge on #20 (@types/node patch bump); closed #17–18 (React 19 major), #19 (router v7 major), #21 (tailwind v4 major) as requiring planned migration work
 - **Coordinator:** Closed security issues #22–25 (fixes already on main from prior round)
 - **Session outcome:** Dependency updates processed per team policy; major bumps held pending migration planning
+### 2026-06-09 Security Triage Wave 1
+- Triaged 9 CodeQL findings from 2026-06-08 scan
+- Routing: Frontend (#167-168) → Venkman, Backend (#169-175) → Ray
+- 7 backend HIGH findings grouped by CWE: log injection (1), path traversal (3), stack-trace exposure (3)
+- All findings assigned and resolved in same session
 

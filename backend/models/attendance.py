@@ -3,12 +3,12 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime, time
 from decimal import Decimal
-from pathlib import Path
 
 from sqlalchemy import Date, DateTime, Enum, ForeignKey, Numeric, String, Text, Time, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin
+from backend.services.storage import build_authenticated_file_url
 
 
 class AttendanceStatus(str, enum.Enum):
@@ -75,4 +75,4 @@ class AttendanceExcuse(TimestampMixin, Base):
     def document_url(self) -> str | None:
         if not self.document_path:
             return None
-        return f'/uploads/{Path(self.document_path).name}'
+        return build_authenticated_file_url(self.document_path)

@@ -286,13 +286,13 @@ async def build_health_payload(
 async def build_simple_health_payload(app: FastAPI, config: Settings = settings) -> tuple[int, dict[str, Any]]:
     payload = await build_health_payload(app, config=config)
     database_status = payload['services'].get('database', {}).get('status')
-    status_code = 503 if not payload['ready'] or database_status == 'unhealthy' else 200
+    ready = payload['ready'] and database_status != 'unhealthy'
+    status_code = 200 if ready else 503
+    maintenance = bool(payload.get('maintenance', {}).get('active', False))
     return status_code, {
-        'status': payload['status'],
-        'ready': payload['ready'],
-        'checked_at': payload['checked_at'],
-        'transport': payload['transport'],
-        'maintenance': payload['maintenance'],
+        'status': 'ok' if ready else 'error',
+        'ready': ready,
+        'maintenance': maintenance,
     }
 
 

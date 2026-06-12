@@ -1,7 +1,11 @@
 from fastapi.testclient import TestClient
 
+from backend.config import settings
 
-def test_openapi_schema_exposes_metadata_examples_and_security(app) -> None:
+
+def test_openapi_schema_exposes_metadata_examples_and_security(backend_module, monkeypatch) -> None:
+    monkeypatch.setattr(settings, 'public_api_docs', True)
+    app = backend_module.create_app()
     with TestClient(app) as client:
         response = client.get('/api/openapi.json')
 
@@ -25,7 +29,18 @@ def test_openapi_schema_exposes_metadata_examples_and_security(app) -> None:
     assert payload['paths']['/api/auth/login']['post'].get('security') is None
 
 
-def test_docs_endpoints_are_public_and_swagger_supports_csrf(app) -> None:
+def test_docs_endpoints_are_disabled_by_default(app) -> None:
+    with TestClient(app) as client:
+        swagger = client.get('/api/docs')
+        redoc = client.get('/api/redoc')
+
+    assert swagger.status_code == 404
+    assert redoc.status_code == 404
+
+
+def test_docs_endpoints_can_be_enabled_for_internal_use(backend_module, monkeypatch) -> None:
+    monkeypatch.setattr(settings, 'public_api_docs', True)
+    app = backend_module.create_app()
     with TestClient(app) as client:
         swagger = client.get('/api/docs')
         redoc = client.get('/api/redoc')

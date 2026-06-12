@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ErrorState } from '@/components/common/ErrorState'
+import { SchoolYearSetupWizard } from '@/components/features/SchoolYearSetupWizard'
 import { LoadingState } from '@/components/common/LoadingState'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -125,6 +126,7 @@ export function CalendarPage() {
   const [gradingPeriodForm, setGradingPeriodForm] = useState<GradingPeriodForm>(emptyGradingPeriodForm())
   const [eventForm, setEventForm] = useState<EventForm>(emptyEventForm)
   const [calendarMonth, setCalendarMonth] = useState('')
+  const [familyStateCode, setFamilyStateCode] = useState('')
 
   const loadSchoolYears = async (preferredId?: number | null) => {
     const years = await api.listSchoolYears()
@@ -170,6 +172,15 @@ export function CalendarPage() {
   }, [load])
 
   useEffect(() => {
+    void api
+      .getFamilyComplianceState()
+      .then((familyState) => setFamilyStateCode(familyState.state_code))
+      .catch(() => {
+        setFamilyStateCode('')
+      })
+  }, [])
+
+  useEffect(() => {
     if (!selectedSchoolYearId) return
     if (loading) return
     void loadDetail(selectedSchoolYearId).catch((detailError) => {
@@ -213,6 +224,11 @@ export function CalendarPage() {
       await load(created.id)
     }
     resetSchoolYearForm()
+  }
+
+  const handleWizardCreated = async (schoolYearId: number) => {
+    resetSchoolYearForm()
+    await load(schoolYearId)
   }
 
   const saveTerm = async () => {
@@ -302,59 +318,61 @@ export function CalendarPage() {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>{editingSchoolYearId ? 'Edit school year' : 'Create school year'}</CardTitle>
-            <CardDescription>Track academic years and choose which one is active for the family.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
-                <Label>Name</Label>
-                <Input
-                  value={schoolYearForm.name}
-                  onChange={(event) => setSchoolYearForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="2025-2026"
-                />
+        {editingSchoolYearId ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Edit school year</CardTitle>
+              <CardDescription>Adjust dates or active status, or head back to the wizard to build a new year.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Name</Label>
+                  <Input
+                    value={schoolYearForm.name}
+                    onChange={(event) => setSchoolYearForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="2025-2026"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Start date</Label>
+                  <Input
+                    type="date"
+                    value={schoolYearForm.start_date}
+                    onChange={(event) => setSchoolYearForm((current) => ({ ...current, start_date: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>End date</Label>
+                  <Input
+                    type="date"
+                    value={schoolYearForm.end_date}
+                    onChange={(event) => setSchoolYearForm((current) => ({ ...current, end_date: event.target.value }))}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Start date</Label>
-                <Input
-                  type="date"
-                  value={schoolYearForm.start_date}
-                  onChange={(event) => setSchoolYearForm((current) => ({ ...current, start_date: event.target.value }))}
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={schoolYearForm.is_active}
+                  onChange={(event) => setSchoolYearForm((current) => ({ ...current, is_active: event.target.checked }))}
                 />
-              </div>
-              <div className="space-y-2">
-                <Label>End date</Label>
-                <Input
-                  type="date"
-                  value={schoolYearForm.end_date}
-                  onChange={(event) => setSchoolYearForm((current) => ({ ...current, end_date: event.target.value }))}
-                />
-              </div>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={schoolYearForm.is_active}
-                onChange={(event) => setSchoolYearForm((current) => ({ ...current, is_active: event.target.checked }))}
-              />
-              Make this the active school year
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void saveSchoolYear()}>
-                <Plus className="mr-2 h-4 w-4" />
-                {editingSchoolYearId ? 'Update' : 'Create'} school year
-              </Button>
-              {editingSchoolYearId ? (
-                <Button variant="outline" onClick={resetSchoolYearForm}>
-                  Cancel edit
+                Make this the active school year
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => void saveSchoolYear()}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Update school year
                 </Button>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
+                <Button variant="outline" onClick={resetSchoolYearForm}>
+                  Back to wizard
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <SchoolYearSetupWizard existingYears={schoolYears} stateCode={familyStateCode} onCreated={handleWizardCreated} />
+        )}
 
         <Card>
           <CardHeader>
@@ -362,6 +380,13 @@ export function CalendarPage() {
             <CardDescription>Choose a school year to manage terms, grading periods, and holidays.</CardDescription>
           </CardHeader>
           <CardContent>
+            {editingSchoolYearId ? (
+              <div className="mb-3 flex justify-end">
+                <Button size="sm" variant="outline" onClick={resetSchoolYearForm}>
+                  New school year wizard
+                </Button>
+              </div>
+            ) : null}
             {schoolYears.length ? (
               <div className="space-y-2">
                 {schoolYears.map((schoolYear) => (

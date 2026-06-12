@@ -11,6 +11,12 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
     depends_on:
       app:
         condition: service_healthy
@@ -26,3 +32,8 @@ services:
       APP_UPSTREAM: "app:8000"
       TLS_CERT_PATH: "/etc/nginx/certs/homeschool-hero.crt"
       TLS_KEY_PATH: "/etc/nginx/certs/homeschool-hero.key"
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp

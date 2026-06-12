@@ -27,7 +27,10 @@ async def test_auth_events_are_audited(async_client, secondary_client):
     logout = await async_client.post(AUTH['logout'])
     assert logout.status_code == 200, logout.text
 
-    login = await secondary_client.post(AUTH['login'], json={'email': 'owner@example.com', 'password': 'strongpass123'})
+    login = await secondary_client.post(
+        AUTH['login'],
+        json={'email': 'owner@example.com', 'password': bootstrap_payload()['password']},
+    )
     assert login.status_code == 200, login.text
 
     events = await _list_audit_events()
