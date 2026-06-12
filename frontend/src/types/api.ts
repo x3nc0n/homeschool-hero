@@ -1794,6 +1794,130 @@ export interface CurriculumPackageDetail extends CurriculumPackage {
   units: CurriculumUnit[]
 }
 
+export interface CurriculumImportMetadata {
+  grade_levels?: string[]
+  standards_alignment?: string[]
+  estimated_hours?: number | null
+  prerequisites?: string[]
+  external_source?: Record<string, unknown>
+  extensions?: Record<string, unknown>
+}
+
+export interface CurriculumImportResource {
+  name: string
+  description?: string | null
+  resource_type: string
+  url?: string | null
+  tags?: string[]
+  metadata?: Record<string, unknown>
+  extensions?: Record<string, unknown>
+}
+
+export interface CurriculumImportLesson {
+  id?: number
+  name: string
+  description?: string | null
+  sequence_order?: number
+  estimated_minutes?: number | null
+  estimated_duration_minutes?: number | null
+  estimated_hours?: number | null
+  objectives?: string[]
+  standards_alignment?: string[]
+  prerequisites?: string[]
+  resources?: CurriculumImportResource[]
+  metadata?: CurriculumImportMetadata
+  activated_curriculum_lesson_id?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CurriculumImportUnit {
+  id?: number
+  name: string
+  description?: string | null
+  sequence_order?: number
+  metadata?: CurriculumImportMetadata
+  lessons: CurriculumImportLesson[]
+  activated_curriculum_unit_id?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CurriculumImportSubject {
+  id?: number
+  name: string
+  description?: string | null
+  sequence_order?: number
+  metadata?: CurriculumImportMetadata
+  units: CurriculumImportUnit[]
+  activated_subject_id?: number | null
+  activated_package_id?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CurriculumImportDocument {
+  schema_version?: string
+  name: string
+  description?: string | null
+  source?: string
+  metadata?: CurriculumImportMetadata
+  grade_levels?: string[]
+  standards_alignment?: string[]
+  prerequisites?: string[]
+  estimated_hours?: number | null
+  subjects: CurriculumImportSubject[]
+  extensions?: Record<string, unknown>
+}
+
+export interface CurriculumImportSummary {
+  id: number
+  name: string
+  description?: string | null
+  source?: string
+  schema_version?: string
+  metadata?: CurriculumImportMetadata
+  grade_levels?: string[]
+  standards_alignment?: string[]
+  prerequisites?: string[]
+  estimated_hours?: number | null
+  subject_count: number
+  unit_count: number
+  lesson_count: number
+  is_activated: boolean
+  last_activation_summary?: Record<string, unknown>
+  last_activated_at?: string | null
+  created_at: string
+  updated_at: string
+  created_by_user_id?: number
+}
+
+export interface CurriculumImportDetail extends CurriculumImportSummary {
+  payload?: Record<string, unknown>
+  subjects: CurriculumImportSubject[]
+}
+
+export interface CurriculumImportActivationPayload {
+  school_year_id?: number
+  subject_mappings?: Record<number, number>
+  create_missing_subjects?: boolean
+  generate_assignments?: boolean
+}
+
+export interface CurriculumImportActivationResponse {
+  curriculum_id: number
+  package_ids: number[]
+  subject_ids: number[]
+  unit_ids: number[]
+  lesson_ids: number[]
+  resource_ids: number[]
+  assignment_ids: number[]
+  generated_assignments: boolean
+  activated_at: string
+}
+
+export type CurriculumImportSchema = Record<string, unknown>
+
 export interface LessonPlanLessonPackageSummary {
   id: number
   name: string

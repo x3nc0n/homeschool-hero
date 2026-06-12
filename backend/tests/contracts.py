@@ -202,6 +202,11 @@ LESSON_PLANS = {
 }
 
 CURRICULUM = {
+    'imports': f'{API_PREFIX}/curriculum',
+    'import_create': f'{API_PREFIX}/curriculum/import',
+    'import_schema': f'{API_PREFIX}/curriculum/schema',
+    'import_detail': f'{API_PREFIX}/curriculum/{{curriculum_id}}',
+    'import_activate': f'{API_PREFIX}/curriculum/{{curriculum_id}}/activate',
     'packages': f'{API_PREFIX}/curriculum/packages',
     'package_detail': f'{API_PREFIX}/curriculum/packages/{{package_id}}',
     'package_clone': f'{API_PREFIX}/curriculum/packages/{{package_id}}/clone',

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 import mimetypes
 from pathlib import Path
@@ -13,9 +14,16 @@ from sqlalchemy.orm import selectinload
 from backend.config import settings
 from backend.database import get_db
 from backend.models import (
+    Assignment,
+    AssignmentCategory,
+    AssignmentStatus,
     CurriculumLesson,
     CurriculumPackage,
     CurriculumUnit,
+    ImportedCurriculum,
+    ImportedCurriculumLesson,
+    ImportedCurriculumSubject,
+    ImportedCurriculumUnit,
     LessonResource,
     Resource,
     ResourceType,
@@ -24,6 +32,11 @@ from backend.models import (
 )
 from backend.schemas.curriculum import (
     CloneCurriculumPackageRequest,
+    CurriculumImportActivationRead,
+    CurriculumImportActivationRequest,
+    CurriculumImportDocument,
+    CurriculumImportRead,
+    CurriculumImportSummaryRead,
     CurriculumLessonCreate,
     CurriculumLessonRead,
     CurriculumLessonUpdate,
@@ -53,6 +66,14 @@ def _package_options():
     )
 
 
+def _curriculum_import_options():
+    return (
+        selectinload(ImportedCurriculum.subjects)
+        .selectinload(ImportedCurriculumSubject.units)
+        .selectinload(ImportedCurriculumUnit.lessons),
+    )
+
+
 async def _ensure_unique_package_name(
     db: AsyncSession,
     *,
@@ -70,6 +91,23 @@ async def _ensure_unique_package_name(
         stmt = stmt.where(CurriculumPackage.id != current_package_id)
     if (await db.execute(stmt)).scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Curriculum package already exists')
+
+
+async def _get_imported_curriculum_or_404(
+    db: AsyncSession,
+    curriculum_id: int,
+    family_id: int,
+) -> ImportedCurriculum:
+    curriculum = await get_family_record(
+        db,
+        ImportedCurriculum,
+        curriculum_id,
+        family_id,
+        options=_curriculum_import_options(),
+    )
+    if not curriculum:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Imported curriculum not found')
+    return curriculum
 
 
 async def _get_package_or_404(db: AsyncSession, package_id: int, family_id: int) -> CurriculumPackage:
@@ -204,6 +242,359 @@ def _remove_resource_file(file_path: str | None) -> None:
     path = Path(file_path)
     if path.exists() and path.is_file():
         path.unlink()
+
+
+def _truncate_name(value: str, *, max_length: int) -> str:
+    return value if len(value) <= max_length else value[: max_length - 1].rstrip()
+
+
+def _allocate_unique_name(base_name: str, existing_names: set[str], *, max_length: int) -> str:
+    candidate = _truncate_name(base_name, max_length=max_length)
+    if candidate not in existing_names:
+        existing_names.add(candidate)
+        return candidate
+    counter = 2
+    while True:
+        suffix = f' ({counter})'
+        trimmed = _truncate_name(base_name, max_length=max_length - len(suffix))
+        candidate = f'{trimmed}{suffix}'
+        if candidate not in existing_names:
+            existing_names.add(candidate)
+            return candidate
+        counter += 1
+
+
+def _package_name_for_import(curriculum: ImportedCurriculum, subject: ImportedCurriculumSubject) -> str:
+    if curriculum.subject_count <= 1:
+        return curriculum.name
+    return _truncate_name(f'{curriculum.name} - {subject.name}', max_length=160)
+
+
+def _merge_descriptions(*parts: str | None) -> str | None:
+    normalized = [part.strip() for part in parts if isinstance(part, str) and part.strip()]
+    if not normalized:
+        return None
+    return '\n\n'.join(normalized)
+
+
+def _build_lesson_description(imported_lesson: ImportedCurriculumLesson) -> str | None:
+    objectives = [objective.strip() for objective in imported_lesson.objectives if objective.strip()]
+    objectives_block = None
+    if objectives:
+        objectives_block = 'Objectives:\n' + '\n'.join(f'- {objective}' for objective in objectives)
+    return _merge_descriptions(imported_lesson.description, objectives_block)
+
+
+def _resource_attachments_for_import(resources: list[Resource]) -> list[str]:
+    attachments: list[str] = []
+    for resource in resources:
+        if resource.file_url:
+            attachments.append(resource.file_url)
+        elif resource.url:
+            attachments.append(resource.url)
+    return attachments
+
+
+@router.get('/curriculum/schema')
+async def get_curriculum_import_schema(
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view curriculum import schema')),
+) -> dict[str, object]:
+    del auth
+    return CurriculumImportDocument.model_json_schema()
+
+
+@router.post('/curriculum/import', response_model=CurriculumImportRead, status_code=status.HTTP_201_CREATED)
+async def import_curriculum(
+    payload: CurriculumImportDocument,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='import curriculum')),
+) -> ImportedCurriculum:
+    duplicate = (
+        await db.execute(
+            select(ImportedCurriculum).where(
+                ImportedCurriculum.family_id == auth.family_id,
+                ImportedCurriculum.name == payload.name,
+            )
+        )
+    ).scalar_one_or_none()
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Imported curriculum already exists')
+
+    curriculum = ImportedCurriculum(
+        family_id=auth.family_id,
+        created_by_user_id=auth.user_id,
+        name=payload.name,
+        description=payload.description,
+        source=payload.source,
+        schema_version=payload.schema_version,
+        grade_levels=payload.metadata.grade_levels,
+        standards_alignment=payload.metadata.standards_alignment,
+        estimated_hours=payload.metadata.estimated_hours,
+        prerequisites=payload.metadata.prerequisites,
+        curriculum_metadata=payload.metadata.model_dump(mode='json'),
+        payload=payload.model_dump(mode='json'),
+    )
+    db.add(curriculum)
+    await db.flush()
+
+    for subject_index, subject_payload in enumerate(payload.subjects, start=1):
+        subject = ImportedCurriculumSubject(
+            curriculum_id=curriculum.id,
+            name=subject_payload.name,
+            description=subject_payload.description,
+            sequence_order=subject_index,
+            grade_levels=subject_payload.metadata.grade_levels,
+            standards_alignment=subject_payload.metadata.standards_alignment,
+            estimated_hours=subject_payload.metadata.estimated_hours,
+            prerequisites=subject_payload.metadata.prerequisites,
+            subject_metadata=subject_payload.metadata.model_dump(mode='json'),
+        )
+        db.add(subject)
+        await db.flush()
+        for unit_index, unit_payload in enumerate(subject_payload.units, start=1):
+            unit = ImportedCurriculumUnit(
+                subject_id=subject.id,
+                name=unit_payload.name,
+                description=unit_payload.description,
+                sequence_order=unit_index,
+                standards_alignment=unit_payload.metadata.standards_alignment,
+                estimated_hours=unit_payload.metadata.estimated_hours,
+                prerequisites=unit_payload.metadata.prerequisites,
+                unit_metadata=unit_payload.metadata.model_dump(mode='json'),
+            )
+            db.add(unit)
+            await db.flush()
+            for lesson_index, lesson_payload in enumerate(unit_payload.lessons, start=1):
+                lesson = ImportedCurriculumLesson(
+                    unit_id=unit.id,
+                    name=lesson_payload.name,
+                    description=lesson_payload.description,
+                    sequence_order=lesson_index,
+                    estimated_minutes=lesson_payload.estimated_minutes,
+                    objectives=lesson_payload.objectives,
+                    resources=[item.model_dump(mode='json') for item in lesson_payload.resources],
+                    standards_alignment=lesson_payload.metadata.standards_alignment,
+                    prerequisites=lesson_payload.metadata.prerequisites,
+                    lesson_metadata=lesson_payload.metadata.model_dump(mode='json'),
+                )
+                db.add(lesson)
+
+    await db.commit()
+    return await _get_imported_curriculum_or_404(db, curriculum.id, auth.family_id)
+
+
+@router.get('/curriculum', response_model=list[CurriculumImportSummaryRead])
+async def list_imported_curricula(
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view imported curricula')),
+) -> list[ImportedCurriculum]:
+    stmt = (
+        select(ImportedCurriculum)
+        .options(*_curriculum_import_options())
+        .where(ImportedCurriculum.family_id == auth.family_id)
+        .order_by(ImportedCurriculum.created_at.desc(), ImportedCurriculum.id.desc())
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+@router.get('/curriculum/{curriculum_id:int}', response_model=CurriculumImportRead)
+async def get_imported_curriculum(
+    curriculum_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view imported curricula')),
+) -> ImportedCurriculum:
+    return await _get_imported_curriculum_or_404(db, curriculum_id, auth.family_id)
+
+
+@router.post('/curriculum/{curriculum_id:int}/activate', response_model=CurriculumImportActivationRead)
+async def activate_imported_curriculum(
+    curriculum_id: int,
+    payload: CurriculumImportActivationRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='activate imported curriculum')),
+) -> CurriculumImportActivationRead:
+    curriculum = await _get_imported_curriculum_or_404(db, curriculum_id, auth.family_id)
+    if curriculum.is_activated:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Imported curriculum has already been activated')
+
+    school_year = await get_family_record(db, SchoolYear, payload.school_year_id, auth.family_id)
+    if not school_year:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='School year not found')
+
+    subject_ids = set(payload.subject_mappings.values())
+    subject_records = {}
+    if subject_ids:
+        rows = (
+            await db.execute(
+                select(Subject).where(Subject.family_id == auth.family_id, Subject.id.in_(subject_ids)).order_by(Subject.name)
+            )
+        ).scalars().all()
+        subject_records = {subject.id: subject for subject in rows}
+        if len(subject_records) != len(subject_ids):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='One or more mapped subjects were not found')
+
+    imported_subject_ids = {subject.id for subject in curriculum.subjects}
+    invalid_subject_ids = set(payload.subject_mappings) - imported_subject_ids
+    if invalid_subject_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='One or more imported subject mappings were not found')
+
+    existing_subjects = (
+        await db.execute(select(Subject).where(Subject.family_id == auth.family_id).order_by(Subject.name))
+    ).scalars().all()
+    subjects_by_name = {subject.name: subject for subject in existing_subjects}
+    existing_resource_names = {
+        name for name in (await db.execute(select(Resource.name).where(Resource.family_id == auth.family_id))).scalars().all()
+    }
+
+    package_ids: list[int] = []
+    activated_subject_ids: list[int] = []
+    unit_ids: list[int] = []
+    lesson_ids: list[int] = []
+    resource_ids: list[int] = []
+    assignment_ids: list[int] = []
+
+    for imported_subject in curriculum.subjects:
+        subject = subject_records.get(payload.subject_mappings.get(imported_subject.id))
+        if subject is None:
+            subject = subjects_by_name.get(imported_subject.name)
+        if subject is None and payload.create_missing_subjects:
+            subject = Subject(family_id=auth.family_id, name=imported_subject.name)
+            db.add(subject)
+            await db.flush()
+            subjects_by_name[subject.name] = subject
+        if subject is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f'Subject mapping is required for imported subject "{imported_subject.name}"',
+            )
+
+        package_name = _package_name_for_import(curriculum, imported_subject)
+        await _ensure_unique_package_name(
+            db,
+            family_id=auth.family_id,
+            school_year_id=school_year.id,
+            name=package_name,
+        )
+        package = CurriculumPackage(
+            family_id=auth.family_id,
+            school_year_id=school_year.id,
+            name=package_name,
+            description=_merge_descriptions(curriculum.description, imported_subject.description),
+            subject_id=subject.id,
+            created_by_user_id=auth.user_id,
+        )
+        db.add(package)
+        await db.flush()
+
+        imported_subject.activated_subject_id = subject.id
+        imported_subject.activated_package_id = package.id
+        package_ids.append(package.id)
+        activated_subject_ids.append(subject.id)
+
+        for imported_unit in imported_subject.units:
+            activated_unit = CurriculumUnit(
+                package_id=package.id,
+                name=imported_unit.name,
+                description=imported_unit.description,
+                sequence_order=imported_unit.sequence_order,
+                standards_tags=imported_unit.standards_alignment or imported_subject.standards_alignment,
+            )
+            db.add(activated_unit)
+            await db.flush()
+            imported_unit.activated_curriculum_unit_id = activated_unit.id
+            unit_ids.append(activated_unit.id)
+
+            for imported_lesson in imported_unit.lessons:
+                activated_lesson = CurriculumLesson(
+                    unit_id=activated_unit.id,
+                    name=imported_lesson.name,
+                    description=_build_lesson_description(imported_lesson),
+                    sequence_order=imported_lesson.sequence_order,
+                    estimated_duration_minutes=imported_lesson.estimated_minutes,
+                    standards_tags=imported_lesson.standards_alignment or imported_unit.standards_alignment,
+                )
+                db.add(activated_lesson)
+                await db.flush()
+                imported_lesson.activated_curriculum_lesson_id = activated_lesson.id
+                lesson_ids.append(activated_lesson.id)
+
+                created_resources: list[Resource] = []
+                for resource_payload in imported_lesson.resources:
+                    resource_name = _allocate_unique_name(
+                        resource_payload.get('name') or f'{imported_lesson.name} resource',
+                        existing_resource_names,
+                        max_length=160,
+                    )
+                    resource = Resource(
+                        family_id=auth.family_id,
+                        name=resource_name,
+                        description=resource_payload.get('description'),
+                        resource_type=ResourceType.link if resource_payload.get('url') else ResourceType.note,
+                        url=resource_payload.get('url'),
+                        tags=list(resource_payload.get('tags') or []),
+                        resource_metadata={
+                            'source': curriculum.source,
+                            'imported_resource_type': resource_payload.get('resource_type'),
+                            'metadata': resource_payload.get('metadata') or {},
+                            'extensions': resource_payload.get('extensions') or {},
+                        },
+                        created_by_user_id=auth.user_id,
+                    )
+                    db.add(resource)
+                    await db.flush()
+                    db.add(LessonResource(lesson_id=activated_lesson.id, resource_id=resource.id))
+                    created_resources.append(resource)
+                    resource_ids.append(resource.id)
+
+                if payload.generate_assignments:
+                    assignment = Assignment(
+                        family_id=auth.family_id,
+                        title=activated_lesson.name,
+                        subject_id=subject.id,
+                        description=activated_lesson.description,
+                        status=AssignmentStatus.pending,
+                        category=AssignmentCategory.homework,
+                        attachments=_resource_attachments_for_import(created_resources),
+                    )
+                    db.add(assignment)
+                    await db.flush()
+                    assignment_ids.append(assignment.id)
+
+    activated_at = datetime.now(UTC)
+    curriculum.last_activated_at = activated_at
+    curriculum.last_activation_summary = {
+        'school_year_id': school_year.id,
+        'package_ids': package_ids,
+        'subject_ids': activated_subject_ids,
+        'unit_ids': unit_ids,
+        'lesson_ids': lesson_ids,
+        'resource_ids': resource_ids,
+        'assignment_ids': assignment_ids,
+        'generated_assignments': payload.generate_assignments,
+    }
+    await db.commit()
+    return CurriculumImportActivationRead(
+        curriculum_id=curriculum.id,
+        package_ids=package_ids,
+        subject_ids=activated_subject_ids,
+        unit_ids=unit_ids,
+        lesson_ids=lesson_ids,
+        resource_ids=resource_ids,
+        assignment_ids=assignment_ids,
+        generated_assignments=payload.generate_assignments,
+        activated_at=activated_at,
+    )
+
+
+@router.delete('/curriculum/{curriculum_id:int}', status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def delete_imported_curriculum(
+    curriculum_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='delete imported curriculum')),
+) -> None:
+    curriculum = await _get_imported_curriculum_or_404(db, curriculum_id, auth.family_id)
+    await db.delete(curriculum)
+    await db.commit()
 
 
 @router.get('/curriculum/packages', response_model=list[CurriculumPackageDetail])

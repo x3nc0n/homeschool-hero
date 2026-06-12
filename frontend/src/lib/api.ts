@@ -38,6 +38,12 @@ import type {
   ScheduleOverride,
   ScheduleOverrideType,
   CurriculumLesson,
+  CurriculumImportActivationPayload,
+  CurriculumImportActivationResponse,
+  CurriculumImportDetail,
+  CurriculumImportDocument,
+  CurriculumImportSchema,
+  CurriculumImportSummary,
   CurriculumPackage,
   CurriculumPackageDetail,
   CurriculumUnit,
@@ -126,6 +132,7 @@ import type {
   PaginatedResponse,
 } from '@/types/api'
 import type { DetailedHealthResponse, ReadinessResponse, SystemStatusResponse } from '@/types/health'
+import { curriculumImportMockApi } from '@/lib/curriculumImportMock'
 import { getCurrentLanguage } from '@/lib/locale'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
@@ -217,6 +224,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return parseResponse<T>(response)
+}
+
+function shouldUseCurriculumImportMock(error: unknown) {
+  return (
+    import.meta.env.DEV &&
+    (error instanceof TypeError || (error instanceof ApiError && [404, 405, 501].includes(error.status)))
+  )
+}
+
+async function withCurriculumImportFallback<T>(operation: () => Promise<T>, fallback: () => Promise<T> | T): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (!shouldUseCurriculumImportMock(error)) {
+      throw error
+    }
+    return fallback()
+  }
 }
 
 export const api = {
@@ -773,6 +798,52 @@ export const api = {
 
   getWeeklyAgenda(studentId: number, date: string) {
     return request<WeeklyAgenda>(`/schedule/${studentId}/week?date=${encodeURIComponent(date)}`)
+  },
+
+  listImportedCurricula() {
+    return withCurriculumImportFallback(
+      () => request<CurriculumImportSummary[]>('/curriculum/'),
+      () => curriculumImportMockApi.list(),
+    )
+  },
+
+  getImportedCurriculum(id: number) {
+    return withCurriculumImportFallback(
+      () => request<CurriculumImportDetail>(`/curriculum/${id}`),
+      () => curriculumImportMockApi.get(id),
+    )
+  },
+
+  importCurriculum(payload: CurriculumImportDocument | Record<string, unknown>) {
+    return withCurriculumImportFallback(
+      () => request<CurriculumImportDetail>('/curriculum/import', { method: 'POST', body: JSON.stringify(payload) }),
+      () => curriculumImportMockApi.import(payload),
+    )
+  },
+
+  activateImportedCurriculum(id: number, payload?: CurriculumImportActivationPayload) {
+    return withCurriculumImportFallback(
+      () =>
+        request<CurriculumImportActivationResponse>(`/curriculum/${id}/activate`, {
+          method: 'POST',
+          body: payload ? JSON.stringify(payload) : undefined,
+        }),
+      () => curriculumImportMockApi.activate(id, payload),
+    )
+  },
+
+  deleteImportedCurriculum(id: number) {
+    return withCurriculumImportFallback(
+      () => request<void>(`/curriculum/${id}`, { method: 'DELETE' }),
+      () => curriculumImportMockApi.remove(id),
+    )
+  },
+
+  getCurriculumImportSchema() {
+    return withCurriculumImportFallback(
+      () => request<CurriculumImportSchema>('/curriculum/schema'),
+      () => curriculumImportMockApi.schema(),
+    )
   },
 
   listCurriculumPackages(schoolYearId?: number) {
