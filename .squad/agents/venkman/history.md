@@ -8,6 +8,8 @@
 
 - 2026-05-18T16:38:51.741-05:00 — ESLint 10 + `@eslint/js` 10 work with the existing flat config in `frontend/eslint.config.js` unchanged, but `eslint-plugin-jsx-a11y@6.10.2` still advertises peer support only through ESLint 9. Added `frontend/.npmrc` with `legacy-peer-deps=true` so plain `npm install` succeeds while keeping the accessibility plugin enabled; `cd frontend && npm run lint && npm run build` both pass on ESLint 10.
 
+- 2026-06-12T17:18:11.955-05:00 — School year setup now uses a dedicated wizard component in `frontend/src/components/features/SchoolYearSetupWizard.tsx`, with date/preset generation in `frontend/src/lib/schoolYearWizard.ts`; `frontend/src/pages/CalendarPage.tsx` keeps the post-create editing surface so parents can fine-tune terms and holiday dates after the guided flow.
+
 ## Recent Activity
 
 ### 2026-06-09 Frontend Security Hardening
