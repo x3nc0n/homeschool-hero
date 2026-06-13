@@ -23,10 +23,16 @@ logger = logging.getLogger(__name__)
 async def health(request: Request) -> JSONResponse:
     try:
         status_code, payload = await build_simple_health_payload(request.app)
-        return JSONResponse(status_code=status_code, content=payload)
+        ready = status_code == 200
+        safe_payload = {
+            'status': 'ok' if ready else 'error',
+            'ready': ready,
+            'maintenance': payload.get('maintenance') is True,
+        }
+        return JSONResponse(status_code=status_code, content=safe_payload)
     except Exception:
         logger.exception('Health check failed unexpectedly')
-        return JSONResponse(status_code=503, content={'status': 'error', 'ready': False})
+        return JSONResponse(status_code=503, content={'status': 'unhealthy'})
 
 
 @router.get('/health/detailed', response_model=DetailedHealthRead)
