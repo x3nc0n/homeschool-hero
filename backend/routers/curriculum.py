@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import logging
 import mimetypes
 from pathlib import Path
 from uuid import uuid4
@@ -74,6 +75,11 @@ from backend.services.curriculum_sources import (
 from backend.validation import sanitize_filename
 
 router = APIRouter(tags=['curriculum'])
+logger = logging.getLogger(__name__)
+
+CURRICULUM_SOURCE_UNAVAILABLE_MESSAGE = 'Curriculum source is unavailable'
+CURRICULUM_SOURCE_ERROR_MESSAGE = 'Curriculum source request failed'
+AI_IMPORT_UNAVAILABLE_MESSAGE = 'AI curriculum import is unavailable'
 
 
 def _package_options():
@@ -431,15 +437,21 @@ async def search_curriculum_source(
     if not availability.enabled:
         return _service_unavailable_response(
             request,
-            detail=availability.detail or 'Curriculum source is unavailable',
+            detail=availability.detail or CURRICULUM_SOURCE_UNAVAILABLE_MESSAGE,
             code='curriculum_source_unavailable',
         )
     try:
         search_page = await source.search(q, page=page, page_size=page_size)
-    except CurriculumSourceUnavailable as exc:
-        return _service_unavailable_response(request, detail=str(exc), code='curriculum_source_unavailable')
-    except CurriculumSourceError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except CurriculumSourceUnavailable:
+        logger.exception('Curriculum source search unavailable.')
+        return _service_unavailable_response(
+            request,
+            detail=CURRICULUM_SOURCE_UNAVAILABLE_MESSAGE,
+            code='curriculum_source_unavailable',
+        )
+    except CurriculumSourceError:
+        logger.exception('Curriculum source search failed.')
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=CURRICULUM_SOURCE_ERROR_MESSAGE) from None
     return _curriculum_source_search_to_read(search_page)
 
 
@@ -458,16 +470,22 @@ async def import_curriculum_from_source(
     if not availability.enabled:
         return _service_unavailable_response(
             request,
-            detail=availability.detail or 'Curriculum source is unavailable',
+            detail=availability.detail or CURRICULUM_SOURCE_UNAVAILABLE_MESSAGE,
             code='curriculum_source_unavailable',
         )
     try:
         raw_data = await source.fetch(item_id)
         payload = source.convert_to_standard_format(raw_data)
-    except CurriculumSourceUnavailable as exc:
-        return _service_unavailable_response(request, detail=str(exc), code='curriculum_source_unavailable')
-    except CurriculumSourceError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except CurriculumSourceUnavailable:
+        logger.exception('Curriculum source import unavailable.')
+        return _service_unavailable_response(
+            request,
+            detail=CURRICULUM_SOURCE_UNAVAILABLE_MESSAGE,
+            code='curriculum_source_unavailable',
+        )
+    except CurriculumSourceError:
+        logger.exception('Curriculum source import failed.')
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=CURRICULUM_SOURCE_ERROR_MESSAGE) from None
     return await _create_imported_curriculum_response(db, auth=auth, payload=payload)
 
 
@@ -484,8 +502,9 @@ async def draft_curriculum_from_ai_import(
             draft, extracted = await service.build_draft_from_upload(upload)
         else:
             draft, extracted = await service.build_draft_from_url(url or '')
-    except AIImportUnavailable as exc:
-        return _service_unavailable_response(request, detail=str(exc), code='ai_import_unavailable')
+    except AIImportUnavailable:
+        logger.exception('AI curriculum import is unavailable.')
+        return _service_unavailable_response(request, detail=AI_IMPORT_UNAVAILABLE_MESSAGE, code='ai_import_unavailable')
     except AIImportError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CurriculumAIImportRead(

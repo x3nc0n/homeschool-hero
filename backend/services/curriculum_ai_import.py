@@ -229,12 +229,11 @@ class AICurriculumImportService:
     async def _fetch_validated_source_url(self, client: httpx.AsyncClient, url: str) -> httpx.Response:
         current_url = url
         for redirect_count in range(MAX_SOURCE_FETCH_REDIRECTS + 1):
-            normalized_url, parsed = self._parse_http_url(
+            validated_source_url = self._validate_public_source_url(
                 current_url,
                 error_message='AI import URL must be a valid http or https URL',
             )
-            self._ensure_public_hostname(parsed.hostname or '')
-            response = await client.get(normalized_url)
+            response = await client.get(validated_source_url)
             if not response.is_redirect:
                 return response
 
@@ -246,6 +245,11 @@ class AICurriculumImportService:
             current_url = urljoin(str(response.url), redirect_target)
 
         raise AIImportError('AI import URL exceeded the maximum allowed redirects')
+
+    def _validate_public_source_url(self, url: str, *, error_message: str) -> str:
+        normalized_url, parsed = self._parse_http_url(url, error_message=error_message)
+        self._ensure_public_hostname(parsed.hostname or '')
+        return normalized_url
 
     def _parse_http_url(self, url: str, *, error_message: str) -> tuple[str, Any]:
         normalized_url = (url or '').strip()

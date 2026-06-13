@@ -159,15 +159,13 @@ def store_submission_file(
     )
     safe_relative_path, destination = _resolve_safe_upload_destination(upload_root, relative_path)
     upload_root_real, upload_root_prefix = _upload_root_parts(upload_root)
-    safe_destination = os.path.realpath(os.fspath(destination))
-    if not (safe_destination == upload_root_real or safe_destination.startswith(upload_root_prefix)):
-        raise ValueError('Path traversal detected')
-    safe_directory = os.path.realpath(os.path.dirname(safe_destination))
-    if not (safe_directory == upload_root_real or safe_directory.startswith(upload_root_prefix)):
+    destination_path = os.fspath(destination)
+    safe_directory = os.path.realpath(os.path.dirname(destination_path))
+    if safe_directory != upload_root_real and not safe_directory.startswith(upload_root_prefix):
         raise ValueError('Path traversal detected')
     os.makedirs(safe_directory, exist_ok=True)
-    safe_write_path = os.path.realpath(safe_destination)
-    if not (safe_write_path == upload_root_real or safe_write_path.startswith(upload_root_prefix)):
+    safe_write_path = os.path.realpath(destination_path)
+    if safe_write_path != upload_root_real and not safe_write_path.startswith(upload_root_prefix):
         raise ValueError('Path traversal detected')
     with open(safe_write_path, 'wb') as output_file:
         output_file.write(contents)

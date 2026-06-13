@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from backend.schemas.curriculum import CurriculumImportDocument
-from backend.services.curriculum_sources import SourceAvailability
+from backend.services.curriculum_sources import CurriculumSourceError, CurriculumSourceUnavailable, SourceAvailability
 from backend.services.curriculum_sources.ck12 import CK12Source
 from backend.services.curriculum_sources.openstax import OpenStaxSource
 from backend.services.curriculum_sources.oer_commons import OERCommonsSource
@@ -103,6 +103,26 @@ class _DisabledSource(_FakeSource):
         raise RuntimeError('should not be called')
 
 
+class _UnavailableSource(_FakeSource):
+    source_id = 'unavailable-source'
+
+    async def search(self, query: str, *, page: int = 1, page_size: int = 10):  # noqa: ARG002
+        raise CurriculumSourceUnavailable('backend trace host=10.0.0.8')
+
+    async def fetch(self, item_id: str):  # noqa: ARG002
+        raise CurriculumSourceUnavailable('backend trace host=10.0.0.8')
+
+
+class _FailingSource(_FakeSource):
+    source_id = 'failing-source'
+
+    async def search(self, query: str, *, page: int = 1, page_size: int = 10):  # noqa: ARG002
+        raise CurriculumSourceError('internal connector secret=abc123')
+
+    async def fetch(self, item_id: str):  # noqa: ARG002
+        raise CurriculumSourceError('internal connector secret=abc123')
+
+
 @pytest.mark.asyncio
 async def test_curriculum_sources_list_search_and_import(authorized_client, monkeypatch):
     fake_source = _FakeSource()
@@ -140,6 +160,44 @@ async def test_curriculum_sources_list_search_and_import(authorized_client, monk
     detail = await authorized_client.get(CURRICULUM['import_detail'].format(curriculum_id=curriculum_id))
     assert detail.status_code == 200, detail.text
     assert detail.json()['payload']['source'] == 'demo-source'
+
+
+@pytest.mark.asyncio
+async def test_curriculum_source_errors_return_generic_messages(authorized_client, monkeypatch):
+    unavailable_source = _UnavailableSource()
+    failing_source = _FailingSource()
+    sources = {
+        unavailable_source.source_id: unavailable_source,
+        failing_source.source_id: failing_source,
+    }
+    monkeypatch.setattr('backend.routers.curriculum.get_curriculum_source', lambda source_id: sources.get(source_id))
+
+    unavailable_search = await authorized_client.get(
+        CURRICULUM['source_search'].format(source_id='unavailable-source'),
+        params={'q': 'demo'},
+    )
+    assert unavailable_search.status_code == 503, unavailable_search.text
+    assert unavailable_search.json()['detail'] == 'Curriculum source is unavailable'
+    assert '10.0.0.8' not in unavailable_search.text
+
+    failing_search = await authorized_client.get(
+        CURRICULUM['source_search'].format(source_id='failing-source'),
+        params={'q': 'demo'},
+    )
+    assert failing_search.status_code == 502, failing_search.text
+    assert 'abc123' not in failing_search.text
+
+    unavailable_import = await authorized_client.post(
+        CURRICULUM['source_import'].format(source_id='unavailable-source', item_id='demo-1'),
+    )
+    assert unavailable_import.status_code == 503, unavailable_import.text
+    assert unavailable_import.json()['detail'] == 'Curriculum source is unavailable'
+
+    failing_import = await authorized_client.post(
+        CURRICULUM['source_import'].format(source_id='failing-source', item_id='demo-1'),
+    )
+    assert failing_import.status_code == 502, failing_import.text
+    assert 'abc123' not in failing_import.text
 
 
 def test_openstax_connector_converts_detail_payload_to_standard_document():
