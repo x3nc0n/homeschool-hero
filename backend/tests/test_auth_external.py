@@ -39,6 +39,10 @@ def _set_auth_settings(monkeypatch, **updates) -> None:
         monkeypatch.setattr(settings, key, value, raising=False)
 
 
+async def _raise_runtime_error():
+    raise RuntimeError('provider secret=abc123')
+
+
 class _FakeOIDCApp:
     def __init__(self, claims: dict[str, str]) -> None:
         self._claims = claims
@@ -346,6 +350,36 @@ async def test_oidc_verify_reports_unreachable_discovery(async_client, monkeypat
         'issuer': None,
         'authorization_endpoint': None,
     }
+
+
+@pytest.mark.asyncio
+async def test_oidc_verify_returns_generic_error_for_unexpected_failures(async_client, monkeypatch, caplog):
+    _set_auth_settings(
+        monkeypatch,
+        auth_provider='oidc',
+        oidc_client_id='client-id',
+        oidc_client_secret='client-secret',
+        oidc_discovery_url='https://idp.example/.well-known/openid-configuration',
+    )
+    caplog.set_level(logging.ERROR)
+    monkeypatch.setattr(
+        'backend.routers.auth.verify_oidc_configuration',
+        _raise_runtime_error,
+    )
+
+    response = await async_client.get(AUTH['oidc_verify'])
+
+    assert response.status_code == 503, response.text
+    assert response.json() == {
+        'configured': True,
+        'reachable': False,
+        'message': 'OIDC sign-in is temporarily unavailable. Please try again.',
+        'discovery_url': 'https://idp.example/.well-known/openid-configuration',
+        'issuer': None,
+        'authorization_endpoint': None,
+    }
+    assert 'provider secret=abc123' not in response.text
+    assert 'OIDC verification failed.' in caplog.text
 
 
 @pytest.mark.asyncio

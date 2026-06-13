@@ -75,6 +75,27 @@ class _FakeAIAsyncClient:
 json_module = json
 
 
+class _RedirectingURLAsyncClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def get(self, url, headers=None):  # noqa: ARG002
+        request = httpx.Request('GET', url)
+        if url == 'https://example.com/curriculum.txt':
+            return httpx.Response(
+                302,
+                headers={'location': 'http://127.0.0.1/private.txt'},
+                request=request,
+            )
+        raise AssertionError(f'unexpected fetch url: {url}')
+
+
 def _build_pdf_bytes(text: str) -> bytes:
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer)
@@ -100,7 +121,7 @@ async def test_ai_import_returns_service_unavailable_when_disabled(authorized_cl
     response = await authorized_client.post(CURRICULUM['ai_import'], json={'url': 'https://example.com/curriculum.txt'})
 
     assert response.status_code == 503, response.text
-    assert 'AI curriculum import is disabled' in response.json()['detail']
+    assert response.json()['detail'] == 'AI curriculum import is unavailable'
 
 
 @pytest.mark.asyncio
@@ -195,6 +216,18 @@ def test_ai_import_service_rejects_hostnames_that_resolve_to_private_ips(monkeyp
 
     with pytest.raises(AIImportError, match='public host'):
         service._ensure_public_hostname('curriculum.example.com')
+
+
+@pytest.mark.asyncio
+async def test_ai_import_service_blocks_redirects_to_private_hosts(monkeypatch):
+    service = AICurriculumImportService()
+    monkeypatch.setattr('backend.config.settings.ai_import_enabled', True, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_endpoint', 'https://api.openai.com/v1/chat/completions', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_api_key', 'test-key', raising=False)
+    monkeypatch.setattr('backend.services.curriculum_ai_import.httpx.AsyncClient', _RedirectingURLAsyncClient)
+
+    with pytest.raises(AIImportError, match='public host'):
+        await service.build_draft_from_url('https://example.com/curriculum.txt')
 
 
 def test_ai_import_service_uses_urlparse_for_endpoint_detection(monkeypatch):

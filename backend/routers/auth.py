@@ -151,6 +151,18 @@ def _redirect_to_login_error(message: str) -> RedirectResponse:
     return RedirectResponse(url=f"/login?error={quote(message)}", status_code=status.HTTP_302_FOUND)
 
 
+def _oidc_verify_error_payload() -> dict[str, object]:
+    discovery_url = (settings.oidc_discovery_url or '').strip() or None
+    return {
+        'configured': bool(discovery_url),
+        'reachable': False,
+        'message': 'OIDC sign-in is temporarily unavailable. Please try again.',
+        'discovery_url': discovery_url,
+        'issuer': None,
+        'authorization_endpoint': None,
+    }
+
+
 def _redirect_to_app() -> RedirectResponse:
     return RedirectResponse(url='/', status_code=status.HTTP_302_FOUND)
 
@@ -448,7 +460,11 @@ async def oidc_login(request: Request):
 
 @router.get('/oidc/verify', response_model=OIDCVerifyResponse)
 async def oidc_verify() -> JSONResponse:
-    verification = await verify_oidc_configuration()
+    try:
+        verification = await verify_oidc_configuration()
+    except Exception:
+        logger.exception('OIDC verification failed.')
+        verification = _oidc_verify_error_payload()
     status_code = status.HTTP_200_OK if verification['reachable'] else status.HTTP_503_SERVICE_UNAVAILABLE
     return JSONResponse(status_code=status_code, content=verification)
 

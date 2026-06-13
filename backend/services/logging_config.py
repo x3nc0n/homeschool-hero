@@ -36,7 +36,8 @@ def _sanitize_log_text(value: str) -> str:
 
 def _coerce_log_value(value: Any) -> Any:
     if isinstance(value, str):
-        return _sanitize_log_text(value)
+        escaped_value = value.replace('\n', r'\n').replace('\r', r'\r')
+        return _sanitize_log_text(escaped_value)
     return value
 
 
@@ -44,14 +45,20 @@ def _coerce_details(details: Any) -> Any:
     if details is None:
         return None
     if isinstance(details, dict):
-        return {_sanitize_log_text(str(key)): _coerce_details(value) for key, value in details.items()}
+        sanitized_details: dict[str, Any] = {}
+        for key, value in details.items():
+            escaped_key = str(key).replace('\n', r'\n').replace('\r', r'\r')
+            sanitized_details[_sanitize_log_text(escaped_key)] = _coerce_details(value)
+        return sanitized_details
     if isinstance(details, (list, tuple, set)):
         return [_coerce_details(value) for value in details]
     if isinstance(details, str):
-        return _sanitize_log_text(details)
+        escaped_detail = details.replace('\n', r'\n').replace('\r', r'\r')
+        return _sanitize_log_text(escaped_detail)
     if isinstance(details, (int, float, bool)):
         return details
-    return _sanitize_log_text(str(details))
+    escaped_detail = str(details).replace('\n', r'\n').replace('\r', r'\r')
+    return _sanitize_log_text(escaped_detail)
 
 
 def bind_context(**values: Any) -> Token:
@@ -182,9 +189,12 @@ def log_action(
     # Pre-compute sanitized values before passing to logger to ensure no raw
     # user-controlled content (which could contain newlines or other control
     # characters) reaches the log sink.
-    sanitized_message = _sanitize_log_text(message)
-    sanitized_correlation_id = _coerce_log_value(correlation_id)
-    sanitized_action = _coerce_log_value(action)
+    escaped_message = message.replace('\n', r'\n').replace('\r', r'\r')
+    sanitized_message = _sanitize_log_text(escaped_message)
+    escaped_correlation_id = correlation_id.replace('\n', r'\n').replace('\r', r'\r') if isinstance(correlation_id, str) else correlation_id
+    sanitized_correlation_id = _coerce_log_value(escaped_correlation_id)
+    escaped_action = action.replace('\n', r'\n').replace('\r', r'\r')
+    sanitized_action = _sanitize_log_text(escaped_action)
     sanitized_details = _coerce_details(details)
     logger.log(
         level,
