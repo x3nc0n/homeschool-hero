@@ -12,6 +12,8 @@
 
 - 2026-06-12T17:18:11.955-05:00 — School year setup now uses a dedicated wizard component in `frontend/src/components/features/SchoolYearSetupWizard.tsx`, with date/preset generation in `frontend/src/lib/schoolYearWizard.ts`; `frontend/src/pages/CalendarPage.tsx` keeps the post-create editing surface so parents can fine-tune terms and holiday dates after the guided flow.
 
+- 2026-06-12T18:37:58.792-05:00 — Curriculum Phase 2-3 extends the Phase 1 import surface instead of adding new routes: `CurriculumImportLibraryPage` now owns `My Library` + `Browse Sources` tabs, `CurriculumImportWizard` handles both standard JSON and AI-assisted document flows, and `src/lib/api.ts` keeps dev-only fallback support for `/curriculum/sources` plus `/curriculum/ai-import*` so the UI stays testable before backend endpoints fully land.
+
 ## Recent Activity
 
 ### 2026-06-09 Frontend Security Hardening

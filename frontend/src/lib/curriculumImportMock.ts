@@ -1,6 +1,8 @@
 import type {
   CurriculumImportActivationPayload,
   CurriculumImportActivationResponse,
+  CurriculumAiImportConfirmPayload,
+  CurriculumAiImportDraftResponse,
   CurriculumImportDetail,
   CurriculumImportDocument,
   CurriculumImportMetadata,
@@ -9,6 +11,8 @@ import type {
   CurriculumImportSummary,
   CurriculumImportUnit,
   CurriculumImportLesson,
+  CurriculumSourceSearchResult,
+  CurriculumSourceSummary,
 } from '@/types/api'
 import { buildCurriculumImportExample, normalizeCurriculumImport } from '@/lib/curriculumImport'
 
@@ -17,6 +21,28 @@ const STORAGE_KEY = 'homeschool-hero-curriculum-import-mock-v1'
 type MockStore = {
   nextId: number
   curricula: CurriculumImportDetail[]
+}
+
+type MockLessonBlueprint = {
+  name: string
+  description?: string
+  objectives?: string[]
+  estimatedHours?: number
+}
+
+type MockUnitBlueprint = {
+  name: string
+  description?: string
+  lessons: MockLessonBlueprint[]
+}
+
+type MockSourceCatalogItem = {
+  item_id: string
+  title: string
+  description: string
+  subject: string
+  grade_levels: string[]
+  document: CurriculumImportDocument
 }
 
 function defaultStore(): MockStore {
@@ -191,6 +217,402 @@ function buildSchema(): CurriculumImportSchema {
   }
 }
 
+function cloneDocument<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function buildSourceDocument({
+  source,
+  name,
+  description,
+  gradeLevels,
+  subject,
+  standardsAlignment,
+  prerequisites,
+  estimatedHours,
+  units,
+}: {
+  source: string
+  name: string
+  description: string
+  gradeLevels: string[]
+  subject: string
+  standardsAlignment: string[]
+  prerequisites: string[]
+  estimatedHours: number
+  units: MockUnitBlueprint[]
+}): CurriculumImportDocument {
+  return {
+    name,
+    description,
+    source,
+    grade_levels: gradeLevels,
+    standards_alignment: standardsAlignment,
+    prerequisites,
+    estimated_hours: estimatedHours,
+    metadata: {
+      grade_levels: gradeLevels,
+      standards_alignment: standardsAlignment,
+      prerequisites,
+      estimated_hours: estimatedHours,
+    },
+    subjects: [
+      {
+        name: subject,
+        description,
+        units: units.map((unit) => ({
+          name: unit.name,
+          description: unit.description,
+          lessons: unit.lessons.map((lesson) => ({
+            name: lesson.name,
+            description: lesson.description,
+            objectives: lesson.objectives ?? [],
+            estimated_hours: lesson.estimatedHours ?? 1,
+          })),
+        })),
+      },
+    ],
+  }
+}
+
+const MOCK_SOURCE_CATALOG: Record<string, { summary: CurriculumSourceSummary; items: MockSourceCatalogItem[] }> = {
+  openstax: {
+    summary: {
+      source: 'openstax',
+      name: 'OpenStax',
+      description: 'Open educational textbooks with structured unit and chapter outlines.',
+      website_url: 'https://openstax.org/',
+      provider: 'Rice University',
+      search_hint: 'biology',
+      subjects: ['Science', 'Math', 'Humanities'],
+      grade_levels: ['9', '10', '11', '12'],
+    },
+    items: [
+      {
+        item_id: 'biology-2e',
+        title: 'Biology 2e',
+        description: 'Year-long high school biology sequence with labs, reading questions, and unit assessments.',
+        subject: 'Science',
+        grade_levels: ['9', '10'],
+        document: buildSourceDocument({
+          source: 'openstax',
+          name: 'Biology 2e',
+          description: 'Comprehensive biology sequence aligned to major life-science topics.',
+          gradeLevels: ['9', '10'],
+          subject: 'Science',
+          standardsAlignment: ['NGSS-HS-LS1-1', 'NGSS-HS-LS2-3'],
+          prerequisites: ['Intro to lab safety'],
+          estimatedHours: 144,
+          units: [
+            {
+              name: 'The Chemistry of Life',
+              description: 'Core chemistry and cell concepts.',
+              lessons: [
+                { name: 'Atoms, molecules, and water', objectives: ['Explain how water supports life'], estimatedHours: 1.5 },
+                { name: 'Macromolecules', objectives: ['Compare proteins, lipids, and carbohydrates'], estimatedHours: 1.25 },
+              ],
+            },
+            {
+              name: 'Cells and Energy',
+              description: 'Cell structure, respiration, and photosynthesis.',
+              lessons: [
+                { name: 'Cell structure and function', estimatedHours: 1.5 },
+                { name: 'Photosynthesis and cellular respiration', estimatedHours: 1.75 },
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        item_id: 'prealgebra-2e',
+        title: 'Prealgebra 2e',
+        description: 'Foundational prealgebra with worked examples, practice sets, and review checkpoints.',
+        subject: 'Math',
+        grade_levels: ['6', '7', '8'],
+        document: buildSourceDocument({
+          source: 'openstax',
+          name: 'Prealgebra 2e',
+          description: 'Strengthen number sense and algebra readiness through spiral review.',
+          gradeLevels: ['6', '7', '8'],
+          subject: 'Mathematics',
+          standardsAlignment: ['CCSS.MATH.CONTENT.7.NS.A', 'CCSS.MATH.CONTENT.8.EE.A'],
+          prerequisites: ['Comfort with whole-number operations'],
+          estimatedHours: 120,
+          units: [
+            {
+              name: 'Whole Numbers and Integers',
+              description: 'Build confidence with place value and signed numbers.',
+              lessons: [
+                { name: 'Place value and order of operations', estimatedHours: 1.25 },
+                { name: 'Adding and subtracting integers', estimatedHours: 1.5 },
+              ],
+            },
+            {
+              name: 'Fractions, Decimals, and Percent',
+              description: 'Equivalent forms and real-world applications.',
+              lessons: [
+                { name: 'Fraction operations', estimatedHours: 1.5 },
+                { name: 'Percents in everyday budgeting', estimatedHours: 1.25 },
+              ],
+            },
+          ],
+        }),
+      },
+    ],
+  },
+  'ck-12': {
+    summary: {
+      source: 'ck-12',
+      name: 'CK-12',
+      description: 'Flexible FlexBooks with modular lessons, interactives, and standards tags.',
+      website_url: 'https://www.ck12.org/',
+      provider: 'CK-12 Foundation',
+      search_hint: 'earth science',
+      subjects: ['Science', 'Math', 'Technology'],
+      grade_levels: ['4', '5', '6', '7', '8'],
+    },
+    items: [
+      {
+        item_id: 'middle-school-earth-science',
+        title: 'Middle School Earth Science',
+        description: 'Earth systems, weather, and space science arranged into middle school modules.',
+        subject: 'Science',
+        grade_levels: ['6', '7', '8'],
+        document: buildSourceDocument({
+          source: 'ck-12',
+          name: 'Middle School Earth Science',
+          description: 'Earth systems content with short readings and hands-on observations.',
+          gradeLevels: ['6', '7', '8'],
+          subject: 'Science',
+          standardsAlignment: ['NGSS-MS-ESS2-1', 'NGSS-MS-ESS1-1'],
+          prerequisites: ['Scientific observation notebook'],
+          estimatedHours: 96,
+          units: [
+            {
+              name: 'Earth Materials and Processes',
+              lessons: [
+                { name: 'Rocks and minerals', estimatedHours: 1.25 },
+                { name: 'Plate boundaries', estimatedHours: 1.5 },
+              ],
+            },
+            {
+              name: 'Weather and Climate',
+              lessons: [
+                { name: 'Reading weather maps', estimatedHours: 1 },
+                { name: 'Climate zones and patterns', estimatedHours: 1.5 },
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        item_id: 'life-science-concepts',
+        title: 'Life Science Concepts',
+        description: 'Adaptable life-science overview with checkpoints and family discussion prompts.',
+        subject: 'Science',
+        grade_levels: ['5', '6', '7'],
+        document: buildSourceDocument({
+          source: 'ck-12',
+          name: 'Life Science Concepts',
+          description: 'Build a flexible homeschool life-science sequence with bite-size lessons.',
+          gradeLevels: ['5', '6', '7'],
+          subject: 'Science',
+          standardsAlignment: ['NGSS-MS-LS1-5', 'NGSS-MS-LS4-4'],
+          prerequisites: ['Basic note-taking'],
+          estimatedHours: 90,
+          units: [
+            {
+              name: 'Cells and Organisms',
+              lessons: [
+                { name: 'Cell basics', estimatedHours: 1.25 },
+                { name: 'Body systems overview', estimatedHours: 1.5 },
+              ],
+            },
+            {
+              name: 'Ecosystems and Adaptations',
+              lessons: [
+                { name: 'Food webs', estimatedHours: 1.25 },
+                { name: 'Traits and adaptation', estimatedHours: 1.25 },
+              ],
+            },
+          ],
+        }),
+      },
+    ],
+  },
+  coreknowledge: {
+    summary: {
+      source: 'coreknowledge',
+      name: 'Core Knowledge',
+      description: 'Knowledge-building units spanning history, literature, and science for elementary grades.',
+      website_url: 'https://www.coreknowledge.org/',
+      provider: 'Core Knowledge Foundation',
+      search_hint: 'history',
+      subjects: ['History', 'Language Arts', 'Science'],
+      grade_levels: ['1', '2', '3', '4', '5'],
+    },
+    items: [
+      {
+        item_id: 'ancient-civilizations',
+        title: 'Ancient Civilizations',
+        description: 'Elementary history unit set covering Mesopotamia, Egypt, Greece, and Rome.',
+        subject: 'History',
+        grade_levels: ['3', '4', '5'],
+        document: buildSourceDocument({
+          source: 'coreknowledge',
+          name: 'Ancient Civilizations',
+          description: 'Story-rich world history sequence with map work and narration prompts.',
+          gradeLevels: ['3', '4', '5'],
+          subject: 'History',
+          standardsAlignment: ['NCSS.D2.His.1.3-5'],
+          prerequisites: ['Map basics'],
+          estimatedHours: 72,
+          units: [
+            {
+              name: 'Ancient River Valley Civilizations',
+              lessons: [
+                { name: 'Mesopotamia and the first cities', estimatedHours: 1.25 },
+                { name: 'Ancient Egypt and the Nile', estimatedHours: 1.5 },
+              ],
+            },
+            {
+              name: 'Classical Civilizations',
+              lessons: [
+                { name: 'Greek myths and city-states', estimatedHours: 1.5 },
+                { name: 'Rome and civic life', estimatedHours: 1.25 },
+              ],
+            },
+          ],
+        }),
+      },
+    ],
+  },
+}
+
+function buildSourceResults(source: string, items: MockSourceCatalogItem[]): CurriculumSourceSearchResult[] {
+  return items.map((item) => ({
+    source,
+    item_id: item.item_id,
+    title: item.title,
+    description: item.description,
+    subject: item.subject,
+    grade_levels: item.grade_levels,
+  }))
+}
+
+function mergeExternalSourceMetadata(
+  document: CurriculumImportDocument | Record<string, unknown>,
+  externalSource: Record<string, unknown>,
+) {
+  const clone = cloneDocument(document)
+  const currentMetadata: Record<string, unknown> =
+    'metadata' in clone && clone.metadata && typeof clone.metadata === 'object' && !Array.isArray(clone.metadata)
+      ? (clone.metadata as Record<string, unknown>)
+      : {}
+  const currentExternalSource =
+    currentMetadata.external_source && typeof currentMetadata.external_source === 'object' && !Array.isArray(currentMetadata.external_source)
+      ? (currentMetadata.external_source as Record<string, unknown>)
+      : {}
+
+  return {
+    ...clone,
+    metadata: {
+      ...currentMetadata,
+      external_source: {
+        ...currentExternalSource,
+        ...externalSource,
+      },
+    },
+  }
+}
+
+function titleFromLabel(label: string) {
+  const base = label.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!base) return 'Uploaded curriculum draft'
+  return base
+    .split(' ')
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(' ')
+}
+
+async function readAiPayloadLabel(payload: FormData | { url: string }) {
+  if (payload instanceof FormData) {
+    const fileValue = payload.get('file')
+    if (fileValue instanceof File) {
+      return { label: fileValue.name, sourceUrl: null as string | null }
+    }
+
+    const urlValue = payload.get('url')
+    if (typeof urlValue === 'string' && urlValue.trim()) {
+      return { label: urlValue.trim(), sourceUrl: urlValue.trim() }
+    }
+  }
+
+  if (!(payload instanceof FormData) && typeof payload.url === 'string' && payload.url.trim()) {
+    return { label: payload.url.trim(), sourceUrl: payload.url.trim() }
+  }
+
+  throw new Error('Choose a document or paste a URL to continue.')
+}
+
+async function buildAiDraft(payload: FormData | { url: string }): Promise<CurriculumAiImportDraftResponse> {
+  const { label, sourceUrl } = await readAiPayloadLabel(payload)
+  const title = titleFromLabel(label)
+  const document = mergeExternalSourceMetadata(
+    buildSourceDocument({
+      source: 'ai-import',
+      name: `${title} Draft`,
+      description: `AI-generated draft based on ${sourceUrl ? 'the provided URL' : 'your uploaded document'}. Review the outline before importing.`,
+      gradeLevels: ['6', '7'],
+      subject: 'Interdisciplinary Studies',
+      standardsAlignment: ['Family-defined standards review'],
+      prerequisites: ['Parent review recommended'],
+      estimatedHours: 48,
+      units: [
+        {
+          name: 'Scope and Sequence',
+          description: 'Suggested sequence distilled from the uploaded material.',
+          lessons: [
+            { name: 'Big ideas and themes', estimatedHours: 1.25 },
+            { name: 'Vocabulary and routines', estimatedHours: 1 },
+          ],
+        },
+        {
+          name: 'Projects and Assessments',
+          description: 'Project milestones and review checkpoints inferred from the source.',
+          lessons: [
+            { name: 'Practice and discussion checkpoints', estimatedHours: 1.25 },
+            { name: 'Portfolio or mastery assessment', estimatedHours: 1.5 },
+          ],
+        },
+      ],
+    }),
+    {
+      input_label: label,
+      source_url: sourceUrl,
+      extraction_mode: sourceUrl ? 'url' : 'file',
+    },
+  )
+
+  return {
+    draft: document,
+    source_label: sourceUrl ? 'Curriculum web page' : label,
+    warnings: [
+      'This is a generated draft. Review unit names, grade levels, and estimated hours before importing.',
+    ],
+    metadata: {
+      mock: true,
+    },
+  }
+}
+
+function getConfirmDraft(payload: CurriculumAiImportConfirmPayload) {
+  return mergeExternalSourceMetadata(payload.draft, {
+    source_url: payload.source_url,
+    confirmed_via: 'ai-import',
+  })
+}
+
 export const curriculumImportMockApi = {
   async list() {
     const store = readStore()
@@ -261,5 +683,55 @@ export const curriculumImportMockApi = {
 
   async schema() {
     return buildSchema()
+  },
+
+  async sources() {
+    return Object.values(MOCK_SOURCE_CATALOG)
+      .map((entry) => cloneDocument(entry.summary))
+      .sort((left, right) => left.name.localeCompare(right.name))
+  },
+
+  async search(source: string, query: string) {
+    const catalog = MOCK_SOURCE_CATALOG[source]
+    if (!catalog) {
+      throw new Error('This curriculum source is unavailable right now.')
+    }
+
+    const term = query.trim().toLowerCase()
+    const items = !term
+      ? catalog.items
+      : catalog.items.filter((item) =>
+          [item.title, item.description, item.subject, item.grade_levels.join(' ')]
+            .join(' ')
+            .toLowerCase()
+            .includes(term),
+        )
+
+    return buildSourceResults(source, items)
+  },
+
+  async importFromSource(source: string, itemId: string) {
+    const catalog = MOCK_SOURCE_CATALOG[source]
+    const item = catalog?.items.find((candidate) => candidate.item_id === itemId)
+    if (!catalog || !item) {
+      throw new Error('Unable to import that curriculum item right now.')
+    }
+
+    return this.import(
+      mergeExternalSourceMetadata(item.document, {
+        provider: catalog.summary.name,
+        item_id: itemId,
+        title: item.title,
+        website_url: catalog.summary.website_url,
+      }),
+    )
+  },
+
+  async aiImportDraft(payload: FormData | { url: string }) {
+    return buildAiDraft(payload)
+  },
+
+  async confirmAiImport(payload: CurriculumAiImportConfirmPayload) {
+    return this.import(getConfirmDraft(payload))
   },
 }

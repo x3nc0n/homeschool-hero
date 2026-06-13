@@ -40,9 +40,13 @@ import type {
   CurriculumLesson,
   CurriculumImportActivationPayload,
   CurriculumImportActivationResponse,
+  CurriculumAiImportConfirmPayload,
+  CurriculumAiImportDraftResponse,
   CurriculumImportDetail,
   CurriculumImportDocument,
   CurriculumImportSchema,
+  CurriculumSourceSearchResult,
+  CurriculumSourceSummary,
   CurriculumImportSummary,
   CurriculumPackage,
   CurriculumPackageDetail,
@@ -843,6 +847,45 @@ export const api = {
     return withCurriculumImportFallback(
       () => request<CurriculumImportSchema>('/curriculum/schema'),
       () => curriculumImportMockApi.schema(),
+    )
+  },
+
+  listCurriculumSources() {
+    return withCurriculumImportFallback(
+      () => request<CurriculumSourceSummary[]>('/curriculum/sources'),
+      () => curriculumImportMockApi.sources(),
+    )
+  },
+
+  searchCurriculumSource(source: string, query: string) {
+    return withCurriculumImportFallback(
+      () => request<CurriculumSourceSearchResult[]>(`/curriculum/sources/${encodeURIComponent(source)}/search?q=${encodeURIComponent(query)}`),
+      () => curriculumImportMockApi.search(source, query),
+    )
+  },
+
+  importCurriculumSource(source: string, itemId: string) {
+    return withCurriculumImportFallback(
+      () => request<CurriculumImportDetail>(`/curriculum/sources/${encodeURIComponent(source)}/import/${encodeURIComponent(itemId)}`, { method: 'POST' }),
+      () => curriculumImportMockApi.importFromSource(source, itemId),
+    )
+  },
+
+  createCurriculumAiImportDraft(payload: FormData | { url: string }) {
+    return withCurriculumImportFallback(
+      () =>
+        request<CurriculumAiImportDraftResponse>('/curriculum/ai-import', {
+          method: 'POST',
+          body: payload instanceof FormData ? payload : JSON.stringify(payload),
+        }),
+      () => curriculumImportMockApi.aiImportDraft(payload),
+    )
+  },
+
+  confirmCurriculumAiImport(payload: CurriculumAiImportConfirmPayload) {
+    return withCurriculumImportFallback(
+      () => request<CurriculumImportDetail>('/curriculum/ai-import/confirm', { method: 'POST', body: JSON.stringify(payload) }),
+      () => curriculumImportMockApi.confirmAiImport(payload),
     )
   },
 

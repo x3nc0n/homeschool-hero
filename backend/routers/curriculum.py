@@ -7,12 +7,14 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.config import settings
 from backend.database import get_db
+from backend.i18n import build_error_payload
 from backend.models import (
     Assignment,
     AssignmentCategory,
@@ -31,12 +33,16 @@ from backend.models import (
     Subject,
 )
 from backend.schemas.curriculum import (
+    CurriculumAIImportConfirmRequest,
+    CurriculumAIImportRead,
     CloneCurriculumPackageRequest,
     CurriculumImportActivationRead,
     CurriculumImportActivationRequest,
     CurriculumImportDocument,
     CurriculumImportRead,
     CurriculumImportSummaryRead,
+    CurriculumSourceRead,
+    CurriculumSourceSearchRead,
     CurriculumLessonCreate,
     CurriculumLessonRead,
     CurriculumLessonUpdate,
@@ -53,6 +59,18 @@ from backend.schemas.curriculum import (
 )
 from backend.security import AuthSession, get_family_record
 from backend.services.authorization import AppRole, Capability, require_any_role, require_capabilities, require_teacher
+from backend.services.curriculum_ai_import import (
+    AIImportError,
+    AIImportUnavailable,
+    get_ai_curriculum_import_service,
+)
+from backend.services.curriculum_imports import create_imported_curriculum, imported_curriculum_load_options
+from backend.services.curriculum_sources import (
+    CurriculumSourceError,
+    CurriculumSourceUnavailable,
+    get_curriculum_source,
+    list_curriculum_sources,
+)
 from backend.validation import sanitize_filename
 
 router = APIRouter(tags=['curriculum'])
@@ -67,11 +85,7 @@ def _package_options():
 
 
 def _curriculum_import_options():
-    return (
-        selectinload(ImportedCurriculum.subjects)
-        .selectinload(ImportedCurriculumSubject.units)
-        .selectinload(ImportedCurriculumUnit.lessons),
-    )
+    return imported_curriculum_load_options()
 
 
 async def _ensure_unique_package_name(
@@ -206,6 +220,95 @@ async def _parse_resource_create_payload(request: Request) -> tuple[ResourceUpse
     return ResourceUpsert.model_validate(await _parse_request_json(request)), None
 
 
+async def _create_imported_curriculum_response(
+    db: AsyncSession,
+    *,
+    auth: AuthSession,
+    payload: CurriculumImportDocument,
+) -> ImportedCurriculum:
+    try:
+        created = await create_imported_curriculum(
+            db,
+            family_id=auth.family_id,
+            user_id=auth.user_id,
+            payload=payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return await _get_imported_curriculum_or_404(db, created.id, auth.family_id)
+
+
+async def _parse_ai_import_request(request: Request) -> tuple[object | None, str | None]:
+    content_type = request.headers.get('content-type', '').lower()
+    if 'multipart/form-data' in content_type:
+        form = await request.form()
+        upload = form.get('file')
+        url = form.get('url')
+    else:
+        payload = await _parse_request_json(request)
+        upload = None
+        url = payload.get('url')
+    normalized_url = url.strip() if isinstance(url, str) and url.strip() else None
+    has_upload = upload is not None
+    if has_upload == bool(normalized_url):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Provide exactly one source for AI import: either a file upload or a URL.',
+        )
+    return upload, normalized_url
+
+
+def _curriculum_source_to_read(source) -> CurriculumSourceRead:
+    availability = source.availability()
+    return CurriculumSourceRead(
+        id=source.source_id,
+        name=source.display_name,
+        description=source.description,
+        enabled=availability.enabled,
+        configuration_required=availability.configuration_required,
+        detail=availability.detail,
+    )
+
+
+def _curriculum_source_search_to_read(search_page) -> CurriculumSourceSearchRead:
+    return CurriculumSourceSearchRead(
+        source=search_page.source,
+        query=search_page.query,
+        page=search_page.page,
+        page_size=search_page.page_size,
+        total_count=search_page.total_count,
+        has_more=search_page.has_more,
+        items=[
+            {
+                'id': item.id,
+                'title': item.title,
+                'description': item.description,
+                'subjects': item.subjects,
+                'grade_levels': item.grade_levels,
+                'url': item.url,
+                'image_url': item.image_url,
+                'license_name': item.license_name,
+                'metadata': item.metadata,
+            }
+            for item in search_page.items
+        ],
+    )
+
+
+def _service_unavailable_response(request: Request, *, detail: str, code: str) -> JSONResponse:
+    locale = getattr(request.state, 'locale', 'en')
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=build_error_payload(
+            detail,
+            locale=locale,
+            requested_locale=request.headers.get('accept-language'),
+            fallback_code=code,
+            fallback_message=detail,
+        ),
+    )
+
+
 def _validate_resource_file(resource_type: ResourceType, file_obj: object | None) -> None:
     if resource_type == ResourceType.file and file_obj is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='File resources require an uploaded file')
@@ -303,84 +406,112 @@ async def get_curriculum_import_schema(
     return CurriculumImportDocument.model_json_schema()
 
 
+@router.get('/curriculum/sources', response_model=list[CurriculumSourceRead])
+async def list_curriculum_source_connectors(
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='view curriculum sources')),
+) -> list[CurriculumSourceRead]:
+    del auth
+    return [_curriculum_source_to_read(source) for source in list_curriculum_sources()]
+
+
+@router.get('/curriculum/sources/{source_id}/search', response_model=CurriculumSourceSearchRead)
+async def search_curriculum_source(
+    request: Request,
+    source_id: str,
+    q: str = Query(min_length=1, max_length=200),
+    page: int = Query(default=1, ge=1, le=1000),
+    page_size: int = Query(default=10, ge=1, le=50),
+    auth: AuthSession = Depends(require_capabilities(Capability.read_curriculum, action='search curriculum sources')),
+) -> CurriculumSourceSearchRead:
+    del auth
+    source = get_curriculum_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Curriculum source not found')
+    availability = source.availability()
+    if not availability.enabled:
+        return _service_unavailable_response(
+            request,
+            detail=availability.detail or 'Curriculum source is unavailable',
+            code='curriculum_source_unavailable',
+        )
+    try:
+        search_page = await source.search(q, page=page, page_size=page_size)
+    except CurriculumSourceUnavailable as exc:
+        return _service_unavailable_response(request, detail=str(exc), code='curriculum_source_unavailable')
+    except CurriculumSourceError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return _curriculum_source_search_to_read(search_page)
+
+
+@router.post('/curriculum/sources/{source_id}/import/{item_id}', response_model=CurriculumImportRead, status_code=status.HTTP_201_CREATED)
+async def import_curriculum_from_source(
+    request: Request,
+    source_id: str,
+    item_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='import curriculum from source')),
+) -> ImportedCurriculum:
+    source = get_curriculum_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Curriculum source not found')
+    availability = source.availability()
+    if not availability.enabled:
+        return _service_unavailable_response(
+            request,
+            detail=availability.detail or 'Curriculum source is unavailable',
+            code='curriculum_source_unavailable',
+        )
+    try:
+        raw_data = await source.fetch(item_id)
+        payload = source.convert_to_standard_format(raw_data)
+    except CurriculumSourceUnavailable as exc:
+        return _service_unavailable_response(request, detail=str(exc), code='curriculum_source_unavailable')
+    except CurriculumSourceError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return await _create_imported_curriculum_response(db, auth=auth, payload=payload)
+
+
+@router.post('/curriculum/ai-import', response_model=CurriculumAIImportRead)
+async def draft_curriculum_from_ai_import(
+    request: Request,
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='draft AI curriculum import')),
+) -> CurriculumAIImportRead:
+    del auth
+    upload, url = await _parse_ai_import_request(request)
+    service = get_ai_curriculum_import_service()
+    try:
+        if upload is not None:
+            draft, extracted = await service.build_draft_from_upload(upload)
+        else:
+            draft, extracted = await service.build_draft_from_url(url or '')
+    except AIImportUnavailable as exc:
+        return _service_unavailable_response(request, detail=str(exc), code='ai_import_unavailable')
+    except AIImportError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return CurriculumAIImportRead(
+        draft=draft,
+        source_kind=extracted.source_kind,
+        source_name=extracted.source_name,
+        warnings=extracted.warnings or [],
+    )
+
+
+@router.post('/curriculum/ai-import/confirm', response_model=CurriculumImportRead, status_code=status.HTTP_201_CREATED)
+async def confirm_ai_curriculum_import(
+    payload: CurriculumAIImportConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='confirm AI curriculum import')),
+) -> ImportedCurriculum:
+    return await _create_imported_curriculum_response(db, auth=auth, payload=payload.draft)
+
+
 @router.post('/curriculum/import', response_model=CurriculumImportRead, status_code=status.HTTP_201_CREATED)
 async def import_curriculum(
     payload: CurriculumImportDocument,
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='import curriculum')),
 ) -> ImportedCurriculum:
-    duplicate = (
-        await db.execute(
-            select(ImportedCurriculum).where(
-                ImportedCurriculum.family_id == auth.family_id,
-                ImportedCurriculum.name == payload.name,
-            )
-        )
-    ).scalar_one_or_none()
-    if duplicate:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Imported curriculum already exists')
-
-    curriculum = ImportedCurriculum(
-        family_id=auth.family_id,
-        created_by_user_id=auth.user_id,
-        name=payload.name,
-        description=payload.description,
-        source=payload.source,
-        schema_version=payload.schema_version,
-        grade_levels=payload.metadata.grade_levels,
-        standards_alignment=payload.metadata.standards_alignment,
-        estimated_hours=payload.metadata.estimated_hours,
-        prerequisites=payload.metadata.prerequisites,
-        curriculum_metadata=payload.metadata.model_dump(mode='json'),
-        payload=payload.model_dump(mode='json'),
-    )
-    db.add(curriculum)
-    await db.flush()
-
-    for subject_index, subject_payload in enumerate(payload.subjects, start=1):
-        subject = ImportedCurriculumSubject(
-            curriculum_id=curriculum.id,
-            name=subject_payload.name,
-            description=subject_payload.description,
-            sequence_order=subject_index,
-            grade_levels=subject_payload.metadata.grade_levels,
-            standards_alignment=subject_payload.metadata.standards_alignment,
-            estimated_hours=subject_payload.metadata.estimated_hours,
-            prerequisites=subject_payload.metadata.prerequisites,
-            subject_metadata=subject_payload.metadata.model_dump(mode='json'),
-        )
-        db.add(subject)
-        await db.flush()
-        for unit_index, unit_payload in enumerate(subject_payload.units, start=1):
-            unit = ImportedCurriculumUnit(
-                subject_id=subject.id,
-                name=unit_payload.name,
-                description=unit_payload.description,
-                sequence_order=unit_index,
-                standards_alignment=unit_payload.metadata.standards_alignment,
-                estimated_hours=unit_payload.metadata.estimated_hours,
-                prerequisites=unit_payload.metadata.prerequisites,
-                unit_metadata=unit_payload.metadata.model_dump(mode='json'),
-            )
-            db.add(unit)
-            await db.flush()
-            for lesson_index, lesson_payload in enumerate(unit_payload.lessons, start=1):
-                lesson = ImportedCurriculumLesson(
-                    unit_id=unit.id,
-                    name=lesson_payload.name,
-                    description=lesson_payload.description,
-                    sequence_order=lesson_index,
-                    estimated_minutes=lesson_payload.estimated_minutes,
-                    objectives=lesson_payload.objectives,
-                    resources=[item.model_dump(mode='json') for item in lesson_payload.resources],
-                    standards_alignment=lesson_payload.metadata.standards_alignment,
-                    prerequisites=lesson_payload.metadata.prerequisites,
-                    lesson_metadata=lesson_payload.metadata.model_dump(mode='json'),
-                )
-                db.add(lesson)
-
-    await db.commit()
-    return await _get_imported_curriculum_or_404(db, curriculum.id, auth.family_id)
+    return await _create_imported_curriculum_response(db, auth=auth, payload=payload)
 
 
 @router.get('/curriculum', response_model=list[CurriculumImportSummaryRead])
