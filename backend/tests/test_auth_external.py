@@ -308,7 +308,7 @@ async def test_oidc_login_redirects_to_login_when_discovery_is_unreachable(async
     response = await async_client.get(AUTH['oidc_login'])
 
     assert response.status_code == 302
-    assert 'OIDC%20sign-in%20is%20unavailable%3A%20provider%20discovery%20endpoint%20is%20unreachable' in response.headers['location']
+    assert 'OIDC%20sign-in%20is%20temporarily%20unavailable' in response.headers['location']
     assert 'OIDC login initiation failed.' in caplog.text
 
 
@@ -345,7 +345,7 @@ async def test_oidc_verify_reports_unreachable_discovery(async_client, monkeypat
     assert response.json() == {
         'configured': True,
         'reachable': False,
-        'message': 'OIDC sign-in is unavailable: provider discovery endpoint is unreachable',
+        'message': 'OIDC provider discovery endpoint is unreachable.',
         'discovery_url': 'https://idp.example/.well-known/openid-configuration',
         'issuer': None,
         'authorization_endpoint': None,

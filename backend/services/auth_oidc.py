@@ -288,11 +288,11 @@ async def verify_oidc_configuration() -> dict[str, Any]:
     discovery_url = (settings.oidc_discovery_url or '').strip() or None
     try:
         _ensure_oidc_enabled()
-    except OIDCConfigurationError as exc:
+    except OIDCConfigurationError:
         return {
             'configured': False,
             'reachable': False,
-            'message': str(exc),
+            'message': 'OIDC is not configured.',
             'discovery_url': discovery_url,
             'issuer': None,
             'authorization_endpoint': None,
@@ -304,10 +304,11 @@ async def verify_oidc_configuration() -> dict[str, Any]:
             response.raise_for_status()
             metadata = response.json()
     except Exception as exc:
+        logger.warning('OIDC discovery failed: %s', exc)
         return {
             'configured': True,
             'reachable': False,
-            'message': _oidc_login_error_message(exc),
+            'message': 'OIDC provider discovery endpoint is unreachable.',
             'discovery_url': discovery_url,
             'issuer': None,
             'authorization_endpoint': None,
