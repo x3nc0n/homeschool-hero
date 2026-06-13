@@ -611,3 +611,45 @@ class CurriculumImportActivationRead(BaseModel):
     assignment_ids: list[int] = Field(default_factory=list)
     generated_assignments: bool
     activated_at: datetime
+
+
+class CurriculumSourceRead(BaseModel):
+    id: str
+    name: str
+    description: str
+    enabled: bool
+    configuration_required: bool = False
+    detail: str | None = None
+
+
+class CurriculumSourceItemRead(BaseModel):
+    id: str
+    title: str
+    description: str | None = None
+    subjects: list[str] = Field(default_factory=list)
+    grade_levels: list[str] = Field(default_factory=list)
+    url: str | None = None
+    image_url: str | None = None
+    license_name: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CurriculumSourceSearchRead(BaseModel):
+    source: str
+    query: str
+    page: int
+    page_size: int
+    total_count: int
+    has_more: bool
+    items: list[CurriculumSourceItemRead] = Field(default_factory=list)
+
+
+class CurriculumAIImportRead(BaseModel):
+    draft: CurriculumImportDocument
+    source_kind: str
+    source_name: str
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CurriculumAIImportConfirmRequest(BaseModel):
+    draft: CurriculumImportDocument
