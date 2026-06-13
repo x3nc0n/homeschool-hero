@@ -335,13 +335,33 @@ async def test_health_endpoint_500_does_not_expose_stack_trace(app, monkeypatch)
     async with AsyncClient(transport=transport, base_url='http://testserver') as client:
         response = await client.get('/api/health')
 
-    # Health endpoint may return 500 or 503 on unexpected failure — either is a server error.
-    assert response.status_code in {500, 503}, response.text
+    assert response.status_code == 503, response.text
     assert 'Traceback' not in response.text
     assert 'password=secret123' not in response.text
     assert '10.0.0.5' not in response.text
     # Runtime exception details must not appear in any form in the response body.
     assert 'RuntimeError' not in response.text
+    assert response.json() == {'status': 'unhealthy'}
+
+
+async def test_health_alias_500_does_not_expose_stack_trace(app, monkeypatch):
+    import backend.main as main_module
+
+    async def _broken(*args, **kwargs):
+        raise RuntimeError('db password=secret123 host=10.0.0.5')
+
+    monkeypatch.setattr(main_module, 'build_simple_health_payload', _broken)
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url='http://testserver') as client:
+        response = await client.get('/health')
+
+    assert response.status_code == 500, response.text
+    assert 'Traceback' not in response.text
+    assert 'password=secret123' not in response.text
+    assert '10.0.0.5' not in response.text
+    assert 'RuntimeError' not in response.text
+    assert response.json() == {'detail': 'Internal server error'}
 
 
 async def test_error_response_never_contains_internal_file_path(app, monkeypatch):
