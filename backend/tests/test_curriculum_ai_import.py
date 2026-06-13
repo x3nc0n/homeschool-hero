@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from io import BytesIO
 import json
+import socket
 
 import httpx
 import pytest
 from docx import Document as DocxDocument
 from reportlab.pdfgen import canvas
 
-from backend.services.curriculum_ai_import import AIImportError, AICurriculumImportService
+from backend.services.curriculum_ai_import import AIImportError, AICurriculumImportService, ExtractedSource
 from tests.contracts import CURRICULUM
 from tests.helpers import response_id
 
@@ -172,3 +173,47 @@ def test_ai_import_service_rejects_unsupported_file_types():
             source_kind='file',
             source_name='curriculum.xml',
         )
+
+
+def test_ai_import_service_rejects_non_public_urls():
+    service = AICurriculumImportService()
+
+    with pytest.raises(AIImportError, match='valid http or https URL'):
+        service._parse_http_url('file:///etc/passwd', error_message='AI import URL must be a valid http or https URL')
+
+    with pytest.raises(AIImportError, match='public host'):
+        service._ensure_public_hostname('127.0.0.1')
+
+
+def test_ai_import_service_rejects_hostnames_that_resolve_to_private_ips(monkeypatch):
+    service = AICurriculumImportService()
+
+    def _fake_getaddrinfo(hostname, port, type=0):  # noqa: ARG001
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('192.168.1.10', 0))]
+
+    monkeypatch.setattr('backend.services.curriculum_ai_import.socket.getaddrinfo', _fake_getaddrinfo)
+
+    with pytest.raises(AIImportError, match='public host'):
+        service._ensure_public_hostname('curriculum.example.com')
+
+
+def test_ai_import_service_uses_urlparse_for_endpoint_detection(monkeypatch):
+    service = AICurriculumImportService()
+    monkeypatch.setattr('backend.config.settings.ai_import_api_key', 'test-key', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_endpoint', 'https://school.openai.azure.com/openai/deployments/draft/chat/completions', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_model', 'ignored-model', raising=False)
+
+    extracted = ExtractedSource(
+        source_kind='url',
+        source_name='scope.txt',
+        content_type='text/plain',
+        text='Algebra scope and sequence',
+        source_url='https://example.com/scope.txt',
+        warnings=[],
+    )
+
+    headers = service._build_headers('https://school.openai.azure.com/openai/deployments/draft/chat/completions')
+    payload = service._build_request_payload(extracted)
+
+    assert headers == {'api-key': 'test-key', 'Content-Type': 'application/json'}
+    assert 'model' not in payload

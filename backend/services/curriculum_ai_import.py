@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import mimetypes
+import socket
 from dataclasses import dataclass
 from html import unescape
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from docx import Document as DocxDocument
@@ -21,6 +23,8 @@ from backend.schemas.curriculum import CurriculumImportDocument
 
 logger = logging.getLogger(__name__)
 AI_IMPORT_TOOL_NAME = 'create_curriculum_import'
+ALLOWED_HTTP_SCHEMES = {'http', 'https'}
+MAX_SOURCE_FETCH_REDIRECTS = 5
 SUPPORTED_FILE_TYPES = {
     'text/plain',
     'application/pdf',
@@ -86,8 +90,7 @@ class AICurriculumImportService:
 
     async def build_draft_from_url(self, url: str) -> tuple[CurriculumImportDocument, ExtractedSource]:
         self._ensure_configured()
-        normalized_url = self._normalize_url(url)
-        extracted = await self._extract_from_url(normalized_url)
+        extracted = await self._extract_from_url(url)
         return await self._build_draft(extracted)
 
     def _ensure_configured(self) -> None:
@@ -101,8 +104,8 @@ class AICurriculumImportService:
     async def _extract_from_url(self, url: str) -> ExtractedSource:
         timeout = httpx.Timeout(settings.ai_import_request_timeout_seconds)
         try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-                response = await client.get(url)
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+                response = await self._fetch_validated_source_url(client, url)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AIImportError(f'Unable to fetch the provided URL: {exc}') from exc
@@ -223,11 +226,69 @@ class AICurriculumImportService:
         parser.feed(html)
         return unescape(parser.text())
 
-    def _normalize_url(self, url: str) -> str:
-        parsed = urlparse(url.strip())
-        if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
-            raise AIImportError('AI import URL must be a valid http or https URL')
-        return url.strip()
+    async def _fetch_validated_source_url(self, client: httpx.AsyncClient, url: str) -> httpx.Response:
+        current_url = url
+        for redirect_count in range(MAX_SOURCE_FETCH_REDIRECTS + 1):
+            normalized_url, parsed = self._parse_http_url(
+                current_url,
+                error_message='AI import URL must be a valid http or https URL',
+            )
+            self._ensure_public_hostname(parsed.hostname or '')
+            response = await client.get(normalized_url)
+            if not response.is_redirect:
+                return response
+
+            redirect_target = response.headers.get('location')
+            if not redirect_target:
+                return response
+            if redirect_count >= MAX_SOURCE_FETCH_REDIRECTS:
+                break
+            current_url = urljoin(str(response.url), redirect_target)
+
+        raise AIImportError('AI import URL exceeded the maximum allowed redirects')
+
+    def _parse_http_url(self, url: str, *, error_message: str) -> tuple[str, Any]:
+        normalized_url = (url or '').strip()
+        parsed = urlparse(normalized_url)
+        if parsed.scheme not in ALLOWED_HTTP_SCHEMES or not parsed.netloc or not parsed.hostname:
+            raise AIImportError(error_message)
+        return normalized_url, parsed
+
+    def _ensure_public_hostname(self, hostname: str) -> None:
+        resolved_addresses = self._resolve_hostname_addresses(hostname)
+        if any(self._is_disallowed_network_address(address) for address in resolved_addresses):
+            raise AIImportError('AI import URL must resolve to a public host')
+
+    def _resolve_hostname_addresses(self, hostname: str) -> set[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+        try:
+            return {ipaddress.ip_address(hostname)}
+        except ValueError:
+            pass
+
+        try:
+            addrinfo = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise AIImportError('AI import URL must include a resolvable hostname') from exc
+
+        resolved_addresses: set[ipaddress.IPv4Address | ipaddress.IPv6Address] = set()
+        for _family, _socktype, _proto, _canonname, sockaddr in addrinfo:
+            try:
+                resolved_addresses.add(ipaddress.ip_address(sockaddr[0]))
+            except ValueError:
+                continue
+        if not resolved_addresses:
+            raise AIImportError('AI import URL must include a resolvable hostname')
+        return resolved_addresses
+
+    def _is_disallowed_network_address(self, address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+        return (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_multicast
+            or address.is_reserved
+            or address.is_unspecified
+        )
 
     async def _build_draft(self, extracted: ExtractedSource) -> tuple[CurriculumImportDocument, ExtractedSource]:
         payload = await self._call_ai_parser(extracted)
@@ -274,7 +335,16 @@ class AICurriculumImportService:
         raise AIImportError(f'AI curriculum import failed: {last_error}')
 
     def _build_headers(self, endpoint: str) -> dict[str, str]:
-        if 'openai.azure.com' in endpoint or '/openai/deployments/' in endpoint:
+        _, parsed_endpoint = self._parse_http_url(
+            endpoint,
+            error_message='AI import endpoint must be a valid http or https URL',
+        )
+        endpoint_host = (parsed_endpoint.hostname or '').lower()
+        is_azure_openai_endpoint = (
+            (endpoint_host == 'openai.azure.com' or endpoint_host.endswith('.openai.azure.com'))
+            and parsed_endpoint.path.startswith('/openai/deployments/')
+        )
+        if is_azure_openai_endpoint:
             return {'api-key': settings.ai_import_api_key.strip(), 'Content-Type': 'application/json'}
         return {
             'Authorization': f'Bearer {settings.ai_import_api_key.strip()}',
@@ -309,7 +379,16 @@ class AICurriculumImportService:
             'tool_choice': {'type': 'function', 'function': {'name': AI_IMPORT_TOOL_NAME}},
         }
         endpoint = settings.ai_import_endpoint.strip()
-        if 'openai.azure.com' not in endpoint and '/openai/deployments/' not in endpoint:
+        _, parsed_endpoint = self._parse_http_url(
+            endpoint,
+            error_message='AI import endpoint must be a valid http or https URL',
+        )
+        endpoint_host = (parsed_endpoint.hostname or '').lower()
+        is_azure_openai_endpoint = (
+            (endpoint_host == 'openai.azure.com' or endpoint_host.endswith('.openai.azure.com'))
+            and parsed_endpoint.path.startswith('/openai/deployments/')
+        )
+        if not is_azure_openai_endpoint:
             payload['model'] = settings.ai_import_model
         return payload
 

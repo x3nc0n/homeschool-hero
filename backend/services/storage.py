@@ -162,8 +162,14 @@ def store_submission_file(
     safe_destination = os.path.realpath(os.fspath(destination))
     if not (safe_destination == upload_root_real or safe_destination.startswith(upload_root_prefix)):
         raise ValueError('Path traversal detected')
-    os.makedirs(os.path.dirname(safe_destination), exist_ok=True)
-    with open(safe_destination, 'wb') as output_file:
+    safe_directory = os.path.realpath(os.path.dirname(safe_destination))
+    if not (safe_directory == upload_root_real or safe_directory.startswith(upload_root_prefix)):
+        raise ValueError('Path traversal detected')
+    os.makedirs(safe_directory, exist_ok=True)
+    safe_write_path = os.path.realpath(safe_destination)
+    if not (safe_write_path == upload_root_real or safe_write_path.startswith(upload_root_prefix)):
+        raise ValueError('Path traversal detected')
+    with open(safe_write_path, 'wb') as output_file:
         output_file.write(contents)
     image_width, image_height, page_count = extract_file_metadata(content_type, contents)
     return StoredUpload(
@@ -172,7 +178,7 @@ def store_submission_file(
         content_type=content_type,
         file_size_bytes=len(contents),
         relative_path=str(safe_relative_path),
-        absolute_path=safe_destination,
+        absolute_path=safe_write_path,
         image_width=image_width,
         image_height=image_height,
         page_count=page_count,
