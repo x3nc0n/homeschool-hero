@@ -164,4 +164,4 @@ async def test_oidc_failure_redirects_with_error(async_client, monkeypatch):
 
     assert response.status_code == 302
     assert response.headers['location'].startswith('/login?error=')
-    assert 'idp-failure' in response.headers['location']
+    assert 'OIDC%20sign-in%20failed' in response.headers['location']

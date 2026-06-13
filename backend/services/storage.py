@@ -159,15 +159,16 @@ def store_submission_file(
     )
     safe_relative_path, destination = _resolve_safe_upload_destination(upload_root, relative_path)
     upload_root_real, upload_root_prefix = _upload_root_parts(upload_root)
-    destination_path = os.fspath(destination)
-    safe_directory = os.path.realpath(os.path.dirname(destination_path))
-    if safe_directory != upload_root_real and not safe_directory.startswith(upload_root_prefix):
+    # CodeQL requires realpath+startswith immediately before each filesystem sink.
+    # Re-derive paths inline so the sanitized variable flows directly to the sink.
+    dir_path = os.path.realpath(os.path.join(upload_root_real, str(safe_relative_path.parent)))
+    if not (dir_path == upload_root_real or dir_path.startswith(upload_root_prefix)):
         raise ValueError('Path traversal detected')
-    os.makedirs(safe_directory, exist_ok=True)
-    safe_write_path = os.path.realpath(destination_path)
-    if safe_write_path != upload_root_real and not safe_write_path.startswith(upload_root_prefix):
+    os.makedirs(dir_path, exist_ok=True)
+    file_path = os.path.realpath(os.path.join(upload_root_real, str(safe_relative_path)))
+    if not (file_path == upload_root_real or file_path.startswith(upload_root_prefix)):
         raise ValueError('Path traversal detected')
-    with open(safe_write_path, 'wb') as output_file:
+    with open(file_path, 'wb') as output_file:
         output_file.write(contents)
     image_width, image_height, page_count = extract_file_metadata(content_type, contents)
     return StoredUpload(
@@ -176,7 +177,7 @@ def store_submission_file(
         content_type=content_type,
         file_size_bytes=len(contents),
         relative_path=str(safe_relative_path),
-        absolute_path=safe_write_path,
+        absolute_path=file_path,
         image_width=image_width,
         image_height=image_height,
         page_count=page_count,

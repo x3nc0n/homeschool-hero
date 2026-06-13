@@ -454,8 +454,7 @@ async def oidc_login(request: Request):
         return await begin_oidc_login(request)
     except Exception as exc:
         logger.exception('OIDC login initiation failed.', exc_info=exc)
-        message = str(exc) if isinstance(exc, OIDCConfigurationError) else 'OIDC sign-in is temporarily unavailable. Please try again.'
-        return _redirect_to_login_error(message)
+        return _redirect_to_login_error('OIDC sign-in is temporarily unavailable. Please try again.')
 
 
 @router.get('/oidc/verify', response_model=OIDCVerifyResponse)
@@ -479,8 +478,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         return _redirect_to_login_error(str(exc.detail))
     except Exception as exc:
         logger.exception('OIDC callback failed.', exc_info=exc)
-        message = str(exc) if isinstance(exc, OIDCConfigurationError) else 'OIDC sign-in failed. Please try again.'
-        return _redirect_to_login_error(message)
+        return _redirect_to_login_error('OIDC sign-in failed. Please try again.')
 
 
 @router.get('/saml/metadata')
