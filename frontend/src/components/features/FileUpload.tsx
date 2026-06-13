@@ -90,10 +90,10 @@ export function FileUpload({
   const [selectedStudent, setSelectedStudent] = useState<string>('')
   const [selectedAssignment, setSelectedAssignment] = useState<string>('')
   const [file, setFile] = useState<File | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string>('')
   const [previewKind, setPreviewKind] = useState<PreviewKind | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const previewSelectionId = useRef(0)
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const [progress, setProgress] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -105,16 +105,54 @@ export function FileUpload({
   }, [resubmitTarget])
 
   useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    let cancelled = false
+
+    const canvas = previewCanvasRef.current
+    if (!canvas) return
+
+    const context = canvas.getContext('2d')
+    if (!context) return
+
+    context.clearRect(0, 0, canvas.width, canvas.height)
+
+    if (!file || previewKind !== 'image' || typeof createImageBitmap !== 'function') {
+      canvas.width = 0
+      canvas.height = 0
+      return
     }
-  }, [previewUrl])
+
+    void createImageBitmap(file)
+      .then((bitmap) => {
+        if (cancelled) {
+          bitmap.close()
+          return
+        }
+
+        const maxWidth = 640
+        const maxHeight = 224
+        const scale = Math.min(1, maxWidth / bitmap.width, maxHeight / bitmap.height)
+        const width = Math.max(1, Math.round(bitmap.width * scale))
+        const height = Math.max(1, Math.round(bitmap.height * scale))
+
+        canvas.width = width
+        canvas.height = height
+        context.clearRect(0, 0, width, height)
+        context.drawImage(bitmap, 0, 0, width, height)
+        bitmap.close()
+      })
+      .catch(() => {
+        if (cancelled) return
+        canvas.width = 0
+        canvas.height = 0
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [file, previewKind])
 
   const isImage = previewKind === 'image'
   const isPdf = previewKind === 'pdf'
-  // Validate URL scheme at render time so taint analysis can confirm only blob: URLs
-  // reach the src/data HTML attributes (guards against javascript: URI injection).
-  const safePreviewUrl = previewUrl.startsWith('blob:') ? previewUrl : ''
   const visibleAssignments = useMemo(
     () =>
       assignments.filter((assignment) => {
@@ -135,8 +173,6 @@ export function FileUpload({
       setError('File exceeds the 25 MB size limit.')
       return
     }
-    if (previewUrl) URL.revokeObjectURL(previewUrl)
-    setPreviewUrl('')
     setPreviewKind(null)
     setFile(picked)
     setError('')
@@ -145,15 +181,7 @@ export function FileUpload({
     const nextPreviewKind = await getPreviewKind(picked)
     if (selectionId !== previewSelectionId.current || !nextPreviewKind) return
 
-    const objectUrl = URL.createObjectURL(picked)
-    if (!objectUrl.startsWith('blob:')) return
-    if (selectionId !== previewSelectionId.current) {
-      URL.revokeObjectURL(objectUrl)
-      return
-    }
-
     setPreviewKind(nextPreviewKind)
-    setPreviewUrl(objectUrl)
   }
 
   const handleSubmit = async () => {
@@ -179,8 +207,6 @@ export function FileUpload({
       setProgress(100)
       onUploaded(result)
       setFile(null)
-      if (previewUrl) URL.revokeObjectURL(previewUrl)
-      setPreviewUrl('')
       setPreviewKind(null)
       if (!resubmitTarget) {
         setSelectedStudent('')
@@ -316,14 +342,17 @@ export function FileUpload({
           <div className="rounded-lg border bg-muted/20 p-3 text-sm">
             <p className="font-medium">Selected: {file.name}</p>
             <p className="text-muted-foreground">{formatBytes(file.size)}</p>
-            {safePreviewUrl ? (
+            {previewKind ? (
               <div className="mt-3">
                 {isImage ? (
-                  <img alt="Submission preview" src={safePreviewUrl} className="max-h-56 rounded-md border object-contain" />
+                  <canvas
+                    ref={previewCanvasRef}
+                    aria-label="Submission preview"
+                    className="max-h-56 max-w-full rounded-md border object-contain"
+                    role="img"
+                  />
                 ) : isPdf ? (
-                  <object aria-label="PDF preview" data={safePreviewUrl} type="application/pdf" className="h-64 w-full rounded-md border">
-                    <p className="p-4 text-xs text-muted-foreground">PDF preview is unavailable in this browser.</p>
-                  </object>
+                  <p className="text-xs text-muted-foreground">PDF preview is disabled in the browser for security, but the upload is supported.</p>
                 ) : (
                   <p className="text-xs text-muted-foreground">Preview is unavailable for this file type, but the upload is supported.</p>
                 )}
