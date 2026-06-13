@@ -7,11 +7,13 @@ import type { CurriculumImportSchema, CurriculumImportSummary } from '@/types/ap
 import { formatEstimatedHours } from '@/lib/curriculumImport'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ErrorState } from '@/components/common/ErrorState'
+import { CurriculumSourceBrowser } from '@/components/features/CurriculumSourceBrowser'
 import { CurriculumImportWizard } from '@/components/features/CurriculumImportWizard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingState } from '@/components/common/LoadingState'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 function getGradeLevels(curriculum: CurriculumImportSummary) {
   return curriculum.grade_levels?.length ? curriculum.grade_levels : curriculum.metadata?.grade_levels ?? []
@@ -36,6 +38,7 @@ export function CurriculumImportLibraryPage() {
   const [activatingId, setActivatingId] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [activeTab, setActiveTab] = useState<'library' | 'sources'>('library')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -123,7 +126,7 @@ export function CurriculumImportLibraryPage() {
         <CardHeader>
           <div>
             <CardTitle>Curriculum library</CardTitle>
-            <CardDescription>Import standardized curriculum JSON, preview the structure, and activate it when your school year is ready.</CardDescription>
+            <CardDescription>Import standardized JSON, browse external sources, or use AI-assisted document parsing before activating curricula for your school year.</CardDescription>
           </div>
           {canManageCurriculum ? (
             <CardAction>
@@ -167,109 +170,122 @@ export function CurriculumImportLibraryPage() {
 
       {wizardOpen && canManageCurriculum ? <CurriculumImportWizard schema={schema} onCancel={() => setWizardOpen(false)} onImported={() => void load()} /> : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="space-y-4">
-          {curricula.length ? (
-            curricula.map((curriculum) => {
-              const gradeLevels = getGradeLevels(curriculum)
-              const estimatedHours = getEstimatedHours(curriculum)
-              const isDeleting = deletingId === curriculum.id
-              const isActivating = activatingId === curriculum.id
-              const confirmingDelete = confirmDeleteId === curriculum.id
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'library' | 'sources')} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="library">My Library</TabsTrigger>
+          <TabsTrigger value="sources">Browse Sources</TabsTrigger>
+        </TabsList>
 
-              return (
-                <Card key={curriculum.id}>
-                  <CardHeader>
-                    <div>
-                      <CardTitle>{curriculum.name}</CardTitle>
-                      <CardDescription>{curriculum.description || 'Imported curriculum ready for preview and activation.'}</CardDescription>
-                    </div>
-                    <CardAction className="flex gap-2">
-                      <Button asChild size="sm" variant="outline">
-                        <Link to={`/curriculum/${curriculum.id}`}>View details</Link>
-                      </Button>
-                      {canManageCurriculum && !curriculum.is_activated ? (
-                        <Button size="sm" disabled={isActivating} onClick={() => void handleActivate(curriculum.id)}>
-                          {isActivating ? 'Activating…' : 'Activate'}
-                        </Button>
-                      ) : null}
-                      {canManageCurriculum ? (
-                        <Button size="icon" variant="ghost" onClick={() => setConfirmDeleteId(confirmingDelete ? null : curriculum.id)}>
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Delete curriculum</span>
-                        </Button>
-                      ) : null}
-                    </CardAction>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant={curriculum.is_activated ? 'secondary' : 'outline'}>{curriculum.is_activated ? 'Activated' : 'Imported'}</Badge>
-                      {gradeLevels.map((gradeLevel) => (
-                        <Badge key={gradeLevel} variant="outline">
-                          Grade {gradeLevel}
-                        </Badge>
-                      ))}
-                    </div>
-                    <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-4">
-                      <div>
-                        <p className="font-medium text-foreground">Subjects</p>
-                        <p>{curriculum.subject_count}</p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">Units</p>
-                        <p>{curriculum.unit_count}</p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">Lessons</p>
-                        <p>{curriculum.lesson_count}</p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">Estimated hours</p>
-                        <p>{formatEstimatedHours(estimatedHours)}</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Imported {formatDate(curriculum.created_at)}{curriculum.last_activated_at ? ` · Last activated ${formatDate(curriculum.last_activated_at)}` : ''}
-                    </p>
-                  </CardContent>
-                  {confirmingDelete ? (
-                    <CardFooter className="justify-between gap-3">
-                      <p className="text-sm text-muted-foreground">Delete this curriculum from the library? This cannot be undone.</p>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setConfirmDeleteId(null)}>
-                          Cancel
-                        </Button>
-                        <Button size="sm" variant="destructive" disabled={isDeleting} onClick={() => void handleDelete(curriculum.id)}>
-                          {isDeleting ? 'Deleting…' : 'Confirm delete'}
-                        </Button>
-                      </div>
-                    </CardFooter>
-                  ) : null}
-                </Card>
-              )
-            })
-          ) : (
-            <EmptyState title="No imported curricula yet" description="Import a curriculum JSON file to create your first reusable library item." />
-          )}
-        </div>
+        <TabsContent value="library" className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="space-y-4">
+              {curricula.length ? (
+                curricula.map((curriculum) => {
+                  const gradeLevels = getGradeLevels(curriculum)
+                  const estimatedHours = getEstimatedHours(curriculum)
+                  const isDeleting = deletingId === curriculum.id
+                  const isActivating = activatingId === curriculum.id
+                  const confirmingDelete = confirmDeleteId === curriculum.id
 
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Schema snapshot</CardTitle>
-            <CardDescription>Quick reference for the current curriculum import contract.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex flex-wrap gap-2">
-              {requiredFields.map((field) => (
-                <Badge key={field} variant="outline">
-                  {field}
-                </Badge>
-              ))}
+                  return (
+                    <Card key={curriculum.id}>
+                      <CardHeader>
+                        <div>
+                          <CardTitle>{curriculum.name}</CardTitle>
+                          <CardDescription>{curriculum.description || 'Imported curriculum ready for preview and activation.'}</CardDescription>
+                        </div>
+                        <CardAction className="flex gap-2">
+                          <Button asChild size="sm" variant="outline">
+                            <Link to={`/curriculum/${curriculum.id}`}>View details</Link>
+                          </Button>
+                          {canManageCurriculum && !curriculum.is_activated ? (
+                            <Button size="sm" disabled={isActivating} onClick={() => void handleActivate(curriculum.id)}>
+                              {isActivating ? 'Activating…' : 'Activate'}
+                            </Button>
+                          ) : null}
+                          {canManageCurriculum ? (
+                            <Button size="icon" variant="ghost" onClick={() => setConfirmDeleteId(confirmingDelete ? null : curriculum.id)}>
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Delete curriculum</span>
+                            </Button>
+                          ) : null}
+                        </CardAction>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant={curriculum.is_activated ? 'secondary' : 'outline'}>{curriculum.is_activated ? 'Activated' : 'Imported'}</Badge>
+                          {gradeLevels.map((gradeLevel) => (
+                            <Badge key={gradeLevel} variant="outline">
+                              Grade {gradeLevel}
+                            </Badge>
+                          ))}
+                        </div>
+                        <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-4">
+                          <div>
+                            <p className="font-medium text-foreground">Subjects</p>
+                            <p>{curriculum.subject_count}</p>
+                          </div>
+                          <div>
+                            <p className="font-medium text-foreground">Units</p>
+                            <p>{curriculum.unit_count}</p>
+                          </div>
+                          <div>
+                            <p className="font-medium text-foreground">Lessons</p>
+                            <p>{curriculum.lesson_count}</p>
+                          </div>
+                          <div>
+                            <p className="font-medium text-foreground">Estimated hours</p>
+                            <p>{formatEstimatedHours(estimatedHours)}</p>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Imported {formatDate(curriculum.created_at)}{curriculum.last_activated_at ? ` · Last activated ${formatDate(curriculum.last_activated_at)}` : ''}
+                        </p>
+                      </CardContent>
+                      {confirmingDelete ? (
+                        <CardFooter className="justify-between gap-3">
+                          <p className="text-sm text-muted-foreground">Delete this curriculum from the library? This cannot be undone.</p>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => setConfirmDeleteId(null)}>
+                              Cancel
+                            </Button>
+                            <Button size="sm" variant="destructive" disabled={isDeleting} onClick={() => void handleDelete(curriculum.id)}>
+                              {isDeleting ? 'Deleting…' : 'Confirm delete'}
+                            </Button>
+                          </div>
+                        </CardFooter>
+                      ) : null}
+                    </Card>
+                  )
+                })
+              ) : (
+                <EmptyState title="No imported curricula yet" description="Import a curriculum JSON file to create your first reusable library item." />
+              )}
             </div>
-            <p className="text-muted-foreground">The preview tree expects subjects → units → lessons, with optional objectives, resources, prerequisites, and time estimates on lessons.</p>
-          </CardContent>
-        </Card>
-      </div>
+
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle>Schema snapshot</CardTitle>
+                <CardDescription>Quick reference for the current curriculum import contract.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex flex-wrap gap-2">
+                  {requiredFields.map((field) => (
+                    <Badge key={field} variant="outline">
+                      {field}
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-muted-foreground">The preview tree expects subjects → units → lessons, with optional objectives, resources, prerequisites, and time estimates on lessons.</p>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="sources" className="space-y-4">
+          <CurriculumSourceBrowser onImported={() => void load()} onOpenLibrary={() => setActiveTab('library')} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

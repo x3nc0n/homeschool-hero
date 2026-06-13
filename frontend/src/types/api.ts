@@ -1916,6 +1916,44 @@ export interface CurriculumImportActivationResponse {
   activated_at: string
 }
 
+export interface CurriculumSourceSummary {
+  source: string
+  name: string
+  description?: string | null
+  logo_url?: string | null
+  website_url?: string | null
+  provider?: string | null
+  search_hint?: string | null
+  grade_levels?: string[]
+  subjects?: string[]
+  enabled?: boolean
+  metadata?: Record<string, unknown>
+}
+
+export interface CurriculumSourceSearchResult {
+  source?: string
+  item_id: string
+  title: string
+  description?: string | null
+  subject?: string | null
+  subjects?: string[]
+  grade_level?: string | null
+  grade_levels?: string[]
+  metadata?: Record<string, unknown>
+}
+
+export interface CurriculumAiImportDraftResponse {
+  draft: CurriculumImportDocument | Record<string, unknown>
+  warnings?: string[]
+  source_label?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export interface CurriculumAiImportConfirmPayload {
+  draft: CurriculumImportDocument | Record<string, unknown>
+  source_url?: string | null
+}
+
 export type CurriculumImportSchema = Record<string, unknown>
 
 export interface LessonPlanLessonPackageSummary {
