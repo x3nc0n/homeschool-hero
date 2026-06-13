@@ -310,3 +310,130 @@
 - **Decision:** Keep the compatibility alias intact for migration, but treat audit-log access as a platform-admin surface. `backend/routers/audit.py` now requires `Capability.manage_platform` instead of the legacy `manage_family` alias so tutors do not inherit audit access from the educator bundle.
 - **Impact:** Admins now pass teacher/student role guards automatically, educator flows keep working under the redesigned hierarchy, and student-viewer scoping stays unchanged. Audit logs remain restricted to platform administrators even while educator permissions expand elsewhere.
 
+### Ray Role Derivation Fixes (2026-05-15T21:46:25.724-05:00)
+- **Author:** Ray
+- **Context:** Issue #112 review found that external-role auto-provisioning could fail open to `parent`, could infer `is_owner` from IdP admin claims, and could create `student_viewer` memberships without clarifying whether missing `student_id` was acceptable.
+- **Decision:** Auto-provisioning now defaults empty or unmapped IdP roles to least-privilege `FamilyRole.student_viewer`, never infers `is_owner` from IdP claims, and allows `student_viewer` memberships with `student_id=None` because `FamilyMembership.student_id` is nullable; these memberships are treated as placeholder access until an explicit student linkage is granted.
+- **Impact:** SSO users without recognized role claims cannot escalate to parent/admin-equivalent family access, owner authority stays DB-backed and admin-assigned only, and placeholder student viewers remain architecture-compatible without inventing synthetic student links.
+
+### Tully OIDC Login Fix (2026-05-18T07:28:45.785-05:00)
+- **Author:** Tully
+- **Requested by:** John
+- **Context:** A production HAR for `school.spaid.family` showed `GET /api/auth/oidc/login` ending as `200 text/html` with the SPA payload, even though the backend was handling the request and OIDC was enabled. The auth router only redirected cleanly for `OIDCConfigurationError`, leaving discovery/network/authlib failures to surface unpredictably while clients following redirects could appear to land directly on `index.html`.
+- **Decision:** Treat OIDC login and callback initiation failures as fail-closed auth errors: log the exception, redirect to `/login?error=...`, and keep user-visible messages safe and actionable. Wrap OIDC login initiation failures in `backend/services/auth_oidc.py` so discovery/network errors become `OIDCConfigurationError` with meaningful messages. Add a public `/api/auth/oidc/verify` diagnostic that checks discovery reachability and reports whether the IdP metadata is usable.
+- **Impact:** Users no longer loop into opaque SPA behavior when the IdP discovery URL is unreachable; they are redirected back to the login screen with a readable error. Infra can hit `/api/auth/oidc/verify` to distinguish config/discovery outages from frontend routing noise. The existing `/api/auth/oidc/login` success path still returns the upstream IdP redirect.
+
+### Tully OIDC Role Derivation (2026-05-15T21:46:25.724-05:00)
+- **Author:** Tully
+- **Requested by:** John
+- **Context:** OIDC external identities already arrive with normalized app roles in `identity.roles`, but the auto-provision default-family path was hard-coding `FamilyRole.parent` and `is_owner=False`. That broke RBAC expectations for admin, teacher, and student SSO users by ignoring their IdP-derived application roles.
+- **Decision:** For default-family auto-provisioning only, normalize `identity.roles` through `settings.external_role_mappings`, derive `FamilyMembership.role` from app roles in `backend/services/rbac.py`, and allow ownership only for admin-derived parent memberships when the family has no accepted owner yet.
+- **Impact:** Admin SSO users land as `parent`; the first accepted admin in the default family becomes owner. Teacher SSO users land as `tutor`. Student SSO users land as `student_viewer`. Empty or unmapped external roles log a warning and fail closed to the legacy default: `parent` plus `is_owner=False`. Invitation-based provisioning remains unchanged.
+
+### Tully Security Fixes (2026-05-17T21:57:29.677-05:00)
+- **Author:** Tully
+- **Requested by:** John
+- **Decision:** Sanitize control characters in backend log messages, correlation IDs, action labels, and structured detail payloads before formatting or emitting logs. Resolve upload destinations from normalized relative paths only, and reject absolute paths plus any parent-directory traversal before writing submission files. Redact all 5xx HTTP responses to the generic `internal_error` payload so stack traces and exception details stay in logs only.
+- **Impact:** Closes the backend CodeQL/Trivy findings for log injection, path injection, stack-trace exposure, and the vulnerable PyJWT pin. Keeps auth/security behavior fail-closed: suspicious upload paths are rejected, user-controlled log fields cannot forge entries, and clients never receive server exception details.
+
+### Venkman Service Worker Denylist (2026-05-18T07:55:09.535-05:00)
+- **Author:** Venkman
+- **Requested by:** John
+- **Context:** The generated PWA service worker was treating every browser navigation as SPA territory. That let Workbox serve `index.html` for backend-owned navigation requests like `/api/auth/oidc/login` and `/api/auth/oidc/callback`, which breaks OIDC redirects and can also mask direct navigations to uploaded files or health endpoints.
+- **Decision:** Add a Workbox navigation denylist in `frontend/vite.config.ts` for `/api/*`, `/uploads/*`, and `/health` so those requests bypass the SPA fallback. Mirror the same exclusions in the navigation runtime cache rule so backend navigations are never cached as app pages. Enable `skipWaiting` and `clientsClaim` so fixed service workers activate promptly on the next visit.
+- **Impact:** Browser-driven OIDC login and callback navigations now reach the backend instead of loading the SPA shell. Direct navigation to uploaded files and health checks remains backend-owned. Existing users pick up the corrected service worker without waiting through an extra release cycle.
+
+# Ray bcrypt 5.0 Upgrade Guardrail
+
+- **Date:** 2026-05-18T16:38:51.741-05:00
+- **Requested by:** John
+
+## Decision
+- Do not rely on bcrypt 5.0 silent truncation behavior; enforce a 72-byte UTF-8 password limit before any local-auth bcrypt hash or check reaches the library.
+- Apply the guardrail at the API schema layer for register, login, and invitation acceptance so clients get a validation error instead of a server error.
+- Keep backend defensive checks in `hash_password()` / `verify_password()` and fail early during the legacy family-password migration when `FAMILY_PASSWORD` exceeds bcrypt's limit.
+
+## Impact
+- PR #94 can merge safely once these guardrails are on main because local auth no longer depends on bcrypt 4.x truncation.
+- Existing and future operators get a clear validation or startup error instead of unpredictable bcrypt exceptions when a password exceeds 72 UTF-8 bytes.
+
+# Venkman ESLint upgrade
+
+- Date: 2026-05-18T16:38:51.741-05:00
+- Requester: John
+- Scope: frontend dependency maintenance
+
+## Decision
+
+Upgrade `frontend` to `eslint@^10.4.0` and `@eslint/js@^10.0.1` together, and commit `frontend/.npmrc` with `legacy-peer-deps=true` as a temporary install compatibility shim.
+
+## Why
+
+- Dependabot PR #92 (`@eslint/js` 10) conflicts with ESLint 9 because `@eslint/js@10.0.1` declares `peerOptional eslint@^10.0.0`.
+- Dependabot PR #136 (`eslint` 10) should not land separately from the `@eslint/js` major bump because the flat config imports `@eslint/js` directly.
+- `eslint-plugin-jsx-a11y@6.10.2` is still the latest release and only declares peer support through ESLint 9, but linting still passes with ESLint 10 in this repo.
+- The `.npmrc` shim keeps `npm install` working without dropping accessibility lint coverage.
+
+## Validation
+
+- `cd frontend && npm install`
+- `cd frontend && npm run lint`
+- `cd frontend && npm run build`
+
+## Ray Security Hardening Batch
+
+### Egon Dependabot Triage — May 18 (2026-05-18T16:23:50-05:00)
+- **Author:** Egon
+- **Type:** Dependency review
+- **Total PRs triaged:** 10 (4 safe, 4 review, 2 risky)
+- **Decision:** 
+  - **Safe to merge immediately:** #137 (vite patch), #135 (react-plugin patch), #89 (sqlalchemy patch)
+  - **Needs review + testing:** #96 (reportlab, RC-01 integration tests), #95 (alembic, migration audit), #93 (azure-communication-email), #91 (tailwind-merge, visual regression)
+  - **Risky — requires team decision:** #136 & #92 (ESLint 9→10 major bump, requires jsx-a11y compatibility audit), #94 (bcrypt 4→5, requires 72-byte password validation audit)
+- **Impact:** Establishes gating criteria for safe dependency updates vs. those requiring owner sign-off. ESLint 9→10 and bcrypt 5.0 require application code review before merge.
+
+### Venkman ESLint 9→10 Upgrade (2026-05-18T16:38:51-05:00)
+- **Author:** Venkman
+- **Related PRs:** #136 (eslint 9→10), #92 (@eslint/js 9→10)
+- **Context:** Dependabot triggered major ESLint version upgrade, conflicting with previous team decision to pin 9.x due to `eslint-plugin-jsx-a11y@6.10.2` peer-dep exclusion. Venkman validates that linting works with ESLint 10 and jsx-a11y unchanged.
+- **Decision:** Upgrade `frontend` to `eslint@^10.4.0` and `@eslint/js@^10.0.1` together (PRs #136 and #92 as atomic unit), add `legacy-peer-deps=true` to `frontend/.npmrc` as temporary install compatibility shim to work around jsx-a11y peer-dep declarations, validate `npm run lint` and `npm run build` pass.
+- **Impact:** Merged PRs #136 and #92. Frontend stays current with ESLint major while preserving accessibility linting coverage and allowing jsx-a11y to remain at 6.10.2.
+
+### Ray bcrypt 5.0 Password Validation (2026-05-18T16:38:51-05:00)
+- **Author:** Ray
+- **Related PR:** #94 (bcrypt 4→5)
+- **Context:** bcrypt 5.0 raises `ValueError` for passwords > 72 UTF-8 bytes (previously silently truncated at 72). Existing user accounts and API inputs lack explicit 72-byte guardrails.
+- **Decision:** Enforce 72-byte UTF-8 password limit at the API schema layer (register, login, invitation acceptance) so clients get validation error instead of server error. Add defensive checks in `hash_password()` / `verify_password()` functions. Fail early during legacy family-password migration if `FAMILY_PASSWORD` exceeds 72 bytes.
+- **Impact:** Merged PR #94. Existing operators get clear validation or startup errors instead of unpredictable bcrypt exceptions. Local auth no longer depends on bcrypt 4.x truncation behavior.
+
+### Tully Security Hardening (2026-05-17T21:57:29-05:00)
+- **Author:** Tully
+- **Related issues:** CodeQL/Trivy findings
+- **Context:** Backend logs vulnerable to injection attacks, upload handling lacks path traversal protection, and 5xx responses leak exception details.
+- **Decision:** Sanitize control characters in log messages, correlation IDs, action labels, and structured payloads before formatting. Validate upload destinations from normalized relative paths only; reject absolute paths and parent-directory traversal. Redact all 5xx responses to generic `internal_error` payload, keeping details in logs only.
+- **Impact:** Closes CodeQL/Trivy findings for log injection, path injection, and stack-trace exposure. Auth/security behavior remains fail-closed: suspicious paths rejected, user-controlled log fields cannot forge entries, clients never receive server exception details.
+
+## Governance
+
+- All meaningful changes require team consensus
+- Document architectural decisions here
+- Keep history focused on work, decisions focused on direction
+# Ray Security Batch 2
+
+- **Author:** Ray
+- **Requested by:** John
+- **Date:** 2026-06-09T21:29:25-05:00
+- **Issues:** #176, #177, #179, #182, #184, #185
+
+## Decision
+
+- Remove the public `/uploads` static mount and serve uploaded files only through authenticated `/api/files/{path}` downloads.
+- File downloads must validate both safe path resolution under `UPLOAD_DIR` and family ownership of the underlying record; student-viewer sessions also keep their student-level scope checks when downloading files.
+- Startup must reject default `POSTGRES_PASSWORD` / `FAMILY_PASSWORD` placeholders outside demo mode so production-like deployments fail closed instead of booting with known credentials.
+- The TLS nginx container keeps the shared hardening posture (`no-new-privileges`, `cap_drop: ALL`) and restores only `NET_BIND_SERVICE` as the minimal bind capability, with read-only filesystem + tmpfs scratch space.
+
+## Impact
+
+- Student homework, portfolio attachments, curriculum files, and attendance excuse documents are no longer anonymously downloadable by guessed URLs.
+- Operators get an immediate startup error if they leave default credentials in place outside demo flows.
+- The TLS reverse proxy now matches the repo's container-hardening baseline without losing port 80/443 binding.

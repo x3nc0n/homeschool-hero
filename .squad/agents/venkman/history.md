@@ -36,3 +36,8 @@ Egon completed comprehensive GitHub issue triage. All security findings have bee
 - 2026-06-12T17:48:45.564-05:00 — Curriculum import Phase 1 now uses a dedicated `CurriculumImportLibraryPage` inside `CurriculumHubPage`, with reusable `CurriculumImportWizard` and `CurriculumImportTree` components plus a new `/curriculum/:curriculumId` detail route. The UI follows the staged School Year Wizard pattern (validate → preview → review → success), uses new curriculum import API helpers in `src/lib/api.ts`, and assumes Ray may return either the issue contract’s legacy top-level fields (`grade_levels`, `estimated_hours`) or the newer metadata-backed schema — `src/lib/curriculumImport.ts` normalizes both, while `src/lib/curriculumImportMock.ts` provides a dev-only localStorage fallback so the flow stays testable before the backend endpoints are fully live.
 
 - 2026-06-12T23:15:42Z — **Curriculum UI Phase 1 COMPLETE.** Delivered `/curriculum` library hub (existing + new Library tab as default), `/curriculum/:curriculumId` detail view with tree hierarchy, 4-step import wizard flow, and typed API helpers with dev-mode localStorage mock fallback. Full build + lint validation passing. Ready for backend integration testing once Ray's PR #229 merges. No code changes needed for react-router v7 compatibility — all frontend routes remain on the declarative API stack.
+
+## Scribe Session (2026-06-12T19:04:57.253-05:00)
+- Archived old decisions (before 2026-06-05)
+- Source browser UI work: PR #240 (merged), PR #244 (XSS fix)
+- Releases: v0.12.0 (Import), v0.13.0 (Enterprise Security), v0.14.0 (Sources+AI), v0.14.1 (Hardening)

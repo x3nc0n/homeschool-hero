@@ -1,75 +1,3 @@
-### Ray Role Derivation Fixes (2026-05-15T21:46:25.724-05:00)
-- **Author:** Ray
-- **Context:** Issue #112 review found that external-role auto-provisioning could fail open to `parent`, could infer `is_owner` from IdP admin claims, and could create `student_viewer` memberships without clarifying whether missing `student_id` was acceptable.
-- **Decision:** Auto-provisioning now defaults empty or unmapped IdP roles to least-privilege `FamilyRole.student_viewer`, never infers `is_owner` from IdP claims, and allows `student_viewer` memberships with `student_id=None` because `FamilyMembership.student_id` is nullable; these memberships are treated as placeholder access until an explicit student linkage is granted.
-- **Impact:** SSO users without recognized role claims cannot escalate to parent/admin-equivalent family access, owner authority stays DB-backed and admin-assigned only, and placeholder student viewers remain architecture-compatible without inventing synthetic student links.
-
-### Tully OIDC Login Fix (2026-05-18T07:28:45.785-05:00)
-- **Author:** Tully
-- **Requested by:** John
-- **Context:** A production HAR for `school.spaid.family` showed `GET /api/auth/oidc/login` ending as `200 text/html` with the SPA payload, even though the backend was handling the request and OIDC was enabled. The auth router only redirected cleanly for `OIDCConfigurationError`, leaving discovery/network/authlib failures to surface unpredictably while clients following redirects could appear to land directly on `index.html`.
-- **Decision:** Treat OIDC login and callback initiation failures as fail-closed auth errors: log the exception, redirect to `/login?error=...`, and keep user-visible messages safe and actionable. Wrap OIDC login initiation failures in `backend/services/auth_oidc.py` so discovery/network errors become `OIDCConfigurationError` with meaningful messages. Add a public `/api/auth/oidc/verify` diagnostic that checks discovery reachability and reports whether the IdP metadata is usable.
-- **Impact:** Users no longer loop into opaque SPA behavior when the IdP discovery URL is unreachable; they are redirected back to the login screen with a readable error. Infra can hit `/api/auth/oidc/verify` to distinguish config/discovery outages from frontend routing noise. The existing `/api/auth/oidc/login` success path still returns the upstream IdP redirect.
-
-### Tully OIDC Role Derivation (2026-05-15T21:46:25.724-05:00)
-- **Author:** Tully
-- **Requested by:** John
-- **Context:** OIDC external identities already arrive with normalized app roles in `identity.roles`, but the auto-provision default-family path was hard-coding `FamilyRole.parent` and `is_owner=False`. That broke RBAC expectations for admin, teacher, and student SSO users by ignoring their IdP-derived application roles.
-- **Decision:** For default-family auto-provisioning only, normalize `identity.roles` through `settings.external_role_mappings`, derive `FamilyMembership.role` from app roles in `backend/services/rbac.py`, and allow ownership only for admin-derived parent memberships when the family has no accepted owner yet.
-- **Impact:** Admin SSO users land as `parent`; the first accepted admin in the default family becomes owner. Teacher SSO users land as `tutor`. Student SSO users land as `student_viewer`. Empty or unmapped external roles log a warning and fail closed to the legacy default: `parent` plus `is_owner=False`. Invitation-based provisioning remains unchanged.
-
-### Tully Security Fixes (2026-05-17T21:57:29.677-05:00)
-- **Author:** Tully
-- **Requested by:** John
-- **Decision:** Sanitize control characters in backend log messages, correlation IDs, action labels, and structured detail payloads before formatting or emitting logs. Resolve upload destinations from normalized relative paths only, and reject absolute paths plus any parent-directory traversal before writing submission files. Redact all 5xx HTTP responses to the generic `internal_error` payload so stack traces and exception details stay in logs only.
-- **Impact:** Closes the backend CodeQL/Trivy findings for log injection, path injection, stack-trace exposure, and the vulnerable PyJWT pin. Keeps auth/security behavior fail-closed: suspicious upload paths are rejected, user-controlled log fields cannot forge entries, and clients never receive server exception details.
-
-### Venkman Service Worker Denylist (2026-05-18T07:55:09.535-05:00)
-- **Author:** Venkman
-- **Requested by:** John
-- **Context:** The generated PWA service worker was treating every browser navigation as SPA territory. That let Workbox serve `index.html` for backend-owned navigation requests like `/api/auth/oidc/login` and `/api/auth/oidc/callback`, which breaks OIDC redirects and can also mask direct navigations to uploaded files or health endpoints.
-- **Decision:** Add a Workbox navigation denylist in `frontend/vite.config.ts` for `/api/*`, `/uploads/*`, and `/health` so those requests bypass the SPA fallback. Mirror the same exclusions in the navigation runtime cache rule so backend navigations are never cached as app pages. Enable `skipWaiting` and `clientsClaim` so fixed service workers activate promptly on the next visit.
-- **Impact:** Browser-driven OIDC login and callback navigations now reach the backend instead of loading the SPA shell. Direct navigation to uploaded files and health checks remains backend-owned. Existing users pick up the corrected service worker without waiting through an extra release cycle.
-
-# Ray bcrypt 5.0 Upgrade Guardrail
-
-- **Date:** 2026-05-18T16:38:51.741-05:00
-- **Requested by:** John
-
-## Decision
-- Do not rely on bcrypt 5.0 silent truncation behavior; enforce a 72-byte UTF-8 password limit before any local-auth bcrypt hash or check reaches the library.
-- Apply the guardrail at the API schema layer for register, login, and invitation acceptance so clients get a validation error instead of a server error.
-- Keep backend defensive checks in `hash_password()` / `verify_password()` and fail early during the legacy family-password migration when `FAMILY_PASSWORD` exceeds bcrypt's limit.
-
-## Impact
-- PR #94 can merge safely once these guardrails are on main because local auth no longer depends on bcrypt 4.x truncation.
-- Existing and future operators get a clear validation or startup error instead of unpredictable bcrypt exceptions when a password exceeds 72 UTF-8 bytes.
-
-# Venkman ESLint upgrade
-
-- Date: 2026-05-18T16:38:51.741-05:00
-- Requester: John
-- Scope: frontend dependency maintenance
-
-## Decision
-
-Upgrade `frontend` to `eslint@^10.4.0` and `@eslint/js@^10.0.1` together, and commit `frontend/.npmrc` with `legacy-peer-deps=true` as a temporary install compatibility shim.
-
-## Why
-
-- Dependabot PR #92 (`@eslint/js` 10) conflicts with ESLint 9 because `@eslint/js@10.0.1` declares `peerOptional eslint@^10.0.0`.
-- Dependabot PR #136 (`eslint` 10) should not land separately from the `@eslint/js` major bump because the flat config imports `@eslint/js` directly.
-- `eslint-plugin-jsx-a11y@6.10.2` is still the latest release and only declares peer support through ESLint 9, but linting still passes with ESLint 10 in this repo.
-- The `.npmrc` shim keeps `npm install` working without dropping accessibility lint coverage.
-
-## Validation
-
-- `cd frontend && npm install`
-- `cd frontend && npm run lint`
-- `cd frontend && npm run build`
-
-## Ray Security Hardening Batch
-
 - Date: 2026-06-09T17:21:25-05:00
 - Context: Issue batch #183, #178, #181, and #180 tightened CI supply-chain controls, migration configuration, reverse-proxy trust, and TLS edge headers.
 - Decision:
@@ -246,61 +174,6 @@ This pattern should be applied to **any** tainted value (user input, file input,
 - `frontend/src/components/features/FileUpload.tsx` — added `safePreviewUrl` computed at render time, replaced `previewUrl` in `img src` and `object data` attributes.
 
 
-### Egon Dependabot Triage — May 18 (2026-05-18T16:23:50-05:00)
-- **Author:** Egon
-- **Type:** Dependency review
-- **Total PRs triaged:** 10 (4 safe, 4 review, 2 risky)
-- **Decision:** 
-  - **Safe to merge immediately:** #137 (vite patch), #135 (react-plugin patch), #89 (sqlalchemy patch)
-  - **Needs review + testing:** #96 (reportlab, RC-01 integration tests), #95 (alembic, migration audit), #93 (azure-communication-email), #91 (tailwind-merge, visual regression)
-  - **Risky — requires team decision:** #136 & #92 (ESLint 9→10 major bump, requires jsx-a11y compatibility audit), #94 (bcrypt 4→5, requires 72-byte password validation audit)
-- **Impact:** Establishes gating criteria for safe dependency updates vs. those requiring owner sign-off. ESLint 9→10 and bcrypt 5.0 require application code review before merge.
-
-### Venkman ESLint 9→10 Upgrade (2026-05-18T16:38:51-05:00)
-- **Author:** Venkman
-- **Related PRs:** #136 (eslint 9→10), #92 (@eslint/js 9→10)
-- **Context:** Dependabot triggered major ESLint version upgrade, conflicting with previous team decision to pin 9.x due to `eslint-plugin-jsx-a11y@6.10.2` peer-dep exclusion. Venkman validates that linting works with ESLint 10 and jsx-a11y unchanged.
-- **Decision:** Upgrade `frontend` to `eslint@^10.4.0` and `@eslint/js@^10.0.1` together (PRs #136 and #92 as atomic unit), add `legacy-peer-deps=true` to `frontend/.npmrc` as temporary install compatibility shim to work around jsx-a11y peer-dep declarations, validate `npm run lint` and `npm run build` pass.
-- **Impact:** Merged PRs #136 and #92. Frontend stays current with ESLint major while preserving accessibility linting coverage and allowing jsx-a11y to remain at 6.10.2.
-
-### Ray bcrypt 5.0 Password Validation (2026-05-18T16:38:51-05:00)
-- **Author:** Ray
-- **Related PR:** #94 (bcrypt 4→5)
-- **Context:** bcrypt 5.0 raises `ValueError` for passwords > 72 UTF-8 bytes (previously silently truncated at 72). Existing user accounts and API inputs lack explicit 72-byte guardrails.
-- **Decision:** Enforce 72-byte UTF-8 password limit at the API schema layer (register, login, invitation acceptance) so clients get validation error instead of server error. Add defensive checks in `hash_password()` / `verify_password()` functions. Fail early during legacy family-password migration if `FAMILY_PASSWORD` exceeds 72 bytes.
-- **Impact:** Merged PR #94. Existing operators get clear validation or startup errors instead of unpredictable bcrypt exceptions. Local auth no longer depends on bcrypt 4.x truncation behavior.
-
-### Tully Security Hardening (2026-05-17T21:57:29-05:00)
-- **Author:** Tully
-- **Related issues:** CodeQL/Trivy findings
-- **Context:** Backend logs vulnerable to injection attacks, upload handling lacks path traversal protection, and 5xx responses leak exception details.
-- **Decision:** Sanitize control characters in log messages, correlation IDs, action labels, and structured payloads before formatting. Validate upload destinations from normalized relative paths only; reject absolute paths and parent-directory traversal. Redact all 5xx responses to generic `internal_error` payload, keeping details in logs only.
-- **Impact:** Closes CodeQL/Trivy findings for log injection, path injection, and stack-trace exposure. Auth/security behavior remains fail-closed: suspicious paths rejected, user-controlled log fields cannot forge entries, clients never receive server exception details.
-
-## Governance
-
-- All meaningful changes require team consensus
-- Document architectural decisions here
-- Keep history focused on work, decisions focused on direction
-# Ray Security Batch 2
-
-- **Author:** Ray
-- **Requested by:** John
-- **Date:** 2026-06-09T21:29:25-05:00
-- **Issues:** #176, #177, #179, #182, #184, #185
-
-## Decision
-
-- Remove the public `/uploads` static mount and serve uploaded files only through authenticated `/api/files/{path}` downloads.
-- File downloads must validate both safe path resolution under `UPLOAD_DIR` and family ownership of the underlying record; student-viewer sessions also keep their student-level scope checks when downloading files.
-- Startup must reject default `POSTGRES_PASSWORD` / `FAMILY_PASSWORD` placeholders outside demo mode so production-like deployments fail closed instead of booting with known credentials.
-- The TLS nginx container keeps the shared hardening posture (`no-new-privileges`, `cap_drop: ALL`) and restores only `NET_BIND_SERVICE` as the minimal bind capability, with read-only filesystem + tmpfs scratch space.
-
-## Impact
-
-- Student homework, portfolio attachments, curriculum files, and attendance excuse documents are no longer anonymously downloadable by guessed URLs.
-- Operators get an immediate startup error if they leave default credentials in place outside demo flows.
-- The TLS reverse proxy now matches the repo's container-hardening baseline without losing port 80/443 binding.
 # Issue Triage Summary — 2026-06-12
 
 ## Executive Summary
@@ -975,3 +848,102 @@ No frontend source refactor was required. We are now on the newer router runtime
 
 - The staged test suite already passes contract validation checks locally and skips missing API routes cleanly.
 - Locking these decisions now will let Ray unskip/convert the pending API assertions without reworking the expected behavior later.
+
+# Ray decision — Curriculum sources and AI import
+
+- Date: 2026-06-12T18:37:58.792-05:00
+- Scope: Issue #165 Phases 2 and 3 backend
+
+## Decisions
+
+1. Use a discoverable connector framework in `backend/services/curriculum_sources/` so source integrations stay isolated behind `search`, `fetch`, and `convert_to_standard_format` while the API only depends on the standard curriculum schema.
+2. Ship three connectors now: OpenStax (live CMS JSON API), CK-12 (curated FlexBook catalog fallback because stable unauthenticated automation against ck12.org is currently blocked), and OER Commons (live connector gated by `OER_COMMONS_API_TOKEN`).
+3. Keep AI import draft-first: `/api/curriculum/ai-import` extracts PDF/DOCX/TXT or URL text, sends it to an Azure/OpenAI-compatible chat-completions endpoint with tool-calling, and returns an unsaved `CurriculumImportDocument`; `/api/curriculum/ai-import/confirm` persists the reviewed draft through the same save path as manual/source imports.
+
+## Rationale
+
+- Reusing the Phase 1 import persistence path avoids new storage models and keeps activation behavior identical regardless of where a curriculum originated.
+- OpenStax already exposes structured public JSON, CK-12 still matters to the roadmap even though their public surface is unstable for automation, and OER Commons is valuable enough to support once a token is available.
+- Draft-first AI import reduces the risk of hallucinated structure being saved without a human review pass, while still giving the frontend a concrete preview payload to edit.
+
+# Ray decision — SCIM 2.0 endpoint for Entra ID
+
+- Date: 2026-06-12T18:37:58.792-05:00
+- Author: Ray
+- Requested by: John Spaid
+- Issue: #141
+
+## Decision
+- Expose SCIM under `/scim/v2` as a separate integration surface with its own bearer-token auth, rate limiting, and SCIM-formatted error/metadata responses instead of reusing the `/api` cookie + CSRF flow.
+- Store Entra provisioning identifiers on a dedicated `users.scim_external_id` field so SCIM lifecycle state does not overwrite OIDC/SAML login identifiers that already use `users.external_id`.
+- Model SCIM groups as default-family role mappings (`scim_groups`) that drive `family_memberships.role`; managed users without an assigned group fall back to least-privilege `student_viewer`, and owner-managed memberships are immutable from SCIM to preserve the existing DB-backed owner authority decision.
+
+## Impact
+- Entra can provision users and role/group changes incrementally without waiting for role claims in the OIDC token.
+- Existing OIDC sign-in remains compatible because SCIM and login identity references no longer collide.
+- Audit coverage now includes SCIM user/group mutations, and operators must explicitly enable SCIM with `SCIM_ENABLED=true` plus `SCIM_BEARER_TOKEN`.
+
+# Ray — SIEM Logging Decision
+
+- Date: 2026-06-12T18:37:58.792-05:00
+- Decision: Extend the existing backend JSON logger with typed security-event records instead of adding a separate telemetry stack, using a dedicated `security_events.py` emitter plus top-level `event_category="security"` fields that Azure Monitor / Sentinel can ingest directly from stdout.
+- Why: This satisfies issue #113 with minimal blast radius, preserves the current request correlation and audit-table patterns, and keeps OpenTelemetry out of scope while still producing consistent security signals for auth, RBAC, breakglass, session lifecycle, and SSO role-mapping failures.
+- Assumptions: Sentinel ingestion will happen from the container log stream, so the backend should emit flat, sanitized JSON fields on every security record rather than introducing a new transport or exporter dependency.
+
+# Venkman — Curriculum Sources + AI Import UI
+
+- Date: 2026-06-12T18:37:58.792-05:00
+- Issue: #165 Phases 2-3
+
+## Decision
+Keep the existing `/curriculum` hub and Phase 1 import wizard intact, then layer the new work inside them: `CurriculumImportLibraryPage` gets nested `My Library` / `Browse Sources` tabs, and `CurriculumImportWizard` gains a second import mode for AI-assisted document parsing.
+
+## Why
+- This preserves the Phase 1 manual JSON path without fragmenting the curriculum workspace into more routes.
+- Reusing the existing preview tree keeps review/edit behavior consistent whether the draft came from manual JSON, an external source, or AI parsing.
+- Frontend dev work can keep moving while Ray finalizes the backend because `src/lib/api.ts` and `src/lib/curriculumImportMock.ts` share the same fallback pattern for the new source-browser and AI-import endpoints.
+
+## Contract notes
+- The source browser expects `/api/curriculum/sources`, `/api/curriculum/sources/{source}/search?q=...`, and `/api/curriculum/sources/{source}/import/{item_id}` to return metadata that can be rendered as cards/results and imported directly into the existing curriculum library detail shape.
+- The AI upload flow posts either multipart `file` data or a JSON `{ "url": "..." }` body to `/api/curriculum/ai-import`, then confirms with `/api/curriculum/ai-import/confirm` using `{ "draft": <curriculum document>, "source_url": <optional url> }`.
+- Production AI import should stay gated behind `family.enabled_features.curriculum_ai_import` plus configured `ai_grading` and `ocr` capabilities; dev mode can fall back to the local mock flow when backend endpoints are not ready yet.
+
+# Venkman — Curriculum UI Decision
+
+- Date: 2026-06-12T17:48:45.564-05:00
+- Decision: Keep `/curriculum` as the existing hub, make the new Library tab the default manager landing view, preserve the Packages/Lesson Plans/Resources tabs, and add `/curriculum/:curriculumId` for imported-curriculum detail.
+- Why: This satisfies issue #165 Phase 1 without breaking the current curriculum workspace routes or sidebar navigation.
+- Assumptions: The frontend now accepts both the legacy issue contract shape (`grade_levels`, `estimated_hours`) and Ray’s newer metadata-backed schema, and it uses a dev-only localStorage mock fallback until the backend import endpoints are fully available.
+
+# Winston decision — Curriculum import test follow-ups
+
+- Date: 2026-06-12T17:48:45.564-05:00
+- Scope: Issue #165 Phase 1 backend contract coverage
+
+## Decisions needed
+
+1. **Empty curriculum behavior**
+   - Should `POST /api/curriculum/import` reject payloads with zero subjects (`422`) or allow draft/placeholder curricula (`201`)?
+   - Current anticipatory spec assumes fail-closed, but this is still a product choice.
+
+2. **Cross-family access semantics**
+   - Existing family-scoped curriculum resources usually return `404` to avoid record leakage.
+   - Requested issue coverage says `403` for “cannot access other user's curriculum”; team should choose one convention for the new `/api/curriculum/{id}` surface.
+
+3. **Activation repeat behavior**
+   - Need contract for second `POST /api/curriculum/{id}/activate`: idempotent `200`, conflict `409`, or another explicit status.
+   - Tests currently expect “no duplicate assignments” regardless of chosen status.
+
+4. **Activation calendar linkage**
+   - Clarify whether activation always targets the active school year, a curriculum-owned school year, or an explicit request field.
+   - This choice affects due-date assertions and “no school year configured” failure handling.
+
+5. **Import size / concurrency guarantees**
+   - Current contract test assumes a hard ceiling at `1000` lessons and flags concurrent imports as a future requirement.
+   - Confirm the intended size threshold and whether imports must be transactionally isolated under concurrent requests.
+
+## Why this matters
+
+- The staged test suite already passes contract validation checks locally and skips missing API routes cleanly.
+- Locking these decisions now will let Ray unskip/convert the pending API assertions without reworking the expected behavior later.
+
