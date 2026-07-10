@@ -68,6 +68,10 @@ function monthLabel(value: string) {
   })
 }
 
+function formatDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 function clampDate(date: string, startDate: string, endDate: string) {
   if (compareDates(date, startDate) < 0) return startDate
   if (compareDates(date, endDate) > 0) return endDate
@@ -155,6 +159,7 @@ export function SchoolYearSetupWizard({
   const [isSaving, setIsSaving] = useState(false)
   const termCounter = useRef(2)
   const breakCounter = useRef(1)
+  const endDateAutoSet = useRef(false)
   const statePreset = useMemo(() => getStateHolidayPreset(stateCode), [stateCode])
 
   useEffect(() => {
@@ -218,6 +223,7 @@ export function SchoolYearSetupWizard({
       religious: true,
       state: Boolean(getStateHolidayPreset(stateCode)),
     })
+    endDateAutoSet.current = false
     setError('')
     setSuccess('')
   }
@@ -230,21 +236,33 @@ export function SchoolYearSetupWizard({
     setSchoolYearName(defaults.name)
     setNameTouched(false)
     setCustomTerms(createDefaultCustomTerms(defaults.start_date, defaults.end_date))
+    endDateAutoSet.current = false
     setError('')
     setSuccess('')
   }
 
   const updateDate = (field: 'start' | 'end', value: string) => {
     const nextStart = field === 'start' ? value : startDate
-    const nextEnd = field === 'end' ? value : endDate
+    let nextEnd = field === 'end' ? value : endDate
+
+    if (field === 'start' && value) {
+      if (!nextEnd || endDateAutoSet.current) {
+        const d = parseDate(value)
+        d.setDate(d.getDate() + 1)
+        nextEnd = formatDate(d)
+        endDateAutoSet.current = true
+      }
+    } else if (field === 'end') {
+      endDateAutoSet.current = false
+    }
+
     if (!nameTouched && nextStart && nextEnd && compareDates(nextStart, nextEnd) <= 0) {
       setSchoolYearName(buildSchoolYearName(nextStart, nextEnd))
     }
     if (field === 'start') {
       setStartDate(value)
-    } else {
-      setEndDate(value)
     }
+    setEndDate(nextEnd)
     setError('')
     setSuccess('')
   }
@@ -439,7 +457,7 @@ export function SchoolYearSetupWizard({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="school-year-end">End date</Label>
-                <Input id="school-year-end" type="date" value={endDate} onChange={(event) => updateDate('end', event.target.value)} />
+                <Input id="school-year-end" type="date" value={endDate} min={startDate || undefined} onChange={(event) => updateDate('end', event.target.value)} />
               </div>
             </div>
 
