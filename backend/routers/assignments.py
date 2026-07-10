@@ -298,6 +298,13 @@ def _replace_targets(assignment: Assignment, payload: AssignmentCreate | Assignm
 
 
 def _apply_status_filter(stmt, status_value: str):
+    if status_value == 'past_due':
+        today_floor = datetime.combine(date.today(), time.min, tzinfo=timezone.utc)
+        return stmt.where(
+            Assignment.due_date.isnot(None),
+            Assignment.due_date < today_floor,
+            Assignment.status != AssignmentStatus.graded,
+        )
     if status_value in _assignment_status_values:
         return stmt.where(Assignment.status == _assignment_status_values[status_value])
     if status_value in _assignment_target_status_values:
