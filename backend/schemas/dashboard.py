@@ -90,6 +90,7 @@ class DashboardStudentSummary(BaseModel):
     current_gpa: float | None = None
     attendance_rate: float | None = None
     assignments_due_count: int = 0
+    past_due_count: int = 0
     pacing_status: str | None = None
     compliance_status: ComplianceState | None = None
 
@@ -110,6 +111,7 @@ class DashboardRead(BaseModel):
     selected_student_id: int | None = None
     today_schedule: list[DashboardScheduleItem] = Field(default_factory=list)
     upcoming_assignments: list[DashboardAssignmentItem] = Field(default_factory=list)
+    past_due_assignments: list[DashboardAssignmentItem] = Field(default_factory=list)
     recent_grades: list[DashboardGradeItem] = Field(default_factory=list)
     attendance_today: list[DashboardAttendanceItem] = Field(default_factory=list)
     pacing_alerts: list[DashboardPacingAlertItem] = Field(default_factory=list)

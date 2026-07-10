@@ -428,3 +428,71 @@ async def test_dashboard_selected_student_handles_optional_widget_failures(autho
     assert payload['pacing_alerts'] == []
     assert payload['compliance_warnings'] == []
     assert payload['system_status'] is None
+
+
+@pytest.mark.asyncio
+async def test_dashboard_past_due_assignments_counted_and_separated(authorized_client, seeded_student, seeded_subject):
+    """Past-due ungraded assignments appear in past_due_assignments + past_due_count; graded ones are excluded."""
+    today = datetime.now(UTC).date()
+    student_id = response_id(seeded_student)
+    subject_id = response_id(seeded_subject)
+
+    # Past-due, NOT graded — should appear in past_due_assignments
+    overdue_pending = await authorized_client.post(
+        ASSIGNMENTS['collection'],
+        json={
+            **assignment_payload(subject_id),
+            'title': 'Overdue Pending',
+            'due_date': _iso_datetime(today - timedelta(days=3)),
+            'status': 'pending',
+            'targets': [{'student_id': student_id, 'due_date': _iso_datetime(today - timedelta(days=3)), 'status': 'assigned'}],
+        },
+    )
+    assert overdue_pending.status_code == 201, overdue_pending.text
+
+    # Past-due, graded — must NOT appear in past_due_assignments
+    overdue_graded = await authorized_client.post(
+        ASSIGNMENTS['collection'],
+        json={
+            **assignment_payload(subject_id),
+            'title': 'Overdue Graded',
+            'due_date': _iso_datetime(today - timedelta(days=5)),
+            'status': 'graded',
+            'targets': [{'student_id': student_id, 'due_date': _iso_datetime(today - timedelta(days=5)), 'status': 'graded'}],
+        },
+    )
+    assert overdue_graded.status_code == 201, overdue_graded.text
+
+    # Upcoming (due tomorrow) — should be in upcoming_assignments only
+    upcoming = await authorized_client.post(
+        ASSIGNMENTS['collection'],
+        json={
+            **assignment_payload(subject_id),
+            'title': 'Upcoming Pending',
+            'due_date': _iso_datetime(today + timedelta(days=1)),
+            'status': 'pending',
+            'targets': [{'student_id': student_id, 'due_date': _iso_datetime(today + timedelta(days=1)), 'status': 'assigned'}],
+        },
+    )
+    assert upcoming.status_code == 201, upcoming.text
+
+    response = await authorized_client.get(DASHBOARD['summary'])
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    past_due_titles = [item['title'] for item in payload['past_due_assignments']]
+    upcoming_titles = [item['title'] for item in payload['upcoming_assignments']]
+
+    assert 'Overdue Pending' in past_due_titles, 'Past-due ungraded must be in past_due_assignments'
+    assert 'Overdue Graded' not in past_due_titles, 'Graded assignments must not be in past_due_assignments'
+    assert 'Upcoming Pending' not in past_due_titles, 'Upcoming assignments must not bleed into past_due_assignments'
+    assert 'Upcoming Pending' in upcoming_titles, 'Upcoming assignment must be in upcoming_assignments'
+    assert 'Overdue Pending' not in upcoming_titles, 'Past-due items must not appear in upcoming_assignments'
+
+    summary_by_student = {item['student_id']: item for item in payload['student_summaries']}
+    assert summary_by_student[student_id]['past_due_count'] == 1
+    assert summary_by_student[student_id]['assignments_due_count'] == 1
+
+    # All past-due items must report negative days_until_due
+    for item in payload['past_due_assignments']:
+        assert item['days_until_due'] < 0, 'past_due items must report negative days_until_due'

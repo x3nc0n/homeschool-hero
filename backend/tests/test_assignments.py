@@ -271,3 +271,45 @@ async def test_assignments_require_authentication(async_client):
     response = await async_client.get(ASSIGNMENTS['collection'])
 
     assert response.status_code == 401, response.text
+
+
+@pytest.mark.asyncio
+async def test_assignments_past_due_filter(authorized_client, seeded_subject, seeded_student):
+    """?status=past_due returns ungraded overdue assignments and excludes graded and future ones."""
+    from datetime import UTC, date, datetime, timedelta
+
+    today = datetime.now(UTC).date()
+    subject_id = response_id(seeded_subject)
+
+    def _iso(d: date) -> str:
+        return datetime.combine(d, datetime.min.time(), tzinfo=UTC).isoformat()
+
+    # Past-due, pending — should appear in past_due results
+    r1 = await authorized_client.post(
+        ASSIGNMENTS['collection'],
+        json={**assignment_payload(subject_id), 'title': 'Overdue Pending', 'due_date': _iso(today - timedelta(days=2)), 'status': 'pending'},
+    )
+    assert r1.status_code == 201, r1.text
+
+    # Past-due, graded — must NOT appear
+    r2 = await authorized_client.post(
+        ASSIGNMENTS['collection'],
+        json={**assignment_payload(subject_id), 'title': 'Overdue Graded', 'due_date': _iso(today - timedelta(days=4)), 'status': 'graded'},
+    )
+    assert r2.status_code == 201, r2.text
+
+    # Future, pending — must NOT appear
+    r3 = await authorized_client.post(
+        ASSIGNMENTS['collection'],
+        json={**assignment_payload(subject_id), 'title': 'Future Pending', 'due_date': _iso(today + timedelta(days=2)), 'status': 'pending'},
+    )
+    assert r3.status_code == 201, r3.text
+
+    response = await authorized_client.get(ASSIGNMENTS['collection'], params={'status': 'past_due'})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    titles = [item['title'] for item in data['items']]
+
+    assert 'Overdue Pending' in titles, 'Past-due ungraded assignment must be returned by ?status=past_due'
+    assert 'Overdue Graded' not in titles, 'Graded assignment must not be returned by ?status=past_due'
+    assert 'Future Pending' not in titles, 'Future assignment must not be returned by ?status=past_due'
