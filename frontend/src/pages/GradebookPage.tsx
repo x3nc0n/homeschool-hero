@@ -33,7 +33,7 @@ export default function GradebookPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Gradebook</h1>
+      <h1 className="text-2xl font-semibold">Gradebook</h1>
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="grades">Grades</TabsTrigger>

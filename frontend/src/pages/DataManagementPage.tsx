@@ -41,7 +41,7 @@ export default function DataManagementPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Data Management</h1>
+      <h1 className="text-2xl font-semibold">Data Management</h1>
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           {availableTabs.includes('imports') ? <TabsTrigger value="imports">Import</TabsTrigger> : null}

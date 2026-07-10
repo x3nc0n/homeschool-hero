@@ -6,6 +6,8 @@ import {
   BookOpenCheck,
   Calendar,
   CalendarDays,
+  ChevronDown,
+  ChevronUp,
   ClipboardCheck,
   Database,
   FileStack,
@@ -26,6 +28,7 @@ import {
   X,
 } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import type { AppRole, FamilyRole } from '@/types/api'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/context/NotificationsContext'
@@ -37,113 +40,87 @@ import { Breadcrumbs } from '@/components/common/Breadcrumbs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 type NavItem = {
   to: string
-  label: string
+  labelKey: string
   icon: typeof LayoutDashboard
   capabilities?: string[]
   appRoles?: AppRole[]
   feature?: string
 }
 
-type NavGroup = {
-  label: string
-  items: NavItem[]
-}
+// First PINNED_COUNT items are always visible. Items after are behind the "More" disclosure.
+// Ordered by daily-use priority for a typical parent.
+const PINNED_COUNT = 6
 
-const navGroups: NavGroup[] = [
+const ALL_NAV_ITEMS: NavItem[] = [
+  { to: '/dashboard', labelKey: 'navItems.dashboard', icon: LayoutDashboard },
+  { to: '/upload', labelKey: 'navItems.upload', icon: Upload, capabilities: ['manage_submissions'] },
   {
-    label: 'Academics',
-    items: [
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/students', label: 'Students', icon: Users, capabilities: ['manage_household', 'manage_family', 'manage_curriculum'] },
-      { to: '/subjects', label: 'Subjects', icon: BookOpen, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'] },
-      {
-        to: '/curriculum',
-        label: 'Curriculum',
-        icon: GraduationCap,
-        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_curriculum', 'read_grades'],
-        appRoles: ['student'],
-      },
-      { to: '/calendar', label: 'Calendar', icon: Calendar, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'] },
-      {
-        to: '/planner',
-        label: 'Planner',
-        icon: CalendarDays,
-        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_curriculum', 'read_grades'],
-        appRoles: ['student'],
-        feature: 'planner',
-      },
-      { to: '/attendance', label: 'Attendance', icon: UserCheck, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'], feature: 'attendance' },
-    ],
+    to: '/assignments',
+    labelKey: 'navItems.assignments',
+    icon: FileText,
+    capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_curriculum', 'read_submissions', 'read_grades'],
+    appRoles: ['student'],
   },
   {
-    label: 'Schoolwork',
-    items: [
-      {
-        to: '/assignments',
-        label: 'Assignments',
-        icon: FileText,
-        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_curriculum', 'read_submissions', 'read_grades'],
-        appRoles: ['student'],
-      },
-      { to: '/upload', label: 'Upload', icon: Upload, capabilities: ['manage_submissions'] },
-      { to: '/quizzes', label: 'Quizzes', icon: ClipboardCheck, capabilities: ['manage_grading'], feature: 'quizzes' },
-      {
-        to: '/grades',
-        label: 'Gradebook',
-        icon: BarChart,
-        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades'],
-        appRoles: ['student'],
-      },
-    ],
+    to: '/grades',
+    labelKey: 'navItems.grades',
+    icon: BarChart,
+    capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades'],
+    appRoles: ['student'],
+  },
+  { to: '/calendar', labelKey: 'navItems.calendar', icon: Calendar, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'] },
+  { to: '/students', labelKey: 'navItems.students', icon: Users, capabilities: ['manage_household', 'manage_family', 'manage_curriculum'] },
+  // ── More section ──
+  { to: '/subjects', labelKey: 'navItems.subjects', icon: BookOpen, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'] },
+  {
+    to: '/curriculum',
+    labelKey: 'navItems.curriculum',
+    icon: GraduationCap,
+    capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_curriculum', 'read_grades'],
+    appRoles: ['student'],
   },
   {
-    label: 'Records',
-    items: [
-      {
-        to: '/academic-records',
-        label: 'Academic Records',
-        icon: FileStack,
-        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades', 'read_curriculum'],
-        appRoles: ['student'],
-      },
-      {
-        to: '/portfolio',
-        label: 'Portfolio',
-        icon: BookOpenCheck,
-        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades', 'read_curriculum'],
-        appRoles: ['student'],
-        feature: 'portfolio',
-      },
-      {
-        to: '/compliance',
-        label: 'Compliance',
-        icon: ShieldCheck,
-        capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades', 'read_curriculum'],
-        appRoles: ['student'],
-        feature: 'compliance',
-      },
-    ],
+    to: '/planner',
+    labelKey: 'navItems.planner',
+    icon: CalendarDays,
+    capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_curriculum', 'read_grades'],
+    appRoles: ['student'],
+    feature: 'planner',
+  },
+  { to: '/attendance', labelKey: 'navItems.attendance', icon: UserCheck, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions'], feature: 'attendance' },
+  { to: '/quizzes', labelKey: 'navItems.quizzes', icon: ClipboardCheck, capabilities: ['manage_grading'], feature: 'quizzes' },
+  {
+    to: '/academic-records',
+    labelKey: 'navItems.academicRecords',
+    icon: FileStack,
+    capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades', 'read_curriculum'],
+    appRoles: ['student'],
   },
   {
-    label: 'Settings',
-    items: [
-      { to: '/settings/family', label: 'Family & Features', icon: Settings, capabilities: ['manage_household', 'manage_family'] },
-      { to: '/data', label: 'Data Management', icon: Database, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'manage_platform'] },
-      { to: '/settings/appearance', label: 'Appearance', icon: Palette },
-      { to: '/notifications/preferences', label: 'Notifications', icon: Bell },
-    ],
+    to: '/portfolio',
+    labelKey: 'navItems.portfolio',
+    icon: BookOpenCheck,
+    capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades', 'read_curriculum'],
+    appRoles: ['student'],
+    feature: 'portfolio',
   },
+  {
+    to: '/compliance',
+    labelKey: 'navItems.compliance',
+    icon: ShieldCheck,
+    capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'view_own_progress', 'read_grades', 'read_curriculum'],
+    appRoles: ['student'],
+    feature: 'compliance',
+  },
+  { to: '/settings/family', labelKey: 'navItems.family', icon: Settings, capabilities: ['manage_household', 'manage_family'] },
+  { to: '/data', labelKey: 'navItems.dataManagement', icon: Database, capabilities: ['manage_curriculum', 'manage_grading', 'manage_submissions', 'manage_platform'] },
+  { to: '/settings/appearance', labelKey: 'navItems.appearance', icon: Palette },
+  { to: '/notifications/preferences', labelKey: 'navItems.notificationSettings', icon: Bell },
 ]
-
-const roleLabels: Record<FamilyRole, string> = {
-  parent: 'Parent',
-  'co-parent': 'Co-parent',
-  tutor: 'Tutor',
-  student_viewer: 'Student viewer',
-}
 
 const focusableSelector = [
   'a[href]',
@@ -155,6 +132,7 @@ const focusableSelector = [
 ].join(', ')
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation('common')
   const { logout, userName, familyName, role, enabledFeatures, hasCapability, hasRole } = useAuth()
   const { preferences } = useTheme()
   const { recent, unreadCount, markAllAsRead, markAsRead } = useNotifications()
@@ -163,6 +141,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [moreExpanded, setMoreExpanded] = useState(false)
   const currentSearchQuery = useMemo(() => new URLSearchParams(location.search).get('q') || '', [location.search])
   const [searchValue, setSearchValue] = useState(currentSearchQuery)
   const notificationsButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -170,21 +149,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const mobileMenuButtonRef = useRef<HTMLButtonElement | null>(null)
   const mobileMenuPanelRef = useRef<HTMLElement | null>(null)
 
-  const groups = useMemo(
+  const visibleItems = useMemo(
     () =>
-      navGroups
-        .map((group) => ({
-          ...group,
-          items: group.items.filter((item) => {
-            const capabilityMatch = item.capabilities?.some((capability) => hasCapability(capability)) ?? false
-            const roleMatch = item.appRoles?.some((appRole) => hasRole(appRole)) ?? false
-            const hasAccess = (!item.capabilities?.length && !item.appRoles?.length) || capabilityMatch || roleMatch
-            return hasAccess && (item.feature ? enabledFeatures[item.feature] !== false : true)
-          }),
-        }))
-        .filter((group) => group.items.length),
+      ALL_NAV_ITEMS.filter((item) => {
+        const capabilityMatch = item.capabilities?.some((cap) => hasCapability(cap)) ?? false
+        const roleMatch = item.appRoles?.some((appRole) => hasRole(appRole)) ?? false
+        const hasAccess = (!item.capabilities?.length && !item.appRoles?.length) || capabilityMatch || roleMatch
+        return hasAccess && (item.feature ? enabledFeatures[item.feature] !== false : true)
+      }),
     [enabledFeatures, hasCapability, hasRole],
   )
+
+  const pinnedItems = useMemo(() => visibleItems.slice(0, PINNED_COUNT), [visibleItems])
+  const moreItems = useMemo(() => visibleItems.slice(PINNED_COUNT), [visibleItems])
 
   useEffect(() => {
     if (location.pathname === '/search') {
@@ -351,43 +328,108 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     navigate(link)
   }
 
-  const renderNavGroups = (compact = false, collapsed = false) =>
-    groups.map((group) => (
-      <section key={group.label} className="space-y-2">
-        <p className={cn('px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground', compact && 'pt-2', collapsed && 'sr-only')}>{group.label}</p>
-        <div className="space-y-1">
-          {group.items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) =>
-                cn(
-                  'flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm transition hover:bg-muted',
-                  collapsed && 'justify-center px-2',
-                  isActive && 'bg-primary/10 font-medium text-primary',
-                )
-              }
-              title={collapsed ? item.label : undefined}
-            >
-              <item.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-              <span className={cn(collapsed && 'sr-only')}>{item.label}</span>
-            </NavLink>
-          ))}
-        </div>
-      </section>
-    ))
+  const renderNavItem = (item: NavItem, collapsed = false) => {
+    const label = t(item.labelKey)
+    const link = (
+      <NavLink
+        to={item.to}
+        end={item.to === '/'}
+        className={({ isActive }) =>
+          cn(
+            'flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm transition hover:bg-muted',
+            collapsed && 'justify-center px-2',
+            isActive && 'bg-primary/10 font-medium text-primary',
+          )
+        }
+      >
+        <item.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+        <span className={cn(collapsed && 'sr-only')}>{label}</span>
+      </NavLink>
+    )
+
+    if (collapsed) {
+      return (
+        <Tooltip key={item.to}>
+          <TooltipTrigger asChild>{link}</TooltipTrigger>
+          <TooltipContent side="right">{label}</TooltipContent>
+        </Tooltip>
+      )
+    }
+
+    return <NavLink
+      key={item.to}
+      to={item.to}
+      end={item.to === '/'}
+      className={({ isActive }) =>
+        cn(
+          'flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm transition hover:bg-muted',
+          isActive && 'bg-primary/10 font-medium text-primary',
+        )
+      }
+    >
+      <item.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+      <span>{label}</span>
+    </NavLink>
+  }
+
+  const renderNav = (collapsed = false) => {
+    const moreToggleInner = (
+      <button
+        type="button"
+        aria-expanded={moreExpanded}
+        aria-controls="nav-more-items"
+        aria-label={moreExpanded ? t('nav.lessLabel') : t('nav.moreLabel')}
+        onClick={() => setMoreExpanded((prev) => !prev)}
+        className={cn(
+          'flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          collapsed && 'justify-center px-2',
+        )}
+      >
+        {moreExpanded ? (
+          <ChevronUp aria-hidden="true" className="h-4 w-4 shrink-0" />
+        ) : (
+          <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0" />
+        )}
+        <span className={cn(collapsed && 'sr-only')}>{moreExpanded ? t('nav.less') : t('nav.more')}</span>
+      </button>
+    )
+
+    return (
+      <div className="space-y-1">
+        {pinnedItems.map((item) => renderNavItem(item, collapsed))}
+        {moreItems.length > 0 && (
+          <>
+            <div className="border-t border-border/40 pt-1">
+              {collapsed ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>{moreToggleInner}</TooltipTrigger>
+                  <TooltipContent side="right">{moreExpanded ? t('nav.less') : t('nav.more')}</TooltipContent>
+                </Tooltip>
+              ) : (
+                moreToggleInner
+              )}
+            </div>
+            {moreExpanded ? (
+              <div id="nav-more-items" className="space-y-1">
+                {moreItems.map((item) => renderNavItem(item, collapsed))}
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+    )
+  }
 
   const mobileTabs = useMemo(
     () =>
       [
-        { to: '/dashboard', label: 'Home', icon: LayoutDashboard },
-        { to: '/students', label: 'Students', icon: Users },
-        { to: '/assignments', label: 'Tasks', icon: ClipboardCheck },
-        { to: '/upload', label: 'Upload', icon: Upload },
-        { to: '/notifications', label: 'Alerts', icon: Bell },
-      ].filter((item) => groups.some((group) => group.items.some((navItem) => navItem.to === item.to))),
-    [groups],
+        { to: '/dashboard', labelKey: 'mobileTabs.home', icon: LayoutDashboard },
+        { to: '/students', labelKey: 'mobileTabs.students', icon: Users },
+        { to: '/assignments', labelKey: 'mobileTabs.tasks', icon: ClipboardCheck },
+        { to: '/upload', labelKey: 'mobileTabs.upload', icon: Upload },
+        { to: '/notifications', labelKey: 'mobileTabs.alerts', icon: Bell },
+      ].filter((item) => visibleItems.some((navItem) => navItem.to === item.to)),
+    [visibleItems],
   )
 
   const desktopSidebarCollapsed = preferences.sidebar_position === 'collapsed'
@@ -402,100 +444,119 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         Skip to main content
       </a>
       <div aria-live="polite" className="sr-only">
-        {unreadCount ? `${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}.` : 'No unread notifications.'}
+        {unreadCount ? t('notifications.unreadCount_other', { count: unreadCount }) : ''}
       </div>
       <div className="mx-auto max-w-7xl px-3 py-4 pb-24 md:px-6 md:pb-6">
         <div className={cn('grid gap-4', desktopSidebarCollapsed ? 'md:grid-cols-[92px_minmax(0,1fr)]' : 'md:grid-cols-[260px_minmax(0,1fr)]')}>
-          <aside aria-label="Workspace navigation" className={cn('hidden md:block', desktopSidebarOnRight && 'md:order-2')}>
+          <aside aria-label={t('nav.ariaWorkspace')} className={cn('hidden md:block', desktopSidebarOnRight && 'md:order-2')}>
             <div className="sticky top-4 max-h-[calc(100vh-2rem)] space-y-4 overflow-y-auto rounded-xl border bg-card p-4 shadow-sm">
               <div>
-                <p className="text-lg font-bold">{desktopSidebarCollapsed ? 'HH' : 'Homeschool Hero'}</p>
-                {!desktopSidebarCollapsed ? <p className="text-sm text-muted-foreground">{familyName || 'Family workspace'}</p> : null}
+                <p className="text-lg font-bold">{desktopSidebarCollapsed ? 'HH' : t('appName')}</p>
+                {!desktopSidebarCollapsed ? <p className="text-sm text-muted-foreground">{familyName || t('workspace.family')}</p> : null}
               </div>
               <div className={cn('rounded-lg border bg-muted/30 p-3 text-sm', desktopSidebarCollapsed && 'px-2 text-center')}>
                 <p className="font-medium">{desktopSidebarCollapsed ? userName.slice(0, 1).toUpperCase() : userName}</p>
-                {!desktopSidebarCollapsed ? <p className="text-xs text-muted-foreground">{role ? roleLabels[role] : 'Signed in'}</p> : null}
+                {!desktopSidebarCollapsed ? (
+                  <p className="text-xs text-muted-foreground">
+                    {role ? t(`roles.${role as FamilyRole}`) : t('workspace.signedIn')}
+                  </p>
+                ) : null}
               </div>
-              <nav aria-label="Primary navigation" className="space-y-4">
-                {renderNavGroups(false, desktopSidebarCollapsed)}
-              </nav>
+              <TooltipProvider delayDuration={200}>
+                <nav aria-label={t('nav.ariaPrimary')} className="space-y-1">
+                  {renderNav(desktopSidebarCollapsed)}
+                </nav>
+              </TooltipProvider>
+              {!desktopSidebarCollapsed ? (
+                <div className="border-t border-border/40 pt-2">
+                  <Button type="button" variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground" onClick={() => void logout()}>
+                    <LogOut aria-hidden="true" className="h-4 w-4 shrink-0" />
+                    {t('buttons.logOut')}
+                  </Button>
+                </div>
+              ) : (
+                <div className="border-t border-border/40 pt-2">
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="w-full text-muted-foreground hover:text-foreground"
+                          aria-label={t('buttons.logOut')}
+                          onClick={() => void logout()}
+                        >
+                          <LogOut aria-hidden="true" className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">{t('buttons.logOut')}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
             </div>
           </aside>
 
           <div className={cn('min-w-0 space-y-4', desktopSidebarOnRight && 'md:order-1')}>
-            <header className="rounded-xl border bg-card p-4 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3 md:hidden">
-                    <div>
-                      <p className="text-lg font-bold">Homeschool Hero</p>
-                      <p className="text-sm text-muted-foreground">{familyName || 'Family workspace'}</p>
-                    </div>
-                    <Button
-                      ref={mobileMenuButtonRef}
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      aria-label="Open navigation"
-                      aria-controls="mobile-navigation-panel"
-                      aria-expanded={mobileMenuOpen}
-                      onClick={() => setMobileMenuOpen(true)}
-                    >
-                      <Menu aria-hidden="true" className="h-5 w-5" />
-                    </Button>
-                  </div>
+            <header className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Button
+                    ref={mobileMenuButtonRef}
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0 md:hidden"
+                    aria-label={t('header.openNav')}
+                    aria-controls="mobile-navigation-panel"
+                    aria-expanded={mobileMenuOpen}
+                    onClick={() => setMobileMenuOpen(true)}
+                  >
+                    <Menu aria-hidden="true" className="h-5 w-5" />
+                  </Button>
                   <Breadcrumbs />
-                  <div>
-                    <h1 className="text-xl font-bold md:text-2xl">Welcome back, {userName}</h1>
-                    <p className="text-sm text-muted-foreground">
-                      {familyName ? `${familyName} · ` : ''}
-                      {role ? roleLabels[role] : 'Workspace'}
-                    </p>
-                  </div>
                 </div>
 
-                <div className="flex w-full flex-col gap-2 lg:max-w-xl">
-                  <form onSubmit={submitSearch} className="flex gap-2">
-                    <div className="relative flex-1">
+                <div className="flex items-center gap-1.5">
+                  <form onSubmit={submitSearch} className="hidden sm:block" role="search">
+                    <div className="relative">
                       <label htmlFor="global-search-input" className="sr-only">
-                        Search the workspace
+                        {t('header.searchLabel')}
                       </label>
                       <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         id="global-search-input"
                         value={searchValue}
                         onChange={(event) => setSearchValue(event.target.value)}
-                        placeholder="Search everything"
+                        placeholder={t('search.placeholder')}
                         aria-describedby="global-search-help"
-                        className="pl-9 pr-16"
+                        className="w-44 pl-9 pr-14 lg:w-60"
                       />
                       <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 text-xs text-muted-foreground md:block">
-                        Ctrl/Cmd+K
+                        Ctrl+K
                       </span>
                     </div>
-                    <Button type="submit" variant="outline">
-                      Search
-                    </Button>
                   </form>
                   <p id="global-search-help" className="sr-only">
-                    Press Control or Command plus K to focus the global search field.
+                    {t('header.searchShortcutHint')}
                   </p>
 
-                  <div className="relative flex flex-wrap items-center gap-2">
+                  <div className="relative">
                     <Button
                       ref={notificationsButtonRef}
                       type="button"
-                      variant="outline"
-                      className="relative"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={unreadCount ? t('header.notificationsLabel', { count: unreadCount }) : t('notifications.title')}
                       aria-controls="notifications-panel"
                       aria-expanded={notificationsOpen}
                       aria-haspopup="dialog"
                       onClick={() => setNotificationsOpen((current) => !current)}
                     >
-                      <Bell aria-hidden="true" className="mr-2 h-4 w-4" />
-                      Notifications
+                      <Bell aria-hidden="true" className="h-5 w-5" />
                       {unreadCount ? (
-                        <span aria-hidden="true" className="absolute -right-2 -top-2 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                        <span aria-hidden="true" className="absolute -right-1 -top-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
                           {unreadCount > 99 ? '99+' : unreadCount}
                         </span>
                       ) : null}
@@ -513,12 +574,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <div>
                             <p id="notifications-panel-title" className="font-semibold">
-                              Recent notifications
+                              {t('notifications.recent')}
                             </p>
-                            <p className="text-xs text-muted-foreground">{unreadCount} unread</p>
+                            <p className="text-xs text-muted-foreground">
+                              {unreadCount ? t('notifications.unreadCount_other', { count: unreadCount }) : t('notifications.caughtUp')}
+                            </p>
                           </div>
                           <Button size="sm" variant="ghost" onClick={() => void markAllAsRead()} disabled={!unreadCount}>
-                            Mark all read
+                            {t('buttons.markAllRead')}
                           </Button>
                         </div>
                         <div aria-live="polite" className="space-y-2">
@@ -539,24 +602,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                               </button>
                             ))
                           ) : (
-                            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">You&apos;re all caught up.</p>
+                            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">{t('notifications.caughtUp')}</p>
                           )}
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-2">
                           <Button size="sm" variant="outline" onClick={() => void openNotification('/notifications')}>
-                            View all
+                            {t('buttons.viewAll')}
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => void openNotification('/settings/notifications')}>
-                            Preferences
+                            {t('buttons.preferences')}
                           </Button>
                         </div>
                       </div>
                     ) : null}
-                    <Button type="button" variant="outline" onClick={() => void logout()}>
-                      <LogOut aria-hidden="true" className="mr-2 h-4 w-4" />
-                      Log out
-                    </Button>
                   </div>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="md:hidden"
+                    aria-label={t('buttons.logOut')}
+                    onClick={() => void logout()}
+                  >
+                    <LogOut aria-hidden="true" className="h-5 w-5" />
+                  </Button>
                 </div>
               </div>
             </header>
@@ -579,7 +649,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <div className="flex items-start gap-3">
                     <Smartphone aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                     <div>
-                      <p className="font-medium">Install Homeschool Hero</p>
+                      <p className="font-medium">{t('appName')}</p>
                       <p className="text-muted-foreground">Add the app to your home screen for a faster, full-screen mobile experience.</p>
                     </div>
                   </div>
@@ -595,10 +665,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="font-medium">Update ready</p>
-                    <p>A newer version of Homeschool Hero is available.</p>
+                    <p>A newer version of {t('appName')} is available.</p>
                   </div>
                   <Button type="button" variant="outline" onClick={() => void applyUpdate()}>
-                    Reload update
+                    {t('buttons.refresh')}
                   </Button>
                 </div>
               </div>
@@ -627,7 +697,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {mobileMenuOpen ? (
         <div className="fixed inset-0 z-40 md:hidden">
-          <button type="button" tabIndex={-1} className="absolute inset-0 bg-black/40" aria-label="Close navigation" onClick={() => setMobileMenuOpen(false)} />
+          <button type="button" tabIndex={-1} className="absolute inset-0 bg-black/40" aria-label={t('header.closeNav')} onClick={() => setMobileMenuOpen(false)} />
           <aside
             ref={mobileMenuPanelRef}
             id="mobile-navigation-panel"
@@ -640,20 +710,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p id="mobile-navigation-title" className="text-lg font-bold">
-                  Homeschool Hero
+                  {t('appName')}
                 </p>
-                <p className="text-sm text-muted-foreground">{familyName || 'Family workspace'}</p>
+                <p className="text-sm text-muted-foreground">{familyName || t('workspace.family')}</p>
               </div>
-              <Button type="button" variant="ghost" size="icon" aria-label="Close navigation" onClick={() => setMobileMenuOpen(false)}>
+              <Button type="button" variant="ghost" size="icon" aria-label={t('header.closeNav')} onClick={() => setMobileMenuOpen(false)}>
                 <X aria-hidden="true" className="h-5 w-5" />
               </Button>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3 text-sm">
               <p className="font-medium">{userName}</p>
-              <p className="text-xs text-muted-foreground">{role ? roleLabels[role] : 'Signed in'}</p>
+              <p className="text-xs text-muted-foreground">
+                {role ? t(`roles.${role as FamilyRole}`) : t('workspace.signedIn')}
+              </p>
             </div>
-            <nav aria-label="Mobile navigation" className="space-y-4">
-              {renderNavGroups(true)}
+            <nav aria-label={t('nav.ariaMobile')} className="space-y-1">
+              {renderNav(false)}
             </nav>
           </aside>
         </div>
@@ -672,7 +744,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 }
               >
                 <item.icon aria-hidden="true" className="h-4 w-4" />
-                <span>{item.label}</span>
+                <span>{t(item.labelKey)}</span>
               </NavLink>
             ))}
           </div>
