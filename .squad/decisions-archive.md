@@ -437,3 +437,186 @@ Upgrade `frontend` to `eslint@^10.4.0` and `@eslint/js@^10.0.1` together, and co
 - Student homework, portfolio attachments, curriculum files, and attendance excuse documents are no longer anonymously downloadable by guessed URLs.
 - Operators get an immediate startup error if they leave default credentials in place outside demo flows.
 - The TLS reverse proxy now matches the repo's container-hardening baseline without losing port 80/443 binding.
+
+# Winston decision — School Year Setup Wizard test contract
+
+- Date: 2026-06-12T17:18:11.955-05:00
+- Requested by: John Spaid
+- Related issue: #164
+
+## Context
+
+The backend already exposes generic school-year and calendar-event endpoints, but issue #164 adds a wizard requirement for one-click federal/state holiday presets. No dedicated preset route exists in the current backend, so the acceptance tests needed a provisional contract to stage against without breaking the suite today.
+
+## Decision
+
+Stage wizard preset coverage against `POST /api/calendar/school-years/{school_year_id}/holiday-presets`.
+
+## Rationale
+
+- It fits the existing calendar REST shape better than inventing a separate top-level wizard resource.
+- It lets the UI keep using current school-year creation while Ray adds a focused bulk holiday endpoint.
+- The tests can assert outcomes through the existing `/api/calendar/events` listing, so only the preset-apply contract stays provisional.
+
+## Test impact
+
+- `backend/tests/test_calendar_setup_wizard.py` now skips preset acceptance tests until that route exists.
+- Overlap and unreasonable-range rules stay explicit as `xfail` requirements on the existing school-year API.
+# Ray decision — Dependabot audit merge
+
+- Date: 2026-06-12T17:48:45.564-05:00
+- Scope: Backend dependency audit
+
+## Decision
+
+Merge PR #157 (uvicorn 0.34.2 → 0.49.0) and PR #88 (pillow requirement floor to 12.2.0).
+
+## Rationale
+
+- `backend/main.py` does not call `uvicorn.run()` or set Uvicorn SSL / proxy-header options.
+- Proxy trust is handled in `backend/security.py` behind `TRUST_PROXY_HEADERS`, which defaults to off.
+- Backend tests passed with `uvicorn==0.49.0` and `pillow==12.2.0`.
+- PR #88's original failing container/Trivy checks were stale branch results; after rebasing onto current `main`, CI passed and the PR merged cleanly.
+
+## Notes
+
+- For PR #88 conflict resolution, keep both updated floors in `backend/requirements-test.txt`:
+  - `python-multipart>=0.0.29,<1.0`
+  - `pillow>=12.2.0,<13.0`
+
+# Venkman — Curriculum UI Decision
+
+- Date: 2026-06-12T17:48:45.564-05:00
+- Decision: Keep `/curriculum` as the existing hub, make the new Library tab the default manager landing view, preserve the Packages/Lesson Plans/Resources tabs, and add `/curriculum/:curriculumId` for imported-curriculum detail.
+- Why: This satisfies issue #165 Phase 1 without breaking the current curriculum workspace routes or sidebar navigation.
+- Assumptions: The frontend now accepts both the legacy issue contract shape (`grade_levels`, `estimated_hours`) and Ray’s newer metadata-backed schema, and it uses a dev-only localStorage mock fallback until the backend import endpoints are fully available.
+
+# Winston decision — Curriculum import test follow-ups
+
+- Date: 2026-06-12T17:48:45.564-05:00
+- Scope: Issue #165 Phase 1 backend contract coverage
+
+## Decisions needed
+
+1. **Empty curriculum behavior**
+   - Should `POST /api/curriculum/import` reject payloads with zero subjects (`422`) or allow draft/placeholder curricula (`201`)?
+   - Current anticipatory spec assumes fail-closed, but this is still a product choice.
+
+2. **Cross-family access semantics**
+   - Existing family-scoped curriculum resources usually return `404` to avoid record leakage.
+   - Requested issue coverage says `403` for “cannot access other user's curriculum”; team should choose one convention for the new `/api/curriculum/{id}` surface.
+
+3. **Activation repeat behavior**
+   - Need contract for second `POST /api/curriculum/{id}/activate`: idempotent `200`, conflict `409`, or another explicit status.
+   - Tests currently expect “no duplicate assignments” regardless of chosen status.
+
+4. **Activation calendar linkage**
+   - Clarify whether activation always targets the active school year, a curriculum-owned school year, or an explicit request field.
+   - This choice affects due-date assertions and “no school year configured” failure handling.
+
+5. **Import size / concurrency guarantees**
+   - Current contract test assumes a hard ceiling at `1000` lessons and flags concurrent imports as a future requirement.
+   - Confirm the intended size threshold and whether imports must be transactionally isolated under concurrent requests.
+
+## Why this matters
+
+- The staged test suite already passes contract validation checks locally and skips missing API routes cleanly.
+- Locking these decisions now will let Ray unskip/convert the pending API assertions without reworking the expected behavior later.
+
+# Ray decision — Curriculum sources and AI import
+
+- Date: 2026-06-12T18:37:58.792-05:00
+- Scope: Issue #165 Phases 2 and 3 backend
+
+## Decisions
+
+1. Use a discoverable connector framework in `backend/services/curriculum_sources/` so source integrations stay isolated behind `search`, `fetch`, and `convert_to_standard_format` while the API only depends on the standard curriculum schema.
+2. Ship three connectors now: OpenStax (live CMS JSON API), CK-12 (curated FlexBook catalog fallback because stable unauthenticated automation against ck12.org is currently blocked), and OER Commons (live connector gated by `OER_COMMONS_API_TOKEN`).
+3. Keep AI import draft-first: `/api/curriculum/ai-import` extracts PDF/DOCX/TXT or URL text, sends it to an Azure/OpenAI-compatible chat-completions endpoint with tool-calling, and returns an unsaved `CurriculumImportDocument`; `/api/curriculum/ai-import/confirm` persists the reviewed draft through the same save path as manual/source imports.
+
+## Rationale
+
+- Reusing the Phase 1 import persistence path avoids new storage models and keeps activation behavior identical regardless of where a curriculum originated.
+- OpenStax already exposes structured public JSON, CK-12 still matters to the roadmap even though their public surface is unstable for automation, and OER Commons is valuable enough to support once a token is available.
+- Draft-first AI import reduces the risk of hallucinated structure being saved without a human review pass, while still giving the frontend a concrete preview payload to edit.
+
+# Ray decision — SCIM 2.0 endpoint for Entra ID
+
+- Date: 2026-06-12T18:37:58.792-05:00
+- Author: Ray
+- Requested by: John Spaid
+- Issue: #141
+
+## Decision
+- Expose SCIM under `/scim/v2` as a separate integration surface with its own bearer-token auth, rate limiting, and SCIM-formatted error/metadata responses instead of reusing the `/api` cookie + CSRF flow.
+- Store Entra provisioning identifiers on a dedicated `users.scim_external_id` field so SCIM lifecycle state does not overwrite OIDC/SAML login identifiers that already use `users.external_id`.
+- Model SCIM groups as default-family role mappings (`scim_groups`) that drive `family_memberships.role`; managed users without an assigned group fall back to least-privilege `student_viewer`, and owner-managed memberships are immutable from SCIM to preserve the existing DB-backed owner authority decision.
+
+## Impact
+- Entra can provision users and role/group changes incrementally without waiting for role claims in the OIDC token.
+- Existing OIDC sign-in remains compatible because SCIM and login identity references no longer collide.
+- Audit coverage now includes SCIM user/group mutations, and operators must explicitly enable SCIM with `SCIM_ENABLED=true` plus `SCIM_BEARER_TOKEN`.
+
+# Ray — SIEM Logging Decision
+
+- Date: 2026-06-12T18:37:58.792-05:00
+- Decision: Extend the existing backend JSON logger with typed security-event records instead of adding a separate telemetry stack, using a dedicated `security_events.py` emitter plus top-level `event_category="security"` fields that Azure Monitor / Sentinel can ingest directly from stdout.
+- Why: This satisfies issue #113 with minimal blast radius, preserves the current request correlation and audit-table patterns, and keeps OpenTelemetry out of scope while still producing consistent security signals for auth, RBAC, breakglass, session lifecycle, and SSO role-mapping failures.
+- Assumptions: Sentinel ingestion will happen from the container log stream, so the backend should emit flat, sanitized JSON fields on every security record rather than introducing a new transport or exporter dependency.
+
+# Venkman — Curriculum Sources + AI Import UI
+
+- Date: 2026-06-12T18:37:58.792-05:00
+- Issue: #165 Phases 2-3
+
+## Decision
+Keep the existing `/curriculum` hub and Phase 1 import wizard intact, then layer the new work inside them: `CurriculumImportLibraryPage` gets nested `My Library` / `Browse Sources` tabs, and `CurriculumImportWizard` gains a second import mode for AI-assisted document parsing.
+
+## Why
+- This preserves the Phase 1 manual JSON path without fragmenting the curriculum workspace into more routes.
+- Reusing the existing preview tree keeps review/edit behavior consistent whether the draft came from manual JSON, an external source, or AI parsing.
+- Frontend dev work can keep moving while Ray finalizes the backend because `src/lib/api.ts` and `src/lib/curriculumImportMock.ts` share the same fallback pattern for the new source-browser and AI-import endpoints.
+
+## Contract notes
+- The source browser expects `/api/curriculum/sources`, `/api/curriculum/sources/{source}/search?q=...`, and `/api/curriculum/sources/{source}/import/{item_id}` to return metadata that can be rendered as cards/results and imported directly into the existing curriculum library detail shape.
+- The AI upload flow posts either multipart `file` data or a JSON `{ "url": "..." }` body to `/api/curriculum/ai-import`, then confirms with `/api/curriculum/ai-import/confirm` using `{ "draft": <curriculum document>, "source_url": <optional url> }`.
+- Production AI import should stay gated behind `family.enabled_features.curriculum_ai_import` plus configured `ai_grading` and `ocr` capabilities; dev mode can fall back to the local mock flow when backend endpoints are not ready yet.
+
+# Venkman — Curriculum UI Decision
+
+- Date: 2026-06-12T17:48:45.564-05:00
+- Decision: Keep `/curriculum` as the existing hub, make the new Library tab the default manager landing view, preserve the Packages/Lesson Plans/Resources tabs, and add `/curriculum/:curriculumId` for imported-curriculum detail.
+- Why: This satisfies issue #165 Phase 1 without breaking the current curriculum workspace routes or sidebar navigation.
+- Assumptions: The frontend now accepts both the legacy issue contract shape (`grade_levels`, `estimated_hours`) and Ray’s newer metadata-backed schema, and it uses a dev-only localStorage mock fallback until the backend import endpoints are fully available.
+
+# Winston decision — Curriculum import test follow-ups
+
+- Date: 2026-06-12T17:48:45.564-05:00
+- Scope: Issue #165 Phase 1 backend contract coverage
+
+## Decisions needed
+
+1. **Empty curriculum behavior**
+   - Should `POST /api/curriculum/import` reject payloads with zero subjects (`422`) or allow draft/placeholder curricula (`201`)?
+   - Current anticipatory spec assumes fail-closed, but this is still a product choice.
+
+2. **Cross-family access semantics**
+   - Existing family-scoped curriculum resources usually return `404` to avoid record leakage.
+   - Requested issue coverage says `403` for “cannot access other user's curriculum”; team should choose one convention for the new `/api/curriculum/{id}` surface.
+
+3. **Activation repeat behavior**
+   - Need contract for second `POST /api/curriculum/{id}/activate`: idempotent `200`, conflict `409`, or another explicit status.
+   - Tests currently expect “no duplicate assignments” regardless of chosen status.
+
+4. **Activation calendar linkage**
+   - Clarify whether activation always targets the active school year, a curriculum-owned school year, or an explicit request field.
+   - This choice affects due-date assertions and “no school year configured” failure handling.
+
+5. **Import size / concurrency guarantees**
+   - Current contract test assumes a hard ceiling at `1000` lessons and flags concurrent imports as a future requirement.
+   - Confirm the intended size threshold and whether imports must be transactionally isolated under concurrent requests.
+
+## Why this matters
+
+- The staged test suite already passes contract validation checks locally and skips missing API routes cleanly.
+- Locking these decisions now will let Ray unskip/convert the pending API assertions without reworking the expected behavior later.

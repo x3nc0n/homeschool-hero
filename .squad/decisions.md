@@ -1,14 +1,3 @@
-- Date: 2026-06-09T17:21:25-05:00
-- Context: Issue batch #183, #178, #181, and #180 tightened CI supply-chain controls, migration configuration, reverse-proxy trust, and TLS edge headers.
-- Decision:
-  - Default backend behavior will **not** trust `X-Forwarded-*` headers; operators must explicitly set `TRUST_PROXY_HEADERS=true` when the app is deployed behind a trusted reverse proxy.
-  - Alembic runtime database selection remains owned by `backend/migrations/env.py` via application settings, and `backend/alembic.ini` stays credential-free.
-  - Nginx TLS termination includes explicit frame, MIME sniffing, CSP, referrer, and permissions headers as baseline edge hardening.
-- Rationale:
-  - Default-deny proxy header trust prevents spoofed client IP and scheme headers from weakening rate limiting or cookie security on direct app access.
-  - Removing fallback credentials from Alembic avoids shipping a secret-like connection string in repo config while preserving existing migration behavior.
-  - Edge security headers provide consistent browser-side protections even before requests hit the app.
-
 # Security Triage: CodeQL Findings Wave 1 (2026-06-09)
 
 **Author:** Egon (Lead)  
@@ -603,30 +592,6 @@ PR #193 fully resolves the four Wave 1 security issues assigned to Ray, so each 
 - Decision: Ship the wizard by orchestrating the existing calendar endpoints from the frontend instead of waiting for a new bulk setup API.
 - Why: `frontend/src/pages/CalendarPage.tsx` already exposes reliable edit surfaces for school years, terms, grading periods, and events, so a client-side wizard can create the initial structure now and hand off any follow-up edits to the existing management UI.
 - Key files: `frontend/src/components/features/SchoolYearSetupWizard.tsx`, `frontend/src/lib/schoolYearWizard.ts`, `frontend/src/pages/CalendarPage.tsx`
-# Winston decision — School Year Setup Wizard test contract
-
-- Date: 2026-06-12T17:18:11.955-05:00
-- Requested by: John Spaid
-- Related issue: #164
-
-## Context
-
-The backend already exposes generic school-year and calendar-event endpoints, but issue #164 adds a wizard requirement for one-click federal/state holiday presets. No dedicated preset route exists in the current backend, so the acceptance tests needed a provisional contract to stage against without breaking the suite today.
-
-## Decision
-
-Stage wizard preset coverage against `POST /api/calendar/school-years/{school_year_id}/holiday-presets`.
-
-## Rationale
-
-- It fits the existing calendar REST shape better than inventing a separate top-level wizard resource.
-- It lets the UI keep using current school-year creation while Ray adds a focused bulk holiday endpoint.
-- The tests can assert outcomes through the existing `/api/calendar/events` listing, so only the preset-apply contract stays provisional.
-
-## Test impact
-
-- `backend/tests/test_calendar_setup_wizard.py` now skips preset acceptance tests until that route exists.
-- Overlap and unreasonable-range rules stay explicit as `xfail` requirements on the existing school-year API.
 # CI Audit: GitHub Actions Major Version Bumps (2026-06-12T17:49:51.396-05:00)
 
 ## Decision
@@ -747,35 +712,6 @@ Response summary:
 ### `DELETE /api/curriculum/{curriculum_id}`
 Deletes the imported source document only. Activated internal packages, lessons, resources, and assignments remain as user-owned planning data.
 
-# Ray decision — Dependabot audit merge
-
-- Date: 2026-06-12T17:48:45.564-05:00
-- Scope: Backend dependency audit
-
-## Decision
-
-Merge PR #157 (uvicorn 0.34.2 → 0.49.0) and PR #88 (pillow requirement floor to 12.2.0).
-
-## Rationale
-
-- `backend/main.py` does not call `uvicorn.run()` or set Uvicorn SSL / proxy-header options.
-- Proxy trust is handled in `backend/security.py` behind `TRUST_PROXY_HEADERS`, which defaults to off.
-- Backend tests passed with `uvicorn==0.49.0` and `pillow==12.2.0`.
-- PR #88's original failing container/Trivy checks were stale branch results; after rebasing onto current `main`, CI passed and the PR merged cleanly.
-
-## Notes
-
-- For PR #88 conflict resolution, keep both updated floors in `backend/requirements-test.txt`:
-  - `python-multipart>=0.0.29,<1.0`
-  - `pillow>=12.2.0,<13.0`
-
-# Venkman — Curriculum UI Decision
-
-- Date: 2026-06-12T17:48:45.564-05:00
-- Decision: Keep `/curriculum` as the existing hub, make the new Library tab the default manager landing view, preserve the Packages/Lesson Plans/Resources tabs, and add `/curriculum/:curriculumId` for imported-curriculum detail.
-- Why: This satisfies issue #165 Phase 1 without breaking the current curriculum workspace routes or sidebar navigation.
-- Assumptions: The frontend now accepts both the legacy issue contract shape (`grade_levels`, `estimated_hours`) and Ray’s newer metadata-backed schema, and it uses a dev-only localStorage mock fallback until the backend import endpoints are fully available.
-
 # Frontend Dependency Audit: react-router v7 + shadcn 4.11 (2026-06-12T17:48:45.564-05:00)
 
 ## Decision
@@ -816,134 +752,108 @@ Both frontend dependency PRs are safe and have been merged:
 
 ## Impact
 No frontend source refactor was required. We are now on the newer router runtime without committing to the data-router architecture, and the shadcn CLI/tooling package is current.
+# Release Decision: v0.15.0 — UI Overhaul (PR #305)
 
-# Winston decision — Curriculum import test follow-ups
+**Date:** 2026-07-10T21:01:47Z  
+**Author:** Coordinator  
+**Status:** COMPLETE
 
-- Date: 2026-06-12T17:48:45.564-05:00
-- Scope: Issue #165 Phase 1 backend contract coverage
+## Summary
 
-## Decisions needed
-
-1. **Empty curriculum behavior**
-   - Should `POST /api/curriculum/import` reject payloads with zero subjects (`422`) or allow draft/placeholder curricula (`201`)?
-   - Current anticipatory spec assumes fail-closed, but this is still a product choice.
-
-2. **Cross-family access semantics**
-   - Existing family-scoped curriculum resources usually return `404` to avoid record leakage.
-   - Requested issue coverage says `403` for “cannot access other user's curriculum”; team should choose one convention for the new `/api/curriculum/{id}` surface.
-
-3. **Activation repeat behavior**
-   - Need contract for second `POST /api/curriculum/{id}/activate`: idempotent `200`, conflict `409`, or another explicit status.
-   - Tests currently expect “no duplicate assignments” regardless of chosen status.
-
-4. **Activation calendar linkage**
-   - Clarify whether activation always targets the active school year, a curriculum-owned school year, or an explicit request field.
-   - This choice affects due-date assertions and “no school year configured” failure handling.
-
-5. **Import size / concurrency guarantees**
-   - Current contract test assumes a hard ceiling at `1000` lessons and flags concurrent imports as a future requirement.
-   - Confirm the intended size threshold and whether imports must be transactionally isolated under concurrent requests.
-
-## Why this matters
-
-- The staged test suite already passes contract validation checks locally and skips missing API routes cleanly.
-- Locking these decisions now will let Ray unskip/convert the pending API assertions without reworking the expected behavior later.
-
-# Ray decision — Curriculum sources and AI import
-
-- Date: 2026-06-12T18:37:58.792-05:00
-- Scope: Issue #165 Phases 2 and 3 backend
+PR #305 "UI Overhaul via Impeccable" was merged to main via squash commit (32dbd7c). Version v0.15.0 was tagged and released.
 
 ## Decisions
 
-1. Use a discoverable connector framework in `backend/services/curriculum_sources/` so source integrations stay isolated behind `search`, `fetch`, and `convert_to_standard_format` while the API only depends on the standard curriculum schema.
-2. Ship three connectors now: OpenStax (live CMS JSON API), CK-12 (curated FlexBook catalog fallback because stable unauthenticated automation against ck12.org is currently blocked), and OER Commons (live connector gated by `OER_COMMONS_API_TOKEN`).
-3. Keep AI import draft-first: `/api/curriculum/ai-import` extracts PDF/DOCX/TXT or URL text, sends it to an Azure/OpenAI-compatible chat-completions endpoint with tool-calling, and returns an unsaved `CurriculumImportDocument`; `/api/curriculum/ai-import/confirm` persists the reviewed draft through the same save path as manual/source imports.
+- Merge strategy: squash commit (clean history, single changeset)
+- Release promotion: v0.15.0 tagged on main; GitHub Release created; GHCR image published (ghcr.io/x3nc0n/homeschool-hero:v0.15.0 and :latest)
+- Dependabot PRs: 14 PRs flagged for auto-merge (squash, delete-branch); #267 rebased to start the cascade
+- Skipped for later: #268 (Tailwind 3→4), #288 (action-gh-release), #289 (checkout 6→7) — all have failing tests and need dedicated migrations
 
 ## Rationale
 
-- Reusing the Phase 1 import persistence path avoids new storage models and keeps activation behavior identical regardless of where a curriculum originated.
-- OpenStax already exposes structured public JSON, CK-12 still matters to the roadmap even though their public surface is unstable for automation, and OER Commons is valuable enough to support once a token is available.
-- Draft-first AI import reduces the risk of hallucinated structure being saved without a human review pass, while still giving the frontend a concrete preview payload to edit.
+- Squash merge keeps main clean while preserving PR history for reference
+- Auto-merge on safe dependabot bumps reduces manual overhead
+- Blocking high-risk migrations (Tailwind, action versions) until they can be properly scoped and tested
 
-# Ray decision — SCIM 2.0 endpoint for Entra ID
+---
 
-- Date: 2026-06-12T18:37:58.792-05:00
-- Author: Ray
-- Requested by: John Spaid
-- Issue: #141
+# Decision: Skip Tailwind CSS 3→4 Migration (PR #268)
 
-## Decision
-- Expose SCIM under `/scim/v2` as a separate integration surface with its own bearer-token auth, rate limiting, and SCIM-formatted error/metadata responses instead of reusing the `/api` cookie + CSRF flow.
-- Store Entra provisioning identifiers on a dedicated `users.scim_external_id` field so SCIM lifecycle state does not overwrite OIDC/SAML login identifiers that already use `users.external_id`.
-- Model SCIM groups as default-family role mappings (`scim_groups`) that drive `family_memberships.role`; managed users without an assigned group fall back to least-privilege `student_viewer`, and owner-managed memberships are immutable from SCIM to preserve the existing DB-backed owner authority decision.
-
-## Impact
-- Entra can provision users and role/group changes incrementally without waiting for role claims in the OIDC token.
-- Existing OIDC sign-in remains compatible because SCIM and login identity references no longer collide.
-- Audit coverage now includes SCIM user/group mutations, and operators must explicitly enable SCIM with `SCIM_ENABLED=true` plus `SCIM_BEARER_TOKEN`.
-
-# Ray — SIEM Logging Decision
-
-- Date: 2026-06-12T18:37:58.792-05:00
-- Decision: Extend the existing backend JSON logger with typed security-event records instead of adding a separate telemetry stack, using a dedicated `security_events.py` emitter plus top-level `event_category="security"` fields that Azure Monitor / Sentinel can ingest directly from stdout.
-- Why: This satisfies issue #113 with minimal blast radius, preserves the current request correlation and audit-table patterns, and keeps OpenTelemetry out of scope while still producing consistent security signals for auth, RBAC, breakglass, session lifecycle, and SSO role-mapping failures.
-- Assumptions: Sentinel ingestion will happen from the container log stream, so the backend should emit flat, sanitized JSON fields on every security record rather than introducing a new transport or exporter dependency.
-
-# Venkman — Curriculum Sources + AI Import UI
-
-- Date: 2026-06-12T18:37:58.792-05:00
-- Issue: #165 Phases 2-3
+**Date:** 2026-07-10T21:01:47Z  
+**Author:** Coordinator  
+**Status:** PENDING MIGRATION
 
 ## Decision
-Keep the existing `/curriculum` hub and Phase 1 import wizard intact, then layer the new work inside them: `CurriculumImportLibraryPage` gets nested `My Library` / `Browse Sources` tabs, and `CurriculumImportWizard` gains a second import mode for AI-assisted document parsing.
 
-## Why
-- This preserves the Phase 1 manual JSON path without fragmenting the curriculum workspace into more routes.
-- Reusing the existing preview tree keeps review/edit behavior consistent whether the draft came from manual JSON, an external source, or AI parsing.
-- Frontend dev work can keep moving while Ray finalizes the backend because `src/lib/api.ts` and `src/lib/curriculumImportMock.ts` share the same fallback pattern for the new source-browser and AI-import endpoints.
+PR #268 (tailwindcss 3→4) is **flagged but not merged**. The upgrade is a breaking change and introduces test failures that require a dedicated migration effort.
 
-## Contract notes
-- The source browser expects `/api/curriculum/sources`, `/api/curriculum/sources/{source}/search?q=...`, and `/api/curriculum/sources/{source}/import/{item_id}` to return metadata that can be rendered as cards/results and imported directly into the existing curriculum library detail shape.
-- The AI upload flow posts either multipart `file` data or a JSON `{ "url": "..." }` body to `/api/curriculum/ai-import`, then confirms with `/api/curriculum/ai-import/confirm` using `{ "draft": <curriculum document>, "source_url": <optional url> }`.
-- Production AI import should stay gated behind `family.enabled_features.curriculum_ai_import` plus configured `ai_grading` and `ocr` capabilities; dev mode can fall back to the local mock flow when backend endpoints are not ready yet.
+## Rationale
 
-# Venkman — Curriculum UI Decision
+- Tailwind 4 is a major version with breaking changes to config and class names
+- Current PR #268 has failing tests and is not production-ready
+- Scope creep: bundling with v0.15.0 release would delay other dependency bumps
+- Dedicated migration PR will ensure thorough refactoring, testing, and documentation
 
-- Date: 2026-06-12T17:48:45.564-05:00
-- Decision: Keep `/curriculum` as the existing hub, make the new Library tab the default manager landing view, preserve the Packages/Lesson Plans/Resources tabs, and add `/curriculum/:curriculumId` for imported-curriculum detail.
-- Why: This satisfies issue #165 Phase 1 without breaking the current curriculum workspace routes or sidebar navigation.
-- Assumptions: The frontend now accepts both the legacy issue contract shape (`grade_levels`, `estimated_hours`) and Ray’s newer metadata-backed schema, and it uses a dev-only localStorage mock fallback until the backend import endpoints are fully available.
+## Next Steps
 
-# Winston decision — Curriculum import test follow-ups
+- Create a new PR for Tailwind 4 migration targeting post-v0.15.0
+- Coordinate with Venkman on component class name changes
+- Add migration guide to squad decisions for future reference
 
-- Date: 2026-06-12T17:48:45.564-05:00
-- Scope: Issue #165 Phase 1 backend contract coverage
+---
 
-## Decisions needed
+# Decision: Android File Input Pattern — sr-only over display:none
 
-1. **Empty curriculum behavior**
-   - Should `POST /api/curriculum/import` reject payloads with zero subjects (`422`) or allow draft/placeholder curricula (`201`)?
-   - Current anticipatory spec assumes fail-closed, but this is still a product choice.
+**Date:** 2026-07-10T21:01:47Z  
+**Author:** Venkman  
+**Context:** PR #298 reconciliation onto main after PR #305 merge
 
-2. **Cross-family access semantics**
-   - Existing family-scoped curriculum resources usually return `404` to avoid record leakage.
-   - Requested issue coverage says `403` for “cannot access other user's curriculum”; team should choose one convention for the new `/api/curriculum/{id}` surface.
+## Decision
 
-3. **Activation repeat behavior**
-   - Need contract for second `POST /api/curriculum/{id}/activate`: idempotent `200`, conflict `409`, or another explicit status.
-   - Tests currently expect “no duplicate assignments” regardless of chosen status.
+All file/camera <input> elements in the frontend **must** use className="sr-only" (not display:none / Tailwind hidden) and be triggered via ef.current?.click() from a plain <Button onClick>.
 
-4. **Activation calendar linkage**
-   - Clarify whether activation always targets the active school year, a curriculum-owned school year, or an explicit request field.
-   - This choice affects due-date assertions and “no school year configured” failure handling.
+The old pattern of <Label htmlFor="..."><Input className="hidden" .../><Button tabIndex={-1}>...</Button></Label> is **deprecated** for file inputs.
 
-5. **Import size / concurrency guarantees**
-   - Current contract test assumes a hard ceiling at `1000` lessons and flags concurrent imports as a future requirement.
-   - Confirm the intended size threshold and whether imports must be transactionally isolated under concurrent requests.
+## Rationale
 
-## Why this matters
+Android Chrome and WebView silently ignore display:none file inputs — the OS file/camera picker never opens. sr-only keeps the input reachable in the DOM while remaining visually hidden, making it work on Android without breaking other platforms.
 
-- The staged test suite already passes contract validation checks locally and skips missing API routes cleanly.
-- Locking these decisions now will let Ray unskip/convert the pending API assertions without reworking the expected behavior later.
+## Scope
 
+rontend/src/components/features/FileUpload.tsx is the reference implementation. Apply this pattern to any future file-input component in the project.
+
+## Related
+
+- PR #296 / PR #298 — original Android upload bug report and fix
+- PR #305 — UI overhaul that introduced step-lock; created the merge conflict
+- Skill: .squad/skills/android-file-input/SKILL.md
+
+---
+
+# Decision: PR #298 Reconciliation — Android Fix onto Overhaul
+
+**Date:** 2026-07-10T21:01:47Z  
+**Author:** Venkman  
+**PR:** #298, #305
+
+## Context
+
+PR #298 ("Fix assignment turn-in file upload & camera on Android") was opened against the original FileUpload.tsx, but PR #305 (UI overhaul) merged a refactored FileUpload.tsx first. A merge conflict resulted, requiring reconciliation.
+
+## Decision
+
+**Resolve by combining both changes**: main's step-lock + canvas security logic + #298's Android sr-only inputs + ref.current.click() buttons. The Label/hidden-Input pattern is dropped in favor of sr-only + direct button click handling.
+
+## Rationale
+
+- Both PRs improve FileUpload.tsx: #305 adds step progression logic and security hardening; #298 fixes Android file picker
+- Combining ensures users get both security improvements and platform compatibility
+- sr-only pattern is more robust than hidden for input accessibility across all platforms
+
+## Result
+
+- Force-push to squad/296-android-upload with combined changes
+- Build + lint passed
+- Auto-merge enabled; PR merged into main
+
+---
