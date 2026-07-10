@@ -243,6 +243,7 @@ async def get_dashboard(
         )
     ).scalars().all()
     upcoming_assignments: list[DashboardAssignmentItem] = []
+    past_due_assignments: list[DashboardAssignmentItem] = []
     for assignment in assignments:
         target_rows = [target for target in assignment.targets if target.student_id in student_map]
         if target_rows:
@@ -261,28 +262,29 @@ async def get_dashboard(
             due_date = _normalize_datetime(target.due_date or assignment.due_date)
             if due_date is None:
                 continue
-            if due_date.date() < today or due_date.date() > today + timedelta(days=7):
-                continue
             if target.status in {AssignmentTargetStatus.graded, AssignmentTargetStatus.excused}:
                 continue
             current_student = student_map.get(target.student_id)
             if current_student is None:
                 continue
-            upcoming_assignments.append(
-                DashboardAssignmentItem(
-                    assignment_id=assignment.id,
-                    title=assignment.title,
-                    subject_id=assignment.subject_id,
-                    subject_name=assignment.subject.name if assignment.subject else None,
-                    student_id=current_student.id,
-                    student_name=current_student.name,
-                    due_date=due_date,
-                    status=target.status.value,
-                    days_until_due=(due_date.date() - today).days,
-                )
+            item = DashboardAssignmentItem(
+                assignment_id=assignment.id,
+                title=assignment.title,
+                subject_id=assignment.subject_id,
+                subject_name=assignment.subject.name if assignment.subject else None,
+                student_id=current_student.id,
+                student_name=current_student.name,
+                due_date=due_date,
+                status=target.status.value,
+                days_until_due=(due_date.date() - today).days,
             )
+            if due_date.date() < today:
+                past_due_assignments.append(item)
+            elif due_date.date() <= today + timedelta(days=7):
+                upcoming_assignments.append(item)
     upcoming_assignments.sort(key=lambda item: (item.due_date, item.student_name or '', item.title.lower()))
     upcoming_assignments = upcoming_assignments[:12]
+    past_due_assignments.sort(key=lambda item: (item.due_date, item.student_name or '', item.title.lower()))
 
     recent_grade_rows = (
         await db.execute(
@@ -436,6 +438,10 @@ async def get_dashboard(
     for item in upcoming_assignments:
         if item.student_id is not None:
             assignments_due_by_student[item.student_id] += 1
+    past_due_count_by_student: dict[int, int] = defaultdict(int)
+    for item in past_due_assignments:
+        if item.student_id is not None:
+            past_due_count_by_student[item.student_id] += 1
     for current_student in students:
         gradebook_summary = await _best_effort_dashboard_section(
             f'gradebook-summary:{current_student.id}',
@@ -459,6 +465,7 @@ async def get_dashboard(
                 current_gpa=gradebook_summary.get('gpa'),
                 attendance_rate=attendance_rate,
                 assignments_due_count=assignments_due_by_student.get(current_student.id, 0),
+                past_due_count=past_due_count_by_student.get(current_student.id, 0),
                 pacing_status=_summarize_pacing_status(pacing_by_student.get(current_student.id, [])),
                 compliance_status=_summarize_compliance_status(compliance_by_student.get(current_student.id, [])),
             )
@@ -478,6 +485,7 @@ async def get_dashboard(
         selected_student_id=student_id,
         today_schedule=today_schedule,
         upcoming_assignments=upcoming_assignments,
+        past_due_assignments=past_due_assignments,
         recent_grades=recent_grades,
         attendance_today=attendance_today,
         pacing_alerts=pacing_alerts,
