@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Camera, FileText, RotateCcw, Upload } from 'lucide-react'
+import { Camera, Check, FileText, Lock, RotateCcw, Upload } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { Assignment, Student, Submission, SubmissionDetail } from '@/types/api'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -29,6 +30,7 @@ const ALLOWED_MIME_TYPES = new Set([
 const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.heic', '.heif', '.tif', '.tiff', '.webp']
 
 type PreviewKind = 'image' | 'pdf'
+type StepState = 'done' | 'current' | 'upcoming'
 
 function formatBytes(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -70,6 +72,32 @@ async function getPreviewKind(file: File): Promise<PreviewKind | null> {
   return null
 }
 
+function StepIndicator({ num, state, label }: { num: number; state: StepState; label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div
+        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
+          state === 'done'
+            ? 'bg-primary text-primary-foreground'
+            : state === 'current'
+              ? 'border-2 border-primary text-primary'
+              : 'border-2 border-muted-foreground/30 text-muted-foreground/50'
+        }`}
+        aria-hidden="true"
+      >
+        {state === 'done' ? <Check className="h-4 w-4" /> : num}
+      </div>
+      <span
+        className={`text-center text-xs leading-tight ${
+          state === 'done' ? 'font-medium text-primary' : state === 'current' ? 'font-medium text-foreground' : 'text-muted-foreground/60'
+        }`}
+      >
+        {label}
+      </span>
+    </div>
+  )
+}
+
 export function FileUpload({
   students,
   assignments,
@@ -87,6 +115,7 @@ export function FileUpload({
   resubmitTarget?: Submission | SubmissionDetail | null
   onResubmitCleared?: () => void
 }) {
+  const { t } = useTranslation('common')
   const [selectedStudent, setSelectedStudent] = useState<string>('')
   const [selectedAssignment, setSelectedAssignment] = useState<string>('')
   const [file, setFile] = useState<File | null>(null)
@@ -163,14 +192,21 @@ export function FileUpload({
     [assignments, selectedStudent],
   )
 
+  // The file zone is locked until both student and assignment are chosen.
+  const readyForFile = Boolean(selectedStudent && selectedAssignment)
+
+  const step1State: StepState = selectedStudent ? 'done' : 'current'
+  const step2State: StepState = selectedAssignment ? 'done' : selectedStudent ? 'current' : 'upcoming'
+  const step3State: StepState = file ? 'done' : readyForFile ? 'current' : 'upcoming'
+
   const onFileChange = async (picked?: File) => {
     if (!picked) return
     if (!isAllowedFile(picked)) {
-      setError(`Allowed file types: ${ALLOWED_FILE_LABEL}.`)
+      setError(t('upload.errorAllowedTypes', { formats: ALLOWED_FILE_LABEL }))
       return
     }
     if (picked.size > MAX_UPLOAD_BYTES) {
-      setError('File exceeds the 25 MB size limit.')
+      setError(t('upload.errorFileSize'))
       return
     }
     setPreviewKind(null)
@@ -186,7 +222,7 @@ export function FileUpload({
 
   const handleSubmit = async () => {
     if (!file || !selectedStudent || !selectedAssignment) {
-      setError('Please choose a student, assignment, and file.')
+      setError(t('upload.errorSelectAll'))
       return
     }
 
@@ -214,7 +250,7 @@ export function FileUpload({
       }
       onResubmitCleared?.()
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Upload failed.')
+      setError(uploadError instanceof Error ? uploadError.message : t('upload.errorSelectAll'))
     } finally {
       setSubmitting(false)
     }
@@ -223,39 +259,58 @@ export function FileUpload({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{resubmitTarget ? 'Resubmit student work' : 'Submit student work'}</CardTitle>
+        <CardTitle>{resubmitTarget ? t('upload.resubmitTitle') : t('upload.title')}</CardTitle>
         <CardDescription>
-          {ocrAvailable && aiAvailable
-            ? 'Drag and drop a scan/photo or use camera capture on mobile.'
-            : 'Drag and drop a scan/photo or use camera capture on mobile. Reduced processing is active right now.'}
+          {ocrAvailable && aiAvailable ? t('upload.descriptionFull') : t('upload.descriptionReduced')}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
+        {/* Step progress indicator */}
+        <div
+          className="flex items-start justify-between gap-2"
+          aria-label="Upload steps"
+          role="list"
+        >
+          <div role="listitem" className="flex-1">
+            <StepIndicator num={1} state={step1State} label={t('upload.step1Label')} />
+          </div>
+          {/* Connector line */}
+          <div className={`mt-4 h-0.5 flex-1 self-start transition-colors ${step1State === 'done' ? 'bg-primary' : 'bg-muted-foreground/20'}`} aria-hidden="true" />
+          <div role="listitem" className="flex-1">
+            <StepIndicator num={2} state={step2State} label={t('upload.step2Label')} />
+          </div>
+          {/* Connector line */}
+          <div className={`mt-4 h-0.5 flex-1 self-start transition-colors ${step2State === 'done' ? 'bg-primary' : 'bg-muted-foreground/20'}`} aria-hidden="true" />
+          <div role="listitem" className="flex-1">
+            <StepIndicator num={3} state={step3State} label={t('upload.step3Label')} />
+          </div>
+        </div>
+
         <div className="rounded-lg border bg-muted/20 p-3 text-sm">
-          <p className="font-medium">Allowed types: {ALLOWED_FILE_LABEL}</p>
-          <p className="text-muted-foreground">Maximum file size: 25 MB per file</p>
+          <p className="font-medium">{t('upload.allowedTypesLine', { formats: ALLOWED_FILE_LABEL })}</p>
+          <p className="text-muted-foreground">{t('upload.maxSizeLine')}</p>
         </div>
 
         {resubmitTarget ? (
           <div className="flex flex-col gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-medium">Resubmitting submission #{resubmitTarget.id}</p>
+              <p className="font-medium">{t('upload.resubmitBannerTitle', { id: resubmitTarget.id })}</p>
               <p className="text-muted-foreground">
-                Next upload becomes version {(resubmitTarget.submission_version || 1) + 1} and preserves prior history.
+                {t('upload.resubmitBannerBody', { version: (resubmitTarget.submission_version || 1) + 1 })}
               </p>
             </div>
             <Button type="button" variant="outline" onClick={onResubmitCleared}>
-              Cancel resubmission
+              {t('upload.cancelResubmit')}
             </Button>
           </div>
         ) : null}
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label>Student</Label>
+            <Label htmlFor="student-select">{t('upload.stepStudent')}</Label>
             <Select value={selectedStudent} onValueChange={setSelectedStudent} disabled={Boolean(resubmitTarget)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose student" />
+              <SelectTrigger id="student-select">
+                <SelectValue placeholder={t('upload.placeholderStudent')} />
               </SelectTrigger>
               <SelectContent>
                 {students.map((student) => (
@@ -267,10 +322,10 @@ export function FileUpload({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Assignment</Label>
+            <Label htmlFor="assignment-select">{t('upload.stepAssignment')}</Label>
             <Select value={selectedAssignment} onValueChange={setSelectedAssignment} disabled={Boolean(resubmitTarget)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose assignment" />
+              <SelectTrigger id="assignment-select">
+                <SelectValue placeholder={t('upload.placeholderAssignment')} />
               </SelectTrigger>
               <SelectContent>
                 {visibleAssignments.map((assignment) => (
@@ -283,11 +338,17 @@ export function FileUpload({
           </div>
         </div>
 
+        {/* File zone — locked until both student and assignment are selected */}
         <div
           className={`rounded-lg border-2 border-dashed p-6 text-center transition ${
-            isDragging ? 'border-primary bg-primary/10' : 'border-muted-foreground/30'
+            !readyForFile
+              ? 'cursor-not-allowed border-muted-foreground/20 bg-muted/30'
+              : isDragging
+                ? 'border-primary bg-primary/10'
+                : 'border-muted-foreground/30'
           }`}
           onDragOver={(event) => {
+            if (!readyForFile) return
             event.preventDefault()
             setIsDragging(true)
           }}
@@ -295,52 +356,64 @@ export function FileUpload({
           onDrop={(event) => {
             event.preventDefault()
             setIsDragging(false)
-            onFileChange(event.dataTransfer.files?.[0])
+            if (!readyForFile) return
+            void onFileChange(event.dataTransfer.files?.[0])
           }}
         >
-          <Upload className="mx-auto mb-2 h-7 w-7 text-muted-foreground" />
-          <p className="text-sm font-medium">Drop file here or browse</p>
-          <p className="mt-1 text-xs text-muted-foreground">{ALLOWED_FILE_LABEL} supported</p>
-          <div className="mt-3 flex flex-col justify-center gap-2 sm:flex-row">
-            <Label htmlFor="file-upload" className="cursor-pointer">
-              <Input
-                id="file-upload"
-                type="file"
-                className="hidden"
-                accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.tif,.tiff,.webp,application/pdf,image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
-                onChange={(event) => onFileChange(event.target.files?.[0])}
-              />
-              <Button type="button" variant="secondary">
-                <FileText className="mr-2 h-4 w-4" />
-                Choose file
-              </Button>
-            </Label>
-            <Label htmlFor="camera-upload" className="cursor-pointer">
-              <Input
-                id="camera-upload"
-                type="file"
-                className="hidden"
-                accept="image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
-                capture="environment"
-                onChange={(event) => onFileChange(event.target.files?.[0])}
-              />
-              <Button type="button" variant="outline">
-                <Camera className="mr-2 h-4 w-4" />
-                Use camera
-              </Button>
-            </Label>
-            {resubmitTarget ? (
-              <Button type="button" variant="ghost" onClick={onResubmitCleared}>
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Clear
-              </Button>
-            ) : null}
-          </div>
+          {!readyForFile ? (
+            <>
+              <Lock className="mx-auto mb-2 h-7 w-7 text-muted-foreground/40" aria-hidden="true" />
+              <p id="file-zone-hint" className="text-sm text-muted-foreground">
+                {t('upload.stepZoneLocked')}
+              </p>
+            </>
+          ) : (
+            <>
+              <Upload className="mx-auto mb-2 h-7 w-7 text-muted-foreground" aria-hidden="true" />
+              <p className="text-sm font-medium">{t('upload.dropZoneTitle')}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('upload.dropZoneHint', { formats: ALLOWED_FILE_LABEL })}</p>
+              <div className="mt-3 flex flex-col justify-center gap-2 sm:flex-row">
+                <Label htmlFor="file-upload" className="cursor-pointer">
+                  <Input
+                    id="file-upload"
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.tif,.tiff,.webp,application/pdf,image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
+                    onChange={(event) => void onFileChange(event.target.files?.[0])}
+                  />
+                  <Button type="button" variant="secondary" tabIndex={-1}>
+                    <FileText className="mr-2 h-4 w-4" aria-hidden="true" />
+                    {t('upload.chooseFile')}
+                  </Button>
+                </Label>
+                <Label htmlFor="camera-upload" className="cursor-pointer">
+                  <Input
+                    id="camera-upload"
+                    type="file"
+                    className="hidden"
+                    accept="image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
+                    capture="environment"
+                    onChange={(event) => void onFileChange(event.target.files?.[0])}
+                  />
+                  <Button type="button" variant="outline" tabIndex={-1}>
+                    <Camera className="mr-2 h-4 w-4" aria-hidden="true" />
+                    {t('upload.useCamera')}
+                  </Button>
+                </Label>
+                {resubmitTarget ? (
+                  <Button type="button" variant="ghost" onClick={onResubmitCleared}>
+                    <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />
+                    {t('upload.cancelResubmit')}
+                  </Button>
+                ) : null}
+              </div>
+            </>
+          )}
         </div>
 
         {file ? (
           <div className="rounded-lg border bg-muted/20 p-3 text-sm">
-            <p className="font-medium">Selected: {file.name}</p>
+            <p className="font-medium">{t('upload.selectedFile', { name: file.name })}</p>
             <p className="text-muted-foreground">{formatBytes(file.size)}</p>
             {previewKind ? (
               <div className="mt-3">
@@ -354,7 +427,7 @@ export function FileUpload({
                 ) : isPdf ? (
                   <p className="text-xs text-muted-foreground">PDF preview is disabled in the browser for security, but the upload is supported.</p>
                 ) : (
-                  <p className="text-xs text-muted-foreground">Preview is unavailable for this file type, but the upload is supported.</p>
+                  <p className="text-xs text-muted-foreground">{t('upload.previewUnavailable')}</p>
                 )}
               </div>
             ) : null}
@@ -364,18 +437,18 @@ export function FileUpload({
         {submitting ? (
           <div className="space-y-2">
             <Progress value={progress} />
-            <p className="text-xs text-muted-foreground">Uploading… {progress}%</p>
+            <p className="text-xs text-muted-foreground">{t('upload.uploading', { progress })}</p>
           </div>
         ) : null}
 
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
 
         <Button type="button" onClick={() => void handleSubmit()} disabled={submitting || !file}>
           {resubmitTarget
-            ? 'Upload new version'
+            ? t('upload.uploadVersionButton')
             : aiAvailable && ocrAvailable
-              ? 'Upload submission'
-              : 'Upload for manual review'}
+              ? t('upload.uploadButton')
+              : t('upload.uploadManualButton')}
         </Button>
       </CardContent>
     </Card>

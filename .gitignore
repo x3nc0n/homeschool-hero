@@ -45,3 +45,7 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Impeccable design skill (dev tooling; install on demand, do not commit)
+.github/skills/
+.github/hooks/
