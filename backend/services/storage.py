@@ -158,17 +158,13 @@ def store_submission_file(
         file_name=sanitized_name,
     )
     safe_relative_path, destination = _resolve_safe_upload_destination(upload_root, relative_path)
-    upload_root_real, upload_root_prefix = _upload_root_parts(upload_root)
-    # CodeQL requires realpath+startswith immediately before each filesystem sink.
-    # Re-derive paths inline so the sanitized variable flows directly to the sink.
-    dir_path = os.path.realpath(os.path.join(upload_root_real, str(safe_relative_path.parent)))
-    if not (dir_path == upload_root_real or dir_path.startswith(upload_root_prefix)):
-        raise ValueError('Path traversal detected')
-    os.makedirs(dir_path, exist_ok=True)
-    file_path = os.path.realpath(os.path.join(upload_root_real, str(safe_relative_path)))
-    if not (file_path == upload_root_real or file_path.startswith(upload_root_prefix)):
-        raise ValueError('Path traversal detected')
-    with open(file_path, 'wb') as output_file:
+    # ``destination`` is the fully realpath-resolved absolute path that
+    # ``_resolve_safe_upload_destination`` has already verified to be contained
+    # within the upload root. Write to it directly — the same guarded value the
+    # read path in routers/files.py uses — instead of re-joining the relative
+    # path at the sink, which would reintroduce the user-controlled component.
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with open(destination, 'wb') as output_file:
         output_file.write(contents)
     image_width, image_height, page_count = extract_file_metadata(content_type, contents)
     return StoredUpload(
@@ -177,7 +173,7 @@ def store_submission_file(
         content_type=content_type,
         file_size_bytes=len(contents),
         relative_path=str(safe_relative_path),
-        absolute_path=file_path,
+        absolute_path=str(destination),
         image_width=image_width,
         image_height=image_height,
         page_count=page_count,

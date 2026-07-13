@@ -186,17 +186,21 @@ def log_action(
     details: dict[str, Any] | None = None,
     exc_info: Any = None,
 ) -> None:
-    # CodeQL py/log-injection requires sanitized values to be pre-computed as
-    # local variables with NO intermediate function calls between the sanitization
-    # and the logger sink. Apply regex inline to escape all control characters.
+    # CodeQL py/log-injection recognises the ``str.replace`` newline-stripping
+    # barrier (but not the regex ``sub`` below), so apply it inline first — with
+    # NO intermediate function calls between the sanitisation and the logger sink —
+    # then escape any remaining control characters for defence in depth.
+    safe_message = message.replace('\n', r'\n').replace('\r', r'\r')
     safe_message = _CONTROL_CHARACTER_RE.sub(
-        lambda m: _CONTROL_CHARACTER_ESCAPES.get(m.group(0), f'\\x{ord(m.group(0)):02x}'), message)
+        lambda m: _CONTROL_CHARACTER_ESCAPES.get(m.group(0), f'\\x{ord(m.group(0)):02x}'), safe_message)
+    safe_action = action.replace('\n', r'\n').replace('\r', r'\r')
     safe_action = _CONTROL_CHARACTER_RE.sub(
-        lambda m: _CONTROL_CHARACTER_ESCAPES.get(m.group(0), f'\\x{ord(m.group(0)):02x}'), action)
+        lambda m: _CONTROL_CHARACTER_ESCAPES.get(m.group(0), f'\\x{ord(m.group(0)):02x}'), safe_action)
     safe_correlation_id: str | None = None
     if isinstance(correlation_id, str):
+        safe_correlation_id = correlation_id.replace('\n', r'\n').replace('\r', r'\r')
         safe_correlation_id = _CONTROL_CHARACTER_RE.sub(
-            lambda m: _CONTROL_CHARACTER_ESCAPES.get(m.group(0), f'\\x{ord(m.group(0)):02x}'), correlation_id)
+            lambda m: _CONTROL_CHARACTER_ESCAPES.get(m.group(0), f'\\x{ord(m.group(0)):02x}'), safe_correlation_id)
     safe_details = _coerce_details(details)
     logger.log(
         level,
