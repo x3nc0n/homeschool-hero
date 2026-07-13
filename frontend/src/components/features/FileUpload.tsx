@@ -5,7 +5,6 @@ import type { Assignment, Student, Submission, SubmissionDetail } from '@/types/
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -123,6 +122,8 @@ export function FileUpload({
   const [isDragging, setIsDragging] = useState(false)
   const previewSelectionId = useRef(0)
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const [progress, setProgress] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -373,33 +374,39 @@ export function FileUpload({
               <p className="text-sm font-medium">{t('upload.dropZoneTitle')}</p>
               <p className="mt-1 text-xs text-muted-foreground">{t('upload.dropZoneHint', { formats: ALLOWED_FILE_LABEL })}</p>
               <div className="mt-3 flex flex-col justify-center gap-2 sm:flex-row">
-                <Label htmlFor="file-upload" className="cursor-pointer">
-                  <Input
-                    id="file-upload"
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.tif,.tiff,.webp,application/pdf,image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
-                    onChange={(event) => void onFileChange(event.target.files?.[0])}
-                  />
-                  <Button type="button" variant="secondary" tabIndex={-1}>
-                    <FileText className="mr-2 h-4 w-4" aria-hidden="true" />
-                    {t('upload.chooseFile')}
-                  </Button>
-                </Label>
-                <Label htmlFor="camera-upload" className="cursor-pointer">
-                  <Input
-                    id="camera-upload"
-                    type="file"
-                    className="hidden"
-                    accept="image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
-                    capture="environment"
-                    onChange={(event) => void onFileChange(event.target.files?.[0])}
-                  />
-                  <Button type="button" variant="outline" tabIndex={-1}>
-                    <Camera className="mr-2 h-4 w-4" aria-hidden="true" />
-                    {t('upload.useCamera')}
-                  </Button>
-                </Label>
+                <input
+                  ref={fileInputRef}
+                  id="file-upload"
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.tif,.tiff,.webp,application/pdf,image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
+                  onChange={(event) => void onFileChange(event.target.files?.[0])}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <FileText className="mr-2 h-4 w-4" aria-hidden="true" />
+                  {t('upload.chooseFile')}
+                </Button>
+                <input
+                  ref={cameraInputRef}
+                  id="camera-upload"
+                  type="file"
+                  className="hidden"
+                  accept="image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp"
+                  capture="environment"
+                  onChange={(event) => void onFileChange(event.target.files?.[0])}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => cameraInputRef.current?.click()}
+                >
+                  <Camera className="mr-2 h-4 w-4" aria-hidden="true" />
+                  {t('upload.useCamera')}
+                </Button>
                 {resubmitTarget ? (
                   <Button type="button" variant="ghost" onClick={onResubmitCleared}>
                     <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />
