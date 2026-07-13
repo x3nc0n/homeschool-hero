@@ -224,7 +224,7 @@ def test_startup_validation_requires_entra_v2_issuer_match(tmp_path: Path) -> No
 def test_startup_validation_rejects_default_credentials_outside_demo_mode(tmp_path: Path) -> None:
     config = settings.model_copy(
         update={
-            'database_url': 'postgresql+asyncpg://homeschool:changeme@db:5432/homeschool_hero',
+            'database_url': 'postgresql+asyncpg://homeschool@db:5432/homeschool_hero',
             'secret_key': 'required-test-secret',
             'upload_dir': str(tmp_path / 'uploads'),
             'testing': False,
@@ -240,6 +240,50 @@ def test_startup_validation_rejects_default_credentials_outside_demo_mode(tmp_pa
     message = str(excinfo.value)
     assert 'POSTGRES_PASSWORD is using the default value "changeme"' in message
     assert 'FAMILY_PASSWORD is using the default value "changeme"' in message
+
+
+def test_startup_validation_accepts_strong_password_in_database_url(tmp_path: Path) -> None:
+    # Regression for #404: prod supplies full credentials via DATABASE_URL and never
+    # sets POSTGRES_PASSWORD, so it keeps its unused "changeme" default. Startup must
+    # not crash-loop on that unused field when the live connection password is strong.
+    config = settings.model_copy(
+        update={
+            'database_url': 'postgresql+asyncpg://homeschool:S7rong-Prod-Passw0rd-xyz@db:5432/homeschool_hero',
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': False,
+            'demo_mode': False,
+            'postgres_password': 'changeme',
+            'legacy_family_password': 'a-real-family-password',
+            'smtp_host': None,
+            'smtp_from_email': None,
+            'backup_target': None,
+            'openai_api_key': None,
+        }
+    )
+
+    summary = validate_runtime_config(config)
+
+    assert summary['database_driver'] == 'postgresql+asyncpg'
+
+
+def test_startup_validation_rejects_default_password_in_database_url(tmp_path: Path) -> None:
+    config = settings.model_copy(
+        update={
+            'database_url': 'postgresql+asyncpg://homeschool:changeme@db:5432/homeschool_hero',
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': False,
+            'demo_mode': False,
+            'postgres_password': 'changeme',
+            'legacy_family_password': 'a-real-family-password',
+        }
+    )
+
+    with pytest.raises(StartupValidationError) as excinfo:
+        validate_runtime_config(config)
+
+    assert 'DATABASE_URL is using the default password "changeme"' in str(excinfo.value)
 
 
 def test_startup_validation_allows_default_credentials_in_demo_mode(tmp_path: Path) -> None:

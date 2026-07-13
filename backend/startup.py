@@ -77,7 +77,11 @@ def _validate_database_url(config: Settings) -> dict[str, str]:
             f"DATABASE_URL uses unsupported driver '{parsed.drivername}'. Use sqlite+aiosqlite or postgresql+asyncpg."
         )
 
-    return {'driver': parsed.drivername, 'database': parsed.database or ''}
+    return {
+        'driver': parsed.drivername,
+        'database': parsed.database or '',
+        'password': parsed.password or '',
+    }
 
 
 def _validate_secret_key(config: Settings) -> None:
@@ -90,13 +94,24 @@ def _validate_secret_key(config: Settings) -> None:
         )
 
 
-def _validate_default_credentials(config: Settings, *, database_driver: str) -> None:
+def _validate_default_credentials(config: Settings, *, database_driver: str, database_password: str = '') -> None:
     if config.demo_mode or config.testing:
         return
 
     errors: list[str] = []
-    if database_driver.startswith('postgresql') and config.postgres_password.strip() == 'changeme':
-        errors.append('POSTGRES_PASSWORD is using the default value "changeme". Set a strong password before startup.')
+    if database_driver.startswith('postgresql'):
+        # DATABASE_URL is the source of truth for the live database connection.
+        # POSTGRES_PASSWORD is only consulted when the URL does not embed its own
+        # password, so a deployment that supplies full credentials via DATABASE_URL
+        # must not be blocked by the unused POSTGRES_PASSWORD default (issue #404).
+        if database_password:
+            if database_password.strip() == 'changeme':
+                errors.append(
+                    'DATABASE_URL is using the default password "changeme". '
+                    'Set a strong database password before startup.'
+                )
+        elif config.postgres_password.strip() == 'changeme':
+            errors.append('POSTGRES_PASSWORD is using the default value "changeme". Set a strong password before startup.')
     if config.legacy_family_password.strip() == 'changeme':
         errors.append('FAMILY_PASSWORD is using the default value "changeme". Set a strong password before startup.')
 
@@ -247,7 +262,11 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
         errors.append(str(exc))
 
     try:
-        _validate_default_credentials(config, database_driver=database_summary.get('driver', ''))
+        _validate_default_credentials(
+            config,
+            database_driver=database_summary.get('driver', ''),
+            database_password=database_summary.get('password', ''),
+        )
     except StartupValidationError as exc:
         errors.append(str(exc))
 
