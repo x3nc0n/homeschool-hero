@@ -28,6 +28,7 @@ This document tracks the AI-related costs incurred during development of homesch
 | 2026-05-18 | Triage | Issue triage, enhancement planning |
 | 2026-05-22 | RBAC & infra | RBAC model redesign, infrastructure fixes |
 | 2026-06-09 | Security | CodeQL security issue triage & remediation (XSS, path injection, stack trace exposure, log injection) |
+| 2026-07-13 | Triage & fixes | Upload/camera button fix (v0.16.0); CodeQL HIGH remediation (log-injection fix + path-injection FP dismissal, PR #398); attendance research scope decision + follow-up issues #399–403; E2E test baseline for #265 |
 
 ## Estimated Token Usage
 
@@ -35,7 +36,7 @@ Exact token counts are not available, but approximate usage per session:
 
 - **Light sessions** (triage, status checks): ~50K–100K tokens
 - **Heavy sessions** (implementation, multi-agent fan-out): ~200K–500K tokens
-- **Estimated total across 12 sessions:** ~2M–4M tokens
+- **Estimated total across 13 sessions:** ~2M–4M tokens
 
 ## Cost Transparency
 
