@@ -209,7 +209,7 @@ async def collect_service_health(config: Settings = settings) -> dict[str, dict[
     )
     return {
         'database': database,
-        'ai_service': _map_capability_to_service('ai_service', 'AI / Ollama', ai_payload),
+        'ai_service': _map_capability_to_service('ai_service', 'AI grading', ai_payload),
         'smtp': _map_capability_to_service('smtp', 'SMTP', smtp_payload),
         'backup_destination': backup_destination,
         'disk_space': disk,

@@ -22,3 +22,4 @@ reportlab==4.5.1
 pytesseract==0.3.13
 PyMuPDF==1.27.2.3
 azure-communication-email>=1.1.0
+azure-identity>=1.19.0

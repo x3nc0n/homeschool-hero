@@ -128,3 +128,73 @@ def test_auth_provider_capabilities_can_disable_breakglass_local(tmp_path: Path)
     assert auth['local_enabled'] is False
     assert auth['oidc_enabled'] is True
     assert auth['saml_enabled'] is False
+
+
+def test_check_ai_grading_azure_openai_healthy_with_api_key(monkeypatch, tmp_path: Path) -> None:
+    from backend.services import capabilities as capabilities_module
+
+    config = Settings().model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'ai_provider': 'azure_openai',
+            'azure_openai_endpoint': 'https://acct.openai.azure.com/',
+            'azure_openai_deployment': 'gpt-4o',
+            'azure_openai_api_key': 'secret-key-123',
+            'testing': True,
+        }
+    )
+
+    captured = {}
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            return None
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def get(self, url, *, headers=None, params=None):
+            captured['url'] = url
+            captured['headers'] = headers or {}
+            captured['params'] = params or {}
+            return _FakeResponse()
+
+    monkeypatch.setattr(capabilities_module.httpx, 'Client', _FakeClient)
+
+    result = capabilities_module.check_ai_grading(config)
+
+    assert result['enabled'] is True
+    assert result['configured'] is True
+    assert result['details']['provider'] == 'azure_openai'
+    assert captured['url'] == 'https://acct.openai.azure.com/openai/deployments'
+    assert captured['headers'].get('api-key') == 'secret-key-123'
+    assert captured['params'] == {'api-version': config.azure_openai_api_version}
+
+
+def test_check_ai_grading_azure_openai_unconfigured(tmp_path: Path) -> None:
+    from backend.services import capabilities as capabilities_module
+
+    config = Settings().model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'ai_provider': 'azure_openai',
+            'testing': True,
+        }
+    )
+
+    result = capabilities_module.check_ai_grading(config)
+
+    assert result['enabled'] is False
+    assert result['configured'] is False
+    assert 'AZURE_OPENAI_ENDPOINT' in result['reason']

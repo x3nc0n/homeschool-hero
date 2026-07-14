@@ -28,7 +28,7 @@ This document tracks the AI-related costs incurred during development of homesch
 | 2026-05-18 | Triage | Issue triage, enhancement planning |
 | 2026-05-22 | RBAC & infra | RBAC model redesign, infrastructure fixes |
 | 2026-06-09 | Security | CodeQL security issue triage & remediation (XSS, path injection, stack trace exposure, log injection) |
-| 2026-07-13 | Triage & fixes | Upload/camera button fix (v0.16.0); CodeQL HIGH remediation (log-injection fix + path-injection FP dismissal, PR #398); attendance research scope decision + follow-up issues #399–403; E2E test baseline for #265 |
+| 2026-07-13 | Triage & fixes | Upload/camera button fix (v0.16.0); CodeQL HIGH remediation (log-injection fix + path-injection FP dismissal, PR #398); attendance research scope decision + follow-up issues #399–403; E2E test baseline for #265; #404 root-caused (prod crash-loop on unused POSTGRES_PASSWORD) + startup validator fix (v0.16.1); #405 Azure OpenAI/Foundry grader provider w/ managed identity (PR #406) |
 
 ## Estimated Token Usage
 
