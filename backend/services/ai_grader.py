@@ -3,18 +3,64 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from typing import Any
 
 import httpx
 
-from backend.config import settings
+from backend.config import Settings, settings
 
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+AZURE_OPENAI_SCOPE = "https://cognitiveservices.azure.com/.default"
+AZURE_PROVIDER_ALIASES = {"azure_openai", "azure", "foundry", "azure-openai"}
 logger = logging.getLogger(__name__)
+
+_azure_credential: Any = None
+_azure_credential_lock = threading.Lock()
 
 
 class AIServiceUnavailable(RuntimeError):
     """Raised when the configured AI provider is unavailable."""
+
+
+def _get_azure_ad_token() -> str:
+    """Acquire a bearer token for Azure OpenAI via managed identity / DefaultAzureCredential."""
+    global _azure_credential
+    if _azure_credential is None:
+        with _azure_credential_lock:
+            if _azure_credential is None:
+                try:
+                    from azure.identity import DefaultAzureCredential
+                except ImportError as exc:  # pragma: no cover - dependency always present in prod
+                    raise AIServiceUnavailable(
+                        "azure-identity is required for Azure OpenAI managed-identity auth"
+                    ) from exc
+                _azure_credential = DefaultAzureCredential()
+    try:
+        return _azure_credential.get_token(AZURE_OPENAI_SCOPE).token
+    except Exception as exc:  # noqa: BLE001 - surface any credential/token failure uniformly
+        raise AIServiceUnavailable(f"Azure OpenAI managed-identity auth failed: {exc}") from exc
+
+
+def azure_openai_request_headers(config: Settings = settings) -> dict[str, str]:
+    """Build auth headers for Azure OpenAI: API key when provided, else managed identity."""
+    headers = {"Content-Type": "application/json"}
+    api_key = (config.azure_openai_api_key or "").strip()
+    if api_key:
+        headers["api-key"] = api_key
+    else:
+        headers["Authorization"] = f"Bearer {_get_azure_ad_token()}"
+    return headers
+
+
+def azure_openai_chat_url(config: Settings = settings) -> str:
+    endpoint = (config.azure_openai_endpoint or "").strip().rstrip("/")
+    deployment = (config.azure_openai_deployment or "").strip()
+    if not endpoint or not deployment:
+        raise AIServiceUnavailable(
+            "AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT must be configured for Azure OpenAI grading"
+        )
+    return f"{endpoint}/openai/deployments/{deployment}/chat/completions"
 
 
 def _clamp(value: float, minimum: float, maximum: float) -> float:
@@ -118,7 +164,7 @@ def _call_openai(prompt: str) -> dict[str, Any]:
     if not settings.openai_api_key:
         raise AIServiceUnavailable("OPENAI_API_KEY is not configured")
     payload = {
-        "model": "gpt-4o-mini",
+        "model": settings.openai_model,
         "temperature": 0,
         "messages": [
             {"role": "system", "content": "You are a strict grading assistant. Return only JSON."},
@@ -141,6 +187,32 @@ def _call_openai(prompt: str) -> dict[str, Any]:
         raise AIServiceUnavailable(f"OpenAI unavailable: {exc}") from exc
 
 
+def _call_azure_openai(prompt: str) -> dict[str, Any]:
+    url = azure_openai_chat_url(settings)
+    headers = azure_openai_request_headers(settings)
+    params = {"api-version": settings.azure_openai_api_version}
+    payload = {
+        "temperature": 0,
+        "messages": [
+            {"role": "system", "content": "You are a strict grading assistant. Return only JSON."},
+            {"role": "user", "content": prompt},
+        ],
+    }
+    try:
+        with httpx.Client(timeout=settings.grading_request_timeout_seconds) as client:
+            response = client.post(url, headers=headers, params=params, json=payload)
+            response.raise_for_status()
+        body = response.json()
+        text = str(body["choices"][0]["message"]["content"]).strip()
+        if not text:
+            raise AIServiceUnavailable("Azure OpenAI returned an empty response")
+        result = _parse_model_response_text(text)
+        result['raw_response'] = text
+        return result
+    except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+        raise AIServiceUnavailable(f"Azure OpenAI unavailable: {exc}") from exc
+
+
 def _call_model(*_: Any, **kwargs: Any) -> dict[str, Any]:
     prompt = _build_prompt(
         assignment_description=str(kwargs.get("assignment_description", "")),
@@ -148,6 +220,8 @@ def _call_model(*_: Any, **kwargs: Any) -> dict[str, Any]:
         submission_text=str(kwargs.get("submission_text", "")),
     )
     provider = settings.ai_provider.lower().strip()
+    if provider in AZURE_PROVIDER_ALIASES:
+        return _call_azure_openai(prompt)
     if provider == "openai":
         return _call_openai(prompt)
     return _call_ollama(prompt)

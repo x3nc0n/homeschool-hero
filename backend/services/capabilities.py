@@ -16,6 +16,8 @@ from backend.services.backup_service import get_backup_configuration, validate_b
 
 logger = logging.getLogger(__name__)
 
+_AZURE_PROVIDER_ALIASES = {'azure_openai', 'azure', 'foundry', 'azure-openai'}
+
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -56,8 +58,57 @@ def get_auth_providers(config: Settings = settings) -> dict[str, Any]:
     }
 
 
+def _check_azure_openai_grading(config: Settings, provider: str) -> dict[str, Any]:
+    endpoint = (config.azure_openai_endpoint or '').strip()
+    deployment = (config.azure_openai_deployment or '').strip()
+    if not endpoint or not deployment:
+        return _status(
+            'ai_grading',
+            enabled=False,
+            configured=False,
+            reason='AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT must be configured for Azure OpenAI grading.',
+            details={'provider': provider},
+        )
+
+    from backend.services.ai_grader import AIServiceUnavailable, azure_openai_request_headers
+
+    try:
+        headers = azure_openai_request_headers(config)
+        url = f"{endpoint.rstrip('/')}/openai/deployments"
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(url, headers=headers, params={'api-version': config.azure_openai_api_version})
+            response.raise_for_status()
+    except AIServiceUnavailable as exc:
+        return _status(
+            'ai_grading',
+            enabled=False,
+            configured=True,
+            reason=f'Azure OpenAI authentication failed: {exc}',
+            details={'provider': provider, 'endpoint': endpoint, 'deployment': deployment},
+        )
+    except Exception as exc:  # noqa: BLE001 - report any reachability failure uniformly
+        return _status(
+            'ai_grading',
+            enabled=False,
+            configured=True,
+            reason=f'Azure OpenAI is unreachable: {exc}',
+            details={'provider': provider, 'endpoint': endpoint, 'deployment': deployment},
+        )
+
+    return _status(
+        'ai_grading',
+        enabled=True,
+        configured=True,
+        reason='Azure OpenAI is reachable.',
+        details={'provider': provider, 'endpoint': endpoint, 'deployment': deployment},
+    )
+
+
 def check_ai_grading(config: Settings = settings) -> dict[str, Any]:
     provider = config.ai_provider.strip().lower() or 'ollama'
+
+    if provider in _AZURE_PROVIDER_ALIASES:
+        return _check_azure_openai_grading(config, provider)
 
     if provider == 'openai':
         if not config.openai_api_key:
