@@ -20,9 +20,12 @@ from pypdf import PdfReader
 
 from backend.config import settings
 from backend.schemas.curriculum import CurriculumImportDocument
+from backend.services import ai_grader
 
 logger = logging.getLogger(__name__)
 AI_IMPORT_TOOL_NAME = 'create_curriculum_import'
+AZURE_OPENAI_HOSTS = ('openai.azure.com',)
+AZURE_DEPLOYMENTS_PATH_PREFIX = '/openai/deployments/'
 ALLOWED_HTTP_SCHEMES = {'http', 'https'}
 MAX_SOURCE_FETCH_REDIRECTS = 5
 SUPPORTED_FILE_TYPES = {
@@ -96,9 +99,12 @@ class AICurriculumImportService:
     def _ensure_configured(self) -> None:
         if not settings.ai_import_enabled:
             raise AIImportUnavailable('AI curriculum import is disabled. Set AI_IMPORT_ENABLED=true to enable it.')
-        if not (settings.ai_import_endpoint or '').strip():
+        endpoint = (settings.ai_import_endpoint or '').strip()
+        if not endpoint:
             raise AIImportUnavailable('AI curriculum import is not configured. Set AI_IMPORT_ENDPOINT.')
-        if not (settings.ai_import_api_key or '').strip():
+        parsed_endpoint = urlparse(endpoint)
+        # Azure OpenAI authenticates via managed identity; non-Azure endpoints still require an API key.
+        if not self._is_azure_openai_endpoint(parsed_endpoint) and not (settings.ai_import_api_key or '').strip():
             raise AIImportUnavailable('AI curriculum import is not configured. Set AI_IMPORT_API_KEY.')
 
     async def _extract_from_url(self, url: str) -> ExtractedSource:
@@ -323,6 +329,16 @@ class AICurriculumImportService:
 
     async def _call_ai_parser(self, extracted: ExtractedSource) -> dict[str, Any]:
         endpoint = settings.ai_import_endpoint.strip()
+        _, parsed_endpoint = self._parse_http_url(
+            endpoint,
+            error_message='AI import endpoint must be a valid http or https URL',
+        )
+        if self._is_azure_openai_endpoint(parsed_endpoint):
+            request_url = self._azure_chat_completions_url(endpoint, parsed_endpoint)
+            request_params: dict[str, str] | None = {'api-version': settings.ai_import_api_version}
+        else:
+            request_url = endpoint
+            request_params = None
         headers = self._build_headers(endpoint)
         payload = self._build_request_payload(extracted)
         timeout = httpx.Timeout(settings.ai_import_request_timeout_seconds)
@@ -331,7 +347,7 @@ class AICurriculumImportService:
         for attempt in range(1, max(settings.ai_import_retry_attempts, 1) + 1):
             try:
                 async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-                    response = await client.post(endpoint, headers=headers, json=payload)
+                    response = await client.post(request_url, headers=headers, params=request_params, json=payload)
                 response.raise_for_status()
                 body = response.json()
                 return self._parse_ai_response(body)
@@ -347,13 +363,14 @@ class AICurriculumImportService:
             endpoint,
             error_message='AI import endpoint must be a valid http or https URL',
         )
-        endpoint_host = (parsed_endpoint.hostname or '').lower()
-        is_azure_openai_endpoint = (
-            (endpoint_host == 'openai.azure.com' or endpoint_host.endswith('.openai.azure.com'))
-            and parsed_endpoint.path.startswith('/openai/deployments/')
-        )
-        if is_azure_openai_endpoint:
-            return {'api-key': settings.ai_import_api_key.strip(), 'Content-Type': 'application/json'}
+        api_key = (settings.ai_import_api_key or '').strip()
+        if self._is_azure_openai_endpoint(parsed_endpoint):
+            headers = {'Content-Type': 'application/json'}
+            if api_key:
+                headers['api-key'] = api_key
+            else:
+                headers['Authorization'] = 'Bearer ' + self._azure_ad_token()
+            return headers
         return {
             'Authorization': f'Bearer {settings.ai_import_api_key.strip()}',
             'Content-Type': 'application/json',
@@ -391,14 +408,32 @@ class AICurriculumImportService:
             endpoint,
             error_message='AI import endpoint must be a valid http or https URL',
         )
-        endpoint_host = (parsed_endpoint.hostname or '').lower()
-        is_azure_openai_endpoint = (
-            (endpoint_host == 'openai.azure.com' or endpoint_host.endswith('.openai.azure.com'))
-            and parsed_endpoint.path.startswith('/openai/deployments/')
-        )
-        if not is_azure_openai_endpoint:
+        if not self._is_azure_openai_endpoint(parsed_endpoint):
             payload['model'] = settings.ai_import_model
         return payload
+
+    def _is_azure_openai_endpoint(self, parsed_endpoint: Any) -> bool:
+        host = (parsed_endpoint.hostname or '').lower()
+        return any(host == azure_host or host.endswith(f'.{azure_host}') for azure_host in AZURE_OPENAI_HOSTS)
+
+    def _azure_chat_completions_url(self, endpoint: str, parsed_endpoint: Any) -> str:
+        if parsed_endpoint.path.startswith(AZURE_DEPLOYMENTS_PATH_PREFIX):
+            return endpoint
+        # Fall back to the grader's deployment when a dedicated import deployment isn't configured.
+        deployment = (settings.ai_import_deployment or settings.azure_openai_deployment or '').strip()
+        if not deployment:
+            raise AIImportUnavailable(
+                'AI curriculum import is not configured. '
+                'Set AI_IMPORT_DEPLOYMENT (or AZURE_OPENAI_DEPLOYMENT) for the Azure OpenAI endpoint.'
+            )
+        base = endpoint.rstrip('/')
+        return f'{base}{AZURE_DEPLOYMENTS_PATH_PREFIX}{deployment}/chat/completions'
+
+    def _azure_ad_token(self) -> str:
+        try:
+            return ai_grader._get_azure_ad_token()
+        except ai_grader.AIServiceUnavailable as exc:
+            raise AIImportUnavailable(f'AI curriculum import managed-identity auth failed: {exc}') from exc
 
     def _parse_ai_response(self, body: dict[str, Any]) -> dict[str, Any]:
         choices = body.get('choices') if isinstance(body, dict) else None

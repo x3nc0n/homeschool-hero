@@ -26,8 +26,8 @@ class _FakeAIAsyncClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def post(self, url, headers=None, json=None):
-        self.requests.append({'url': url, 'headers': headers, 'json': json})
+    async def post(self, url, headers=None, params=None, json=None):
+        self.requests.append({'url': url, 'headers': headers, 'params': params, 'json': json})
         request = httpx.Request('POST', url)
         body = {
             'choices': [
@@ -250,3 +250,59 @@ def test_ai_import_service_uses_urlparse_for_endpoint_detection(monkeypatch):
 
     assert headers == {'api-key': 'test-key', 'Content-Type': 'application/json'}
     assert 'model' not in payload
+
+
+def test_ai_import_azure_base_url_uses_managed_identity(monkeypatch):
+    service = AICurriculumImportService()
+    base_endpoint = 'https://homeschoolhero-prod-openai.openai.azure.com/'
+    monkeypatch.setattr('backend.config.settings.ai_import_enabled', True, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_endpoint', base_endpoint, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_api_key', None, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_deployment', 'curriculum-import', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_api_version', '2024-10-21', raising=False)
+    monkeypatch.setattr(
+        'backend.services.curriculum_ai_import.ai_grader._get_azure_ad_token',
+        lambda: 'managed-identity-token',
+    )
+
+    # Managed-identity auth is used when no API key is present on an Azure endpoint.
+    service._ensure_configured()
+    headers = service._build_headers(base_endpoint)
+    assert headers['Content-Type'] == 'application/json'
+    assert headers['Authorization'].endswith('managed-identity-token')
+    assert 'api-key' not in headers
+
+    # The base URL is expanded into the deployment-scoped chat-completions URL.
+    from urllib.parse import urlparse
+
+    request_url = service._azure_chat_completions_url(base_endpoint, urlparse(base_endpoint))
+    assert request_url == (
+        'https://homeschoolhero-prod-openai.openai.azure.com'
+        '/openai/deployments/curriculum-import/chat/completions'
+    )
+
+
+def test_ai_import_azure_base_url_requires_deployment(monkeypatch):
+    service = AICurriculumImportService()
+    from urllib.parse import urlparse
+
+    from backend.services.curriculum_ai_import import AIImportUnavailable
+
+    base_endpoint = 'https://homeschoolhero-prod-openai.openai.azure.com/'
+    monkeypatch.setattr('backend.config.settings.ai_import_deployment', None, raising=False)
+
+    with pytest.raises(AIImportUnavailable, match='AI_IMPORT_DEPLOYMENT'):
+        service._azure_chat_completions_url(base_endpoint, urlparse(base_endpoint))
+
+
+def test_ai_import_azure_endpoint_does_not_require_api_key(monkeypatch):
+    service = AICurriculumImportService()
+    monkeypatch.setattr('backend.config.settings.ai_import_enabled', True, raising=False)
+    monkeypatch.setattr(
+        'backend.config.settings.ai_import_endpoint',
+        'https://homeschoolhero-prod-openai.openai.azure.com/',
+        raising=False,
+    )
+    monkeypatch.setattr('backend.config.settings.ai_import_api_key', None, raising=False)
+
+    service._ensure_configured()  # must not raise: Azure uses managed identity

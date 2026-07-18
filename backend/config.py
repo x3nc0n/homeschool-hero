@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     azure_openai_api_key: str | None = Field(default=None, alias='AZURE_OPENAI_API_KEY')
     ai_import_enabled: bool = Field(False, alias='AI_IMPORT_ENABLED')
     ai_import_endpoint: str | None = Field(default=None, alias='AI_IMPORT_ENDPOINT')
+    ai_import_deployment: str | None = Field(default=None, alias='AI_IMPORT_DEPLOYMENT')
+    ai_import_api_version: str = Field('2024-10-21', alias='AI_IMPORT_API_VERSION')
     ai_import_api_key: str | None = Field(default=None, alias='AI_IMPORT_API_KEY')
     ai_import_model: str = Field('gpt-4o-mini', alias='AI_IMPORT_MODEL')
     ai_import_request_timeout_seconds: float = Field(60.0, alias='AI_IMPORT_REQUEST_TIMEOUT_SECONDS')
