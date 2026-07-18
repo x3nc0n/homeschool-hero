@@ -70,21 +70,27 @@ def _check_azure_openai_grading(config: Settings, provider: str) -> dict[str, An
             details={'provider': provider},
         )
 
-    from backend.services.ai_grader import AIServiceUnavailable, azure_openai_request_headers
+    from backend.services.ai_grader import AIServiceUnavailable, azure_openai_chat_url, azure_openai_request_headers
 
+    details = {'provider': provider, 'endpoint': endpoint, 'deployment': deployment}
     try:
         headers = azure_openai_request_headers(config)
-        url = f"{endpoint.rstrip('/')}/openai/deployments"
+        url = azure_openai_chat_url(config)
+        probe_body = {'messages': [{'role': 'user', 'content': 'ping'}], 'max_tokens': 1}
         with httpx.Client(timeout=5.0) as client:
-            response = client.get(url, headers=headers, params={'api-version': config.azure_openai_api_version})
-            response.raise_for_status()
+            response = client.post(
+                url,
+                headers=headers,
+                params={'api-version': config.azure_openai_api_version},
+                json=probe_body,
+            )
     except AIServiceUnavailable as exc:
         return _status(
             'ai_grading',
             enabled=False,
             configured=True,
             reason=f'Azure OpenAI authentication failed: {exc}',
-            details={'provider': provider, 'endpoint': endpoint, 'deployment': deployment},
+            details=details,
         )
     except Exception as exc:  # noqa: BLE001 - report any reachability failure uniformly
         return _status(
@@ -92,7 +98,31 @@ def _check_azure_openai_grading(config: Settings, provider: str) -> dict[str, An
             enabled=False,
             configured=True,
             reason=f'Azure OpenAI is unreachable: {exc}',
-            details={'provider': provider, 'endpoint': endpoint, 'deployment': deployment},
+            details=details,
+        )
+
+    # The least-privilege "Cognitive Services OpenAI User" role permits inference but not
+    # management operations (e.g. list-deployments returns 404). A minimal chat/completions
+    # call returns 200 (or a model-layer 4xx such as invalid_request_error) when the deployment
+    # is reachable; only auth/permission (401/403) or server (5xx) responses indicate the
+    # provider is genuinely unavailable.
+    status_code = response.status_code
+    details = {**details, 'status_code': status_code}
+    if status_code in (401, 403):
+        return _status(
+            'ai_grading',
+            enabled=False,
+            configured=True,
+            reason=f'Azure OpenAI authorization failed (HTTP {status_code}).',
+            details=details,
+        )
+    if status_code >= 500:
+        return _status(
+            'ai_grading',
+            enabled=False,
+            configured=True,
+            reason=f'Azure OpenAI is unreachable (HTTP {status_code}).',
+            details=details,
         )
 
     return _status(
@@ -100,7 +130,7 @@ def _check_azure_openai_grading(config: Settings, provider: str) -> dict[str, An
         enabled=True,
         configured=True,
         reason='Azure OpenAI is reachable.',
-        details={'provider': provider, 'endpoint': endpoint, 'deployment': deployment},
+        details=details,
     )
 
 
