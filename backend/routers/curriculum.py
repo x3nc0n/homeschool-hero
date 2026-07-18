@@ -267,7 +267,7 @@ async def _parse_ai_import_request(request: Request) -> tuple[object | None, str
 def _curriculum_source_to_read(source) -> CurriculumSourceRead:
     availability = source.availability()
     return CurriculumSourceRead(
-        id=source.source_id,
+        source=source.source_id,
         name=source.display_name,
         description=source.description,
         enabled=availability.enabled,
@@ -286,7 +286,7 @@ def _curriculum_source_search_to_read(search_page) -> CurriculumSourceSearchRead
         has_more=search_page.has_more,
         items=[
             {
-                'id': item.id,
+                'item_id': item.id,
                 'title': item.title,
                 'description': item.description,
                 'subjects': item.subjects,

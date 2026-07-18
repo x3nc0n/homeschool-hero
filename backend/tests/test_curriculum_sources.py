@@ -134,7 +134,7 @@ async def test_curriculum_sources_list_search_and_import(authorized_client, monk
     listing = await authorized_client.get(CURRICULUM['sources'])
     assert listing.status_code == 200, listing.text
     listing_payload = listing.json()
-    assert [item['id'] for item in listing_payload] == ['demo-source', 'locked-source']
+    assert [item['source'] for item in listing_payload] == ['demo-source', 'locked-source']
     assert listing_payload[1]['configuration_required'] is True
 
     search = await authorized_client.get(
@@ -142,7 +142,7 @@ async def test_curriculum_sources_list_search_and_import(authorized_client, monk
         params={'q': 'demo'},
     )
     assert search.status_code == 200, search.text
-    assert search.json()['items'][0]['id'] == 'demo-1'
+    assert search.json()['items'][0]['item_id'] == 'demo-1'
 
     disabled_search = await authorized_client.get(
         CURRICULUM['source_search'].format(source_id='locked-source'),

@@ -614,7 +614,7 @@ class CurriculumImportActivationRead(BaseModel):
 
 
 class CurriculumSourceRead(BaseModel):
-    id: str
+    source: str
     name: str
     description: str
     enabled: bool
@@ -623,7 +623,7 @@ class CurriculumSourceRead(BaseModel):
 
 
 class CurriculumSourceItemRead(BaseModel):
-    id: str
+    item_id: str
     title: str
     description: str | None = None
     subjects: list[str] = Field(default_factory=list)
