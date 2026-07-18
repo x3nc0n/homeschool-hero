@@ -290,6 +290,7 @@ def test_ai_import_azure_base_url_requires_deployment(monkeypatch):
 
     base_endpoint = 'https://homeschoolhero-prod-openai.openai.azure.com/'
     monkeypatch.setattr('backend.config.settings.ai_import_deployment', None, raising=False)
+    monkeypatch.setattr('backend.config.settings.azure_openai_deployment', None, raising=False)
 
     with pytest.raises(AIImportUnavailable, match='AI_IMPORT_DEPLOYMENT'):
         service._azure_chat_completions_url(base_endpoint, urlparse(base_endpoint))
