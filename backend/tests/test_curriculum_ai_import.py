@@ -290,6 +290,7 @@ def test_ai_import_azure_base_url_requires_deployment(monkeypatch):
 
     base_endpoint = 'https://homeschoolhero-prod-openai.openai.azure.com/'
     monkeypatch.setattr('backend.config.settings.ai_import_deployment', None, raising=False)
+    monkeypatch.setattr('backend.config.settings.azure_openai_deployment', None, raising=False)
 
     with pytest.raises(AIImportUnavailable, match='AI_IMPORT_DEPLOYMENT'):
         service._azure_chat_completions_url(base_endpoint, urlparse(base_endpoint))
@@ -306,3 +307,67 @@ def test_ai_import_azure_endpoint_does_not_require_api_key(monkeypatch):
     monkeypatch.setattr('backend.config.settings.ai_import_api_key', None, raising=False)
 
     service._ensure_configured()  # must not raise: Azure uses managed identity
+
+
+def test_ai_import_azure_deployment_fallback_to_grader_deployment(monkeypatch):
+    """AI_IMPORT_DEPLOYMENT absent → falls back to AZURE_OPENAI_DEPLOYMENT (gpt-4o)."""
+    service = AICurriculumImportService()
+    from urllib.parse import urlparse
+
+    base_endpoint = 'https://homeschoolhero-prod-openai.openai.azure.com/'
+    monkeypatch.setattr('backend.config.settings.ai_import_deployment', None, raising=False)
+    monkeypatch.setattr('backend.config.settings.azure_openai_deployment', 'gpt-4o', raising=False)
+
+    request_url = service._azure_chat_completions_url(base_endpoint, urlparse(base_endpoint))
+    assert request_url == (
+        'https://homeschoolhero-prod-openai.openai.azure.com'
+        '/openai/deployments/gpt-4o/chat/completions'
+    )
+
+
+def test_ai_import_non_azure_endpoint_uses_bearer_auth(monkeypatch):
+    """Non-Azure endpoint with API key sends Authorization: Bearer; never sends api-key header."""
+    service = AICurriculumImportService()
+    monkeypatch.setattr('backend.config.settings.ai_import_api_key', 'sk-test-key', raising=False)
+
+    headers = service._build_headers('https://api.openai.com/v1/chat/completions')
+
+    assert headers['Authorization'] == 'Bearer sk-test-key'
+    assert 'api-key' not in headers
+
+
+@pytest.mark.asyncio
+async def test_ai_import_azure_call_includes_api_version_param(monkeypatch):
+    """Azure _call_ai_parser sends api-version as a query param and uses managed-identity auth."""
+    _FakeAIAsyncClient.requests.clear()
+    base_endpoint = 'https://homeschoolhero-prod-openai.openai.azure.com/'
+    monkeypatch.setattr('backend.config.settings.ai_import_enabled', True, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_endpoint', base_endpoint, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_api_key', None, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_deployment', 'gpt-4o', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_api_version', '2024-10-21', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_retry_attempts', 1, raising=False)
+    monkeypatch.setattr(
+        'backend.services.curriculum_ai_import.ai_grader._get_azure_ad_token',
+        lambda: 'managed-identity-token',
+    )
+    monkeypatch.setattr('backend.services.curriculum_ai_import.httpx.AsyncClient', _FakeAIAsyncClient)
+
+    service = AICurriculumImportService()
+    extracted = ExtractedSource(
+        source_kind='file',
+        source_name='scope.txt',
+        content_type='text/plain',
+        text='Algebra scope and sequence',
+        source_url=None,
+        warnings=[],
+    )
+
+    await service._call_ai_parser(extracted)
+
+    assert len(_FakeAIAsyncClient.requests) == 1
+    req = _FakeAIAsyncClient.requests[0]
+    assert req['params'] == {'api-version': '2024-10-21'}
+    assert '/openai/deployments/gpt-4o/chat/completions' in req['url']
+    assert req['headers']['Authorization'] == 'Bearer managed-identity-token'
+    assert 'api-key' not in req['headers']
