@@ -452,6 +452,9 @@ async def search_curriculum_source(
     except CurriculumSourceError:
         logger.exception('Curriculum source search failed.')
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=CURRICULUM_SOURCE_ERROR_MESSAGE) from None
+    except Exception:
+        logger.exception('Curriculum source search raised an unexpected error.')
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=CURRICULUM_SOURCE_ERROR_MESSAGE) from None
     return _curriculum_source_search_to_read(search_page)
 
 
@@ -485,6 +488,9 @@ async def import_curriculum_from_source(
         )
     except CurriculumSourceError:
         logger.exception('Curriculum source import failed.')
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=CURRICULUM_SOURCE_ERROR_MESSAGE) from None
+    except Exception:
+        logger.exception('Curriculum source import raised an unexpected error.')
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=CURRICULUM_SOURCE_ERROR_MESSAGE) from None
     return await _create_imported_curriculum_response(db, auth=auth, payload=payload)
 

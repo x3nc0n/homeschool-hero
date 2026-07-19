@@ -185,11 +185,20 @@ def summarize_health(services: dict[str, dict[str, Any]]) -> tuple[str, dict[str
     overall = 'healthy'
     for payload in services.values():
         status = str(payload.get('status') or 'degraded')
+        required = bool(payload.get('required'))
         counts[status if status in counts else 'degraded'] += 1
-        if status == 'unhealthy' and payload.get('required'):
+        if status == 'unhealthy' and required:
             overall = 'unhealthy'
-        elif overall != 'unhealthy' and status in {'degraded', 'not_configured', 'unhealthy'}:
-            overall = 'degraded'
+        elif overall != 'unhealthy':
+            # A service drags the overall status to 'degraded' when it is actively
+            # failing (degraded/unhealthy) or when a *required* service is not
+            # configured. Optional services that are simply not configured (e.g. a
+            # self-hoster who never set up SMTP or NAS backup) are an expected,
+            # benign state and must not mark the whole system as degraded.
+            if status in {'degraded', 'unhealthy'}:
+                overall = 'degraded'
+            elif status == 'not_configured' and required:
+                overall = 'degraded'
     return overall, counts
 
 

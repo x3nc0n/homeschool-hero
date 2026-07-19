@@ -57,6 +57,49 @@ def test_health_endpoint_reports_degraded_when_optional_service_is_down(app, mon
     assert payload == {'status': 'ok', 'ready': True, 'maintenance': False}
 
 
+def test_summarize_health_ignores_optional_not_configured_services() -> None:
+    from backend.services.health import summarize_health
+
+    services = {
+        'database': _service('database', 'healthy', required=True),
+        'ai_service': _service('ai_service', 'healthy', required=False),
+        'disk_space': _service('disk_space', 'healthy', required=True),
+        'smtp': _service('smtp', 'not_configured', required=False, configured=False),
+        'backup_destination': _service('backup_destination', 'not_configured', required=False, configured=False),
+    }
+
+    overall, counts = summarize_health(services)
+
+    assert overall == 'healthy'
+    assert counts == {'healthy': 3, 'degraded': 0, 'unhealthy': 0, 'not_configured': 2}
+
+
+def test_summarize_health_degrades_when_required_service_not_configured() -> None:
+    from backend.services.health import summarize_health
+
+    services = {
+        'database': _service('database', 'not_configured', required=True, configured=False),
+        'disk_space': _service('disk_space', 'healthy', required=True),
+    }
+
+    overall, _counts = summarize_health(services)
+
+    assert overall == 'degraded'
+
+
+def test_summarize_health_degrades_when_optional_service_degraded() -> None:
+    from backend.services.health import summarize_health
+
+    services = {
+        'database': _service('database', 'healthy', required=True),
+        'ai_service': _service('ai_service', 'degraded', required=False),
+    }
+
+    overall, _counts = summarize_health(services)
+
+    assert overall == 'degraded'
+
+
 def test_health_endpoint_reports_unhealthy_when_required_service_fails(app, monkeypatch) -> None:
     async def fake_collect(_config=settings):
         return {

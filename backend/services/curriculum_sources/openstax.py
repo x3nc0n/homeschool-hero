@@ -146,7 +146,7 @@ class OpenStaxSource(CurriculumSource):
         return CurriculumSourceItem(
             id=slug,
             title=str(raw_item.get('title') or slug or 'OpenStax item'),
-            description=strip_html(raw_item.get('promote_snippet', [''])[0] if raw_item.get('promote_snippet') else None),
+            description=self._promote_snippet(raw_item),
             subjects=unique_strings((raw_item.get('subjects') or []) + (raw_item.get('k12subject') or [])),
             grade_levels=self._grade_levels(raw_item),
             url=raw_item.get('webview_rex_link') or f'https://openstax.org/details/{raw_item.get("slug") or ""}',
@@ -163,6 +163,24 @@ class OpenStaxSource(CurriculumSource):
         if raw_item.get('is_hs') or raw_item.get('is_ap'):
             return ['9', '10', '11', '12']
         return []
+
+    def _promote_snippet(self, raw_item: dict[str, Any]) -> str | None:
+        snippet = raw_item.get('promote_snippet')
+        if isinstance(snippet, str):
+            return strip_html(snippet)
+        if isinstance(snippet, list):
+            for block in snippet:
+                text: Any = block
+                if isinstance(block, dict):
+                    value = block.get('value')
+                    if isinstance(value, dict):
+                        text = value.get('description') or value.get('value') or value.get('name')
+                    else:
+                        text = value
+                cleaned = strip_html(text)
+                if cleaned:
+                    return cleaned
+        return None
 
     def _subject_name(self, raw_data: dict[str, Any]) -> str:
         for collection_key in ('k12book_subjects', 'book_subjects'):

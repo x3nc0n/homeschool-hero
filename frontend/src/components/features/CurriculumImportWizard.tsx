@@ -1,4 +1,4 @@
-import { type ChangeEvent, type DragEvent, useEffect, useMemo, useState } from 'react'
+import { type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckCircle2, FileJson, FileText, Sparkles, Upload, WandSparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -124,6 +124,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
+  const aiFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const requiredFields = useMemo(() => {
     const required = schema?.required
@@ -428,19 +429,22 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                             <p className="text-sm font-medium">Drop a PDF, DOCX, or TXT file here</p>
                             <p className="mt-1 text-xs text-muted-foreground">We will analyze the structure, build a draft tree, and let you review it before saving.</p>
                             <div className="mt-3 flex justify-center">
-                              <Label htmlFor="curriculum-ai-upload" className="cursor-pointer">
-                                <Input
-                                  id="curriculum-ai-upload"
-                                  type="file"
-                                  className="hidden"
-                                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                                  onChange={(event) => handleAiFileChange(event.target.files?.[0])}
-                                />
-                                <Button type="button" variant="secondary">
-                                  <Upload className="h-4 w-4" />
-                                  Choose file
-                                </Button>
-                              </Label>
+                              <input
+                                ref={aiFileInputRef}
+                                id="curriculum-ai-upload"
+                                type="file"
+                                className="hidden"
+                                accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                                onChange={(event) => handleAiFileChange(event.target.files?.[0])}
+                              />
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => aiFileInputRef.current?.click()}
+                              >
+                                <Upload className="h-4 w-4" />
+                                Choose file
+                              </Button>
                             </div>
                           </div>
 

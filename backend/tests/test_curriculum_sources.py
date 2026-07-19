@@ -258,3 +258,47 @@ def test_oer_commons_connector_reports_missing_token(monkeypatch):
 
     assert availability.enabled is False
     assert availability.configuration_required is True
+
+
+def test_strip_html_ignores_non_string_values():
+    from backend.services.curriculum_sources.utils import strip_html
+
+    assert strip_html(None) is None
+    assert strip_html({'value': 'x'}) is None
+    assert strip_html(['a', 'b']) is None
+    assert strip_html('<p>Hello&amp;bye</p>') == 'Hello&bye'
+
+
+def test_openstax_build_catalog_item_handles_streamfield_promote_snippet():
+    connector = OpenStaxSource()
+
+    # promote_snippet is a StreamField-style list of blocks (current OpenStax API shape),
+    # which previously crashed _build_catalog_item with a TypeError -> 500 on search.
+    item = connector._build_catalog_item(
+        {
+            'slug': 'books/biology-2e',
+            'title': 'Biology 2e',
+            'promote_snippet': [
+                {'type': 'content', 'value': {'name': 'Assignable', 'description': '<p>Study anytime.</p>'}},
+            ],
+            'subjects': ['Science'],
+        }
+    )
+
+    assert item.id == 'biology-2e'
+    assert item.title == 'Biology 2e'
+    assert item.description == 'Study anytime.'
+
+
+@pytest.mark.parametrize('promote_snippet', [[], None, [{'type': 'content', 'value': {}}], 'plain string promo'])
+def test_openstax_build_catalog_item_promote_snippet_variants(promote_snippet):
+    connector = OpenStaxSource()
+    item = connector._build_catalog_item(
+        {'slug': 'books/x', 'title': 'X', 'promote_snippet': promote_snippet}
+    )
+    assert item.title == 'X'
+    if promote_snippet == 'plain string promo':
+        assert item.description == 'plain string promo'
+    else:
+        assert item.description is None
+

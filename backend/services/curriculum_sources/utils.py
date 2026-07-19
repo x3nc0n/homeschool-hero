@@ -21,7 +21,7 @@ class _HTMLTextExtractor(HTMLParser):
 
 
 def strip_html(value: str | None) -> str | None:
-    if value is None:
+    if not isinstance(value, str):
         return None
     parser = _HTMLTextExtractor()
     parser.feed(value)
