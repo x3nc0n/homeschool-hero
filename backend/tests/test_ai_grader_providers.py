@@ -111,3 +111,50 @@ def test_openai_model_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result['unavailable'] is False
     call = _FakeClient.calls[-1]
     assert call['json'].get('model') == 'gpt-4o'
+
+
+class _FakeCredential:
+    """Records constructor kwargs and returns a canned access token."""
+
+    instances: list[dict[str, Any]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        _FakeCredential.instances.append(kwargs)
+
+    def get_token(self, *_scopes: str) -> Any:
+        return type('T', (), {'token': 'fake-mi-token'})()
+
+
+@pytest.fixture(autouse=True)
+def _reset_azure_credential() -> None:
+    ai_grader._azure_credential = None
+    _FakeCredential.instances = []
+
+
+def _install_fake_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    import azure.identity
+
+    monkeypatch.setattr(azure.identity, 'DefaultAzureCredential', _FakeCredential)
+
+
+def test_managed_identity_pins_configured_uami_client_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_credential(monkeypatch)
+    monkeypatch.setattr(ai_grader.settings, 'azure_managed_identity_client_id', '  11111111-2222-3333-4444-555555555555  ')
+
+    token = ai_grader._get_azure_ad_token()
+
+    assert token == 'fake-mi-token'
+    assert _FakeCredential.instances == [
+        {'managed_identity_client_id': '11111111-2222-3333-4444-555555555555'}
+    ]
+
+
+def test_managed_identity_omits_client_id_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_credential(monkeypatch)
+    monkeypatch.setattr(ai_grader.settings, 'azure_managed_identity_client_id', None)
+
+    token = ai_grader._get_azure_ad_token()
+
+    assert token == 'fake-mi-token'
+    assert _FakeCredential.instances == [{}]
+

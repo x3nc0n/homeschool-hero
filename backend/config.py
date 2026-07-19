@@ -81,6 +81,7 @@ class Settings(BaseSettings):
     azure_openai_deployment: str | None = Field(default=None, alias='AZURE_OPENAI_DEPLOYMENT')
     azure_openai_api_version: str = Field('2024-10-21', alias='AZURE_OPENAI_API_VERSION')
     azure_openai_api_key: str | None = Field(default=None, alias='AZURE_OPENAI_API_KEY')
+    azure_managed_identity_client_id: str | None = Field(default=None, alias='AZURE_MANAGED_IDENTITY_CLIENT_ID')
     ai_import_enabled: bool = Field(False, alias='AI_IMPORT_ENABLED')
     ai_import_endpoint: str | None = Field(default=None, alias='AI_IMPORT_ENDPOINT')
     ai_import_deployment: str | None = Field(default=None, alias='AI_IMPORT_DEPLOYMENT')

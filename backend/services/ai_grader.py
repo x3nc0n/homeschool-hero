@@ -35,7 +35,13 @@ def _get_azure_ad_token() -> str:
                     raise AIServiceUnavailable(
                         "azure-identity is required for Azure OpenAI managed-identity auth"
                     ) from exc
-                _azure_credential = DefaultAzureCredential()
+                # Pin the user-assigned managed identity explicitly. In a Container App with a
+                # system-assigned identity and/or multiple UAMIs, an unspecified DefaultAzureCredential
+                # can resolve to the wrong identity and yield a valid token that Azure OpenAI rejects
+                # with HTTP 403 (authenticated, but not RBAC-authorized on the account).
+                client_id = (settings.azure_managed_identity_client_id or "").strip()
+                credential_kwargs = {"managed_identity_client_id": client_id} if client_id else {}
+                _azure_credential = DefaultAzureCredential(**credential_kwargs)
     try:
         return _azure_credential.get_token(AZURE_OPENAI_SCOPE).token
     except Exception as exc:  # noqa: BLE001 - surface any credential/token failure uniformly
