@@ -20,6 +20,8 @@
 
 - 2026-06-12T17:18:11.955-05:00 — Verified PR #193 / commit 653f00f fully resolved #178, #180, #181, and #183. Confirmed backend/alembic.ini no longer hardcodes a database URL and backend/migrations/env.py loads DATABASE_URL at runtime; backend/security.py only trusts X-Forwarded-For when TRUST_PROXY_HEADERS is enabled; nginx/nginx-tls.conf now sets the required TLS security headers; and the flagged third-party GitHub Actions are pinned to immutable SHAs. Closed all four issues and removed go:needs-research.
 
+- 2026-07-22T18:07:07.184-05:00 — **Issue #411 Design Review APPROVED — Headless API Token Implementation Assigned.** Egon conducted design review ceremony on family-scoped revocable API token contract for AI curriculum import and student work upload. **Decision: Option A** (self-issued HS256 JWT + family-scoped + stateless revocation). Why: zero external IdP dependency (matches self-hosted goal), uses existing JWT bearer path, minimal new code. **Implementation assigned to Ray** (reassigned from auto-triage Venkman). Deliverables: new `api_tokens` table + model, JWT `jti`-based revocation check, `POST/GET/DELETE /api/auth/api-tokens` endpoints, capability intersection in bearer auth, tests, `.env.example` updates, docs. Acceptance criteria: 11 gates verified (RBAC, family-scoped embedding, revocation, capability scoping, cross-family rejection, metadata-only list endpoint, max token limit, reversible migration, no secrets in test fixtures). Implementation roadmap: migration → model → service → JWT enhancement → router → config → tests → docs. Branch: `squad/411-headless-api-tokens`. **Status:** Ready for implementation — start with DB migration.
+
 ## Recent Activity
 
 ### 2026-06-09 Security Batch Completion
