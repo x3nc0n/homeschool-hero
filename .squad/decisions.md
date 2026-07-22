@@ -361,3 +361,183 @@ Rationale: This is 100% backend Python work (auth service, JWT signing, DB migra
 
 Branch: `squad/411-headless-api-tokens` (from `dev`)
 
+
+
+# Security Amendment: Issue #411 — API Token Design Gaps
+
+**Author:** Egon (Lead)  
+**Date:** 2026-07-22T18:07:07-05:00  
+**Status:** APPROVED — supersedes ambiguous clauses in the original decision  
+**Supersedes:** Section 3.4 verification flow bullet 2; Section 3 constraint list; Sections 4 and 5 partially  
+**Context:** Winston pre-implementation review identified five design gaps  
+
+---
+
+## Gap 1: `token_type=api_token` MUST require registered `jti`
+
+**Ruling:** The original decision's "If not found in table → allow" applies ONLY to tokens WITHOUT `token_type: "api_token"` in their claims (i.e., external OIDC/JWKS JWTs).
+
+**Amended verification flow** (replaces Section 3.4 bullet 2):
+
+1. Decode JWT (HS256 via `JWT_SECRET`; JWKS for external).
+2. Read `token_type` claim:
+   - If `token_type == "api_token"`:
+     - `jti` claim is **required** — missing `jti` → 401.
+     - Look up `jti` in `api_tokens` table:
+       - Not found → **401** ("API token is not registered").
+       - `revoked_at IS NOT NULL` → **401** ("API token has been revoked").
+       - `expires_at < now` (belt-and-suspenders with JWT `exp`) → **401**.
+       - Found and active → update `last_used_at`, proceed.
+   - If `token_type` is absent or any other value (external JWT):
+     - **Skip** `api_tokens` table lookup entirely. Proceed with existing external JWT path.
+3. Continue to `_resolve_bearer_session_claims` as before.
+
+**Rationale:** An `api_token`-typed JWT that bypasses the DB creates an unrevocable credential. External JWTs are trusted via signature verification against JWKS — they have no reason to exist in `api_tokens`.
+
+---
+
+## Gap 2: GET/DELETE `/api/auth/api-tokens` authorization
+
+**Ruling:** All three API token management endpoints share identical authorization:
+
+| Endpoint | Method | Capability Required | Family Scope |
+|----------|--------|-------------------|--------------|
+| `/api/auth/api-tokens` | POST | `manage_security` | Caller's `family_id` only |
+| `/api/auth/api-tokens` | GET | `manage_security` | Caller's `family_id` only |
+| `/api/auth/api-tokens/{id}` | DELETE | `manage_security` | Caller's `family_id` only |
+
+**Implementation:**
+- Use `require_capabilities(Capability.manage_security, action='manage API tokens')` as a FastAPI dependency on all three routes.
+- The query/delete MUST filter by `WHERE family_id = auth.family_id`. Never accept a client-supplied `family_id` parameter.
+- Attempting to DELETE a token belonging to a different family → **404** (do not confirm existence).
+
+**Cross-family access attempt → HTTP 404** (not 403, to avoid family enumeration).
+
+---
+
+## Gap 3: `manage_grading` is included as a delegatable capability
+
+**Ruling:** YES — `manage_grading` is a valid delegatable capability for API tokens.
+
+**Allowed delegated capabilities (complete list):**
+```python
+DELEGATABLE_CAPABILITIES = {
+    "manage_curriculum",
+    "manage_submissions",
+    "manage_grading",
+}
+```
+
+**Endpoints authorized by `manage_grading`:**
+
+| Endpoint | Current Auth | Note |
+|----------|-------------|------|
+| `POST /api/grading/review/{job_id}` | `require_teacher()` | Must add capability check |
+| `GET /api/grading/jobs` | `require_teacher()` | Must add capability check |
+| `GET /api/grading/review-queue` | `require_teacher()` | Must add capability check |
+
+**Implementation note for Ray:** The grading router currently uses `require_teacher()` (role-based). For API token compatibility, these endpoints MUST transition to `require_capabilities(Capability.manage_grading, action='...')`. Since `manage_grading` is already granted to `AppRole.teacher` and `FamilyRole.parent/co_parent/tutor`, this is not a behavioral change for interactive users — only an enablement for API tokens whose `effective_capabilities` include `manage_grading` via intersection.
+
+**`manage_security` is explicitly NOT delegatable.** Attempting to include `manage_security` in a token's `capabilities` array → **400 Bad Request** with detail: "manage_security cannot be delegated to API tokens."
+
+---
+
+## Gap 4: Max-active-token enforcement (SQLite-safe)
+
+**Ruling:** Do NOT use `SELECT FOR UPDATE`. The app supports SQLite where row-level locking does not exist.
+
+**Strategy — count-then-insert with unique constraint:**
+
+1. **Database constraint:** Add a `UNIQUE(family_id, name)` constraint on `api_tokens` table (enforces duplicate-name rejection at the DB level regardless of race conditions).
+
+2. **Application-level count check:**
+   ```
+   count = SELECT COUNT(*) FROM api_tokens
+            WHERE family_id = :fid AND revoked_at IS NULL AND expires_at > now()
+   if count >= max_active_per_family:
+       raise 409
+   INSERT INTO api_tokens (...)
+   ```
+
+3. **Concurrency safety:** In the unlikely event of a race (two concurrent create requests), both will pass the count check but one may exceed the limit by 1 token. This is acceptable for a self-hosted single-family app. The unique name constraint ensures no duplicates, and the limit is a soft cap — list/revoke endpoints allow the owner to clean up.
+
+4. **Testing approach:**
+   - Unit test: Seed exactly `max - 1` tokens, create one more (succeeds), attempt another (fails with 409).
+   - Do NOT write concurrent-race tests that depend on timing — they are flaky in CI. The unique name constraint is the correctness guarantee; the count check is UX.
+
+**HTTP statuses for token creation errors:**
+
+| Condition | Status | Detail |
+|-----------|--------|--------|
+| Duplicate name within family | **409 Conflict** | "A token named '{name}' already exists in this family." |
+| Active token limit reached | **409 Conflict** | "Maximum active API tokens ({limit}) reached for this family." |
+| Invalid/non-delegatable capability | **400 Bad Request** | "Invalid or non-delegatable capability: '{cap}'." |
+| `expires_in_days` out of range | **422 Unprocessable Entity** | (standard Pydantic validation) |
+
+---
+
+## Gap 5: Capability intersection — exact code layer
+
+**Ruling:** Intersection happens in `security.py::_resolve_bearer_session_claims`, BEFORE constructing the `SessionClaims` dict.
+
+**Amended flow:**
+
+1. `auth_jwt.py::_build_bearer_claims` reads `capabilities` claim from the JWT and stores it on a new field: `BearerSessionClaims.token_capabilities: list[str] | None` (default `None`).
+   - For `token_type=api_token`: populated from the JWT `capabilities` claim.
+   - For external JWTs: remains `None`.
+
+2. `security.py::_resolve_bearer_session_claims`:
+   - Resolves the membership row (existing behavior).
+   - Constructs an `AuthSession` via `_auth_session_from_bearer_claims` (existing behavior).
+   - **NEW:** If `bearer_claims.token_capabilities is not None`:
+     - Compute role-derived `effective_capabilities` from the user's `family_role + app_roles + is_owner` (using `derive_effective_capabilities`).
+     - Intersect: `final_caps = role_derived_caps ∩ set(bearer_claims.token_capabilities)`.
+     - Store `final_caps` in the `SessionClaims['effective_capabilities']` field (or equivalent mechanism passed to `AuthSession`).
+   - If `bearer_claims.token_capabilities is None` (external JWT): no intersection — derive capabilities from roles as normal.
+
+3. `AuthSession.__post_init__` already respects a pre-populated `effective_capabilities` set (it only calls `derive_effective_capabilities` when the set is empty). So the intersection result flows through without change to downstream `has_capability()` checks.
+
+**Why this layer:** `_resolve_bearer_session_claims` is the single point where we have BOTH the decoded token claims AND the database-resolved membership/role. It's after the DB lookup (so role-derived caps are available) and before the `SessionClaims` is cached on `request.state.session`.
+
+**External JWT behavior preserved:** External JWTs never set `token_capabilities`, so they continue to derive full role-based capabilities as today.
+
+---
+
+## Summary of HTTP Status Codes (authoritative)
+
+| Scenario | Status |
+|----------|--------|
+| Missing/invalid bearer token | **401** |
+| `token_type=api_token` with missing `jti` | **401** |
+| `token_type=api_token` with unregistered `jti` | **401** |
+| `token_type=api_token` with revoked `jti` | **401** |
+| Expired JWT (any type) | **401** |
+| Valid token, user deactivated | **403** |
+| Valid token, capability insufficient | **403** |
+| Cross-family data access | **403** |
+| DELETE/GET token belonging to different family | **404** |
+| Create token: duplicate name | **409** |
+| Create token: active limit exceeded | **409** |
+| Create token: non-delegatable capability | **400** |
+| Create token: invalid request body | **422** |
+
+---
+
+## Implementation Green Light
+
+**Status: GREEN — Ray may proceed.**
+
+All five design gaps are resolved. This amendment plus the original decision document constitute the complete specification. Ray should reference both when implementing.
+
+**Priority order for implementation:**
+1. `BearerSessionClaims.token_capabilities` field + `_build_bearer_claims` population (Gap 5)
+2. `jti` validation logic branched on `token_type` (Gap 1)
+3. Capability intersection in `_resolve_bearer_session_claims` (Gap 5)
+4. `api_tokens` table with `UNIQUE(family_id, name)` constraint (Gap 4)
+5. Token service with count-based limit enforcement (Gap 4)
+6. Router: POST/GET/DELETE with `require_capabilities(Capability.manage_security)` (Gap 2)
+7. Grading router migration to `require_capabilities(Capability.manage_grading)` (Gap 3)
+8. Tests covering all status codes above
+
+---
+
