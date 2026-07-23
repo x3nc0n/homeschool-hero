@@ -302,3 +302,54 @@ def test_openstax_build_catalog_item_promote_snippet_variants(promote_snippet):
     else:
         assert item.description is None
 
+
+def test_import_metadata_folds_unknown_keys_into_extensions():
+    from backend.schemas.curriculum import CurriculumImportMetadata
+
+    # AI-generated drafts often emit ad-hoc scheduling fields (e.g. a per-lesson
+    # `date`). These must be retained under `extensions` rather than failing the
+    # whole import with extra_forbidden.
+    metadata = CurriculumImportMetadata.model_validate(
+        {'date': '7/6/26', 'week': 3, 'grade_levels': ['3']}
+    )
+
+    assert metadata.grade_levels == ['3']
+    assert metadata.extensions == {'date': '7/6/26', 'week': 3}
+
+
+def test_import_metadata_preserves_explicit_extensions_over_unknown_keys():
+    from backend.schemas.curriculum import CurriculumImportMetadata
+
+    metadata = CurriculumImportMetadata.model_validate(
+        {'date': '7/6/26', 'extensions': {'date': 'original'}}
+    )
+
+    # An explicit extensions value wins; the stray top-level key does not clobber it.
+    assert metadata.extensions == {'date': 'original'}
+
+
+def test_import_document_with_lesson_dates_validates():
+    document = CurriculumImportDocument.model_validate(
+        {
+            'name': 'Weekly Plan',
+            'subjects': [
+                {
+                    'name': 'Math',
+                    'units': [
+                        {
+                            'name': 'Unit 1',
+                            'lessons': [
+                                {'name': 'Lesson 1', 'metadata': {'date': '7/6/26'}},
+                                {'name': 'Lesson 2', 'metadata': {'date': '7/13/26'}},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    lessons = document.subjects[0].units[0].lessons
+    assert lessons[0].metadata.extensions == {'date': '7/6/26'}
+    assert lessons[1].metadata.extensions == {'date': '7/13/26'}
+

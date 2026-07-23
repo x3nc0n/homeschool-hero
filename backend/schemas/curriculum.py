@@ -258,6 +258,29 @@ class CurriculumImportMetadata(BaseModel):
     external_source: dict[str, Any] = Field(default_factory=dict)
     extensions: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode='before')
+    @classmethod
+    def _fold_unknown_into_extensions(cls, data: Any) -> Any:
+        """Preserve unrecognized metadata keys under ``extensions`` instead of failing.
+
+        AI-generated drafts often emit ad-hoc scheduling fields (e.g. a per-lesson
+        ``date``). Rather than reject the entire import, relocate any key that is not
+        a declared field into ``extensions`` so the data is retained.
+        """
+        if not isinstance(data, dict):
+            return data
+        known = cls.model_fields.keys()
+        unknown = {key: value for key, value in data.items() if key not in known}
+        if not unknown:
+            return data
+        folded = {key: value for key, value in data.items() if key in known}
+        extensions = folded.get('extensions')
+        merged: dict[str, Any] = dict(extensions) if isinstance(extensions, dict) else {}
+        for key, value in unknown.items():
+            merged.setdefault(key, value)
+        folded['extensions'] = merged
+        return folded
+
     @field_validator('grade_levels')
     @classmethod
     def validate_grade_levels(cls, value: list[str]) -> list[str]:
