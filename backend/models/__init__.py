@@ -7,6 +7,7 @@ from backend.models.assignment import (
     AssignmentTargetStatus,
 )
 from backend.models.answer_key import AnswerKey
+from backend.models.api_token import ApiToken
 from backend.models.attendance import AttendanceExcuse, AttendanceRecord, AttendanceStatus
 from backend.models.audit_event import AuditAction, AuditEvent
 from backend.models.backup_job import BackupDestination, BackupJob, BackupJobStatus, BackupType
@@ -55,6 +56,7 @@ __all__ = [
     'AssignmentTarget',
     'AssignmentTargetStatus',
     'AnswerKey',
+    'ApiToken',
     'AttendanceExcuse',
     'AttendanceRecord',
     'AttendanceStatus',

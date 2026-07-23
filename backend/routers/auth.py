@@ -13,6 +13,9 @@ from backend.config import settings
 from backend.database import get_db
 from backend.models import AuditAction, Family, FamilyMembership, FamilyRole, FamilySettings, User, UserPreference
 from backend.schemas.auth import (
+    APITokenCreateRequest,
+    APITokenCreateResponse,
+    APITokenRead,
     BootstrapStatusResponse,
     LoginRequest,
     LoginResponse,
@@ -33,9 +36,11 @@ from backend.security import (
     set_session_cookies,
     verify_password,
 )
-from backend.services.auth_oidc import OIDCConfigurationError, begin_oidc_login, complete_oidc_login, verify_oidc_configuration
+from backend.services.api_tokens import create_api_token, list_api_tokens, revoke_api_token
+from backend.services.auth_oidc import begin_oidc_login, complete_oidc_login, verify_oidc_configuration
 from backend.services.auth_provisioning import ExternalIdentity, provision_external_identity
 from backend.services.auth_saml import SAMLConfigurationError, begin_saml_login, complete_saml_login, get_metadata_xml
+from backend.services.authorization import Capability, require_capabilities
 from backend.services.audit import log_event
 from backend.services.gradebook import ensure_default_grade_scale
 from backend.services.maintenance import get_maintenance_status, membership_can_bypass_maintenance
@@ -406,6 +411,62 @@ async def logout(
 @router.get('/me', response_model=SessionResponse)
 async def me(_: Request, auth: AuthSession = Depends(get_auth_session)) -> SessionResponse:
     return _session_response(auth)
+
+
+@router.post('/api-tokens', response_model=APITokenCreateResponse, status_code=status.HTTP_201_CREATED)
+async def create_api_token_for_family(
+    payload: APITokenCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_security, action='manage API tokens')),
+) -> APITokenCreateResponse:
+    token_record, raw_token = await create_api_token(
+        db,
+        auth=auth,
+        name=payload.name,
+        capabilities=list(payload.capabilities),
+        expires_in_days=payload.expires_in_days or settings.api_token_default_expiry_days,
+    )
+    return APITokenCreateResponse(
+        id=token_record.id,
+        name=token_record.name,
+        token=raw_token,
+        family_id=token_record.family_id,
+        capabilities=token_record.capabilities,
+        expires_at=token_record.expires_at,
+        created_at=token_record.created_at,
+    )
+
+
+@router.get('/api-tokens', response_model=list[APITokenRead])
+async def get_api_tokens(
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_security, action='manage API tokens')),
+) -> list[APITokenRead]:
+    tokens = await list_api_tokens(db, family_id=auth.family_id)
+    return [
+        APITokenRead(
+            id=token.id,
+            name=token.name,
+            family_id=token.family_id,
+            capabilities=token.capabilities,
+            expires_at=token.expires_at,
+            revoked_at=token.revoked_at,
+            last_used_at=token.last_used_at,
+            created_at=token.created_at,
+            created_by_user_id=token.created_by_user_id,
+        )
+        for token in tokens
+    ]
+
+
+@router.delete('/api-tokens/{token_id}', status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_api_token_for_family(
+    token_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_security, action='manage API tokens')),
+) -> Response:
+    await revoke_api_token(db, family_id=auth.family_id, token_id=token_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 async def _complete_external_login(

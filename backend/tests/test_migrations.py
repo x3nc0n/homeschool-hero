@@ -82,3 +82,18 @@ def test_inspect_migration_status_reports_ahead_revision(monkeypatch) -> None:
     status = inspect_migration_status()
 
     assert status.ahead_revisions == ('future_revision',)
+
+
+def test_api_tokens_migration_declares_reversible_downgrade() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / 'migrations'
+        / 'versions'
+        / '20260722_184240_api_tokens.py'
+    )
+    content = migration_path.read_text(encoding='utf-8')
+
+    assert "op.create_table(" in content
+    assert "'api_tokens'" in content
+    assert "def downgrade()" in content
+    assert "op.drop_table('api_tokens')" in content

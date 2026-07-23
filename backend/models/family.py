@@ -47,6 +47,7 @@ class Family(TimestampMixin, Base):
     compliance_reports = relationship('ComplianceReport', back_populates='family', cascade='all, delete-orphan')
     report_cards = relationship('ReportCard', back_populates='family', cascade='all, delete-orphan')
     transcripts = relationship('Transcript', back_populates='family', cascade='all, delete-orphan')
+    api_tokens = relationship('ApiToken', back_populates='family', cascade='all, delete-orphan')
 
 
 class FamilySettings(TimestampMixin, Base):

@@ -34,3 +34,4 @@ class User(TimestampMixin, Base):
     generated_compliance_reports = relationship('ComplianceReport', back_populates='generated_by')
     generated_report_cards = relationship('ReportCard', back_populates='generated_by')
     generated_transcripts = relationship('Transcript', back_populates='generated_by')
+    api_tokens = relationship('ApiToken', back_populates='created_by_user', cascade='all, delete-orphan')

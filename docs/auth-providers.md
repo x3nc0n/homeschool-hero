@@ -61,7 +61,54 @@ JWT_TENANT_ID=<tenant-id>
 JWT_ALGORITHM=RS256
 ```
 
-Homeschool Hero treats the Entra `roles` claim as authoritative for RBAC, accepts `groups` only as supporting data, and still requires `X-Family-Id` on bearer requests so the app can rehydrate the caller's family membership before authorization.
+Homeschool Hero treats the Entra `roles` claim as authoritative for RBAC, accepts `groups` only as supporting data, and still requires `X-Family-Id` on bearer requests when the JWT does not carry a `family_id` claim.
+
+### Headless API tokens for curriculum/grading automation
+
+For automation that cannot complete interactive login, use family-scoped API tokens:
+
+```env
+JWT_ENABLED=true
+JWT_SECRET=<32+-character-random-secret>
+JWT_ALGORITHM=HS256
+JWT_ISSUER=https://your-app.example
+JWT_AUDIENCE=homeschool-hero
+API_TOKEN_DEFAULT_EXPIRY_DAYS=90
+API_TOKEN_MAX_EXPIRY_DAYS=365
+API_TOKEN_MAX_ACTIVE_PER_FAMILY=10
+```
+
+Workflow (owner with `manage_security`):
+
+1. `POST /api/auth/api-tokens` with delegatable capabilities (`manage_curriculum`, `manage_submissions`, `manage_grading`).
+2. Save the returned `token` immediately (it is only returned once).
+3. Use `Authorization: Bearer <token>` for automation calls.
+4. Use `GET /api/auth/api-tokens` to audit metadata and `DELETE /api/auth/api-tokens/{id}` to revoke.
+
+Full runbook: [`docs/api-tokens.md`](./api-tokens.md).
+
+Sample calls:
+
+```bash
+curl -X POST "$BASE_URL/api/auth/api-tokens" \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: <csrf-token>" \
+  -b "<session-cookie>" \
+  -d '{"name":"automation-grader","capabilities":["manage_submissions","manage_grading"],"expires_in_days":90}'
+
+curl "$BASE_URL/api/auth/api-tokens" \
+  -H "X-CSRF-Token: <csrf-token>" \
+  -b "<session-cookie>"
+
+curl -X DELETE "$BASE_URL/api/auth/api-tokens/<token-id>" \
+  -H "X-CSRF-Token: <csrf-token>" \
+  -b "<session-cookie>"
+
+curl -X POST "$BASE_URL/api/curriculum/ai-import/confirm" \
+  -H "Authorization: Bearer <api-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"draft":{"schema_version":"1.0","name":"<draft-name>","source":"ai-import","subjects":[]}}'
+```
 
 ## SAML 2.0 configuration
 

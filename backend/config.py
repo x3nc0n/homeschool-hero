@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     jwt_tenant_id: str = Field('', alias='JWT_TENANT_ID')
     jwt_secret: str = Field('', alias='JWT_SECRET')
     jwt_algorithm: str = Field('RS256', alias='JWT_ALGORITHM')
+    api_token_default_expiry_days: int = Field(90, alias='API_TOKEN_DEFAULT_EXPIRY_DAYS')
+    api_token_max_expiry_days: int = Field(365, alias='API_TOKEN_MAX_EXPIRY_DAYS')
+    api_token_max_active_per_family: int = Field(10, alias='API_TOKEN_MAX_ACTIVE_PER_FAMILY')
 
     bootstrap_owner_email: str = Field('owner@homeschool-hero.local', alias='BOOTSTRAP_OWNER_EMAIL')
     bootstrap_owner_display_name: str = Field('Family Owner', alias='BOOTSTRAP_OWNER_DISPLAY_NAME')

@@ -19,6 +19,7 @@ AUTH = {
     'saml_login': f'{API_PREFIX}/auth/saml/login',
     'saml_metadata': f'{API_PREFIX}/auth/saml/metadata',
     'saml_acs': f'{API_PREFIX}/auth/saml/acs',
+    'api_tokens': f'{API_PREFIX}/auth/api-tokens',
 }
 
 INVITATIONS = {
