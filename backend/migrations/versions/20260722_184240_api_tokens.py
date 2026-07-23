@@ -17,6 +17,8 @@ revision: str = '20260722_184240'
 down_revision: Union[str, Sequence[str], None] = '20260612_183758'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+# Alembic loads these module globals via introspection during migration discovery.
+__all__ = ('revision', 'down_revision', 'branch_labels', 'depends_on')
 
 ROLLBACK_NOTES = """
 - downgrade() drops the api_tokens table and all token metadata.
