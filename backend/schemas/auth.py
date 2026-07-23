@@ -1,5 +1,9 @@
-from pydantic import BaseModel, Field, field_validator
+from datetime import datetime
+from typing import Literal
 
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from backend.config import settings
 from backend.schemas.preferences import UserPreferencesRead
 from backend.validation import (
     normalize_email_address,
@@ -92,6 +96,59 @@ class OIDCVerifyResponse(BaseModel):
     discovery_url: str | None = None
     issuer: str | None = None
     authorization_endpoint: str | None = None
+
+
+DelegatableCapability = Literal['manage_curriculum', 'manage_submissions', 'manage_grading']
+
+
+class APITokenCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    capabilities: list[DelegatableCapability] = Field(min_length=1)
+    expires_in_days: int | None = Field(default=None, ge=1)
+
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return normalize_text(value, field_name='Token name')
+
+    @field_validator('capabilities')
+    @classmethod
+    def validate_capabilities_unique(cls, value: list[DelegatableCapability]) -> list[DelegatableCapability]:
+        if len(value) != len(set(value)):
+            raise ValueError('Capabilities must not contain duplicates.')
+        return value
+
+    @model_validator(mode='after')
+    def validate_expiry_days(self) -> 'APITokenCreateRequest':
+        expires_in_days = self.expires_in_days
+        if expires_in_days is None:
+            expires_in_days = settings.api_token_default_expiry_days
+            self.expires_in_days = expires_in_days
+        if expires_in_days > settings.api_token_max_expiry_days:
+            raise ValueError(f'expires_in_days must be less than or equal to {settings.api_token_max_expiry_days}.')
+        return self
+
+
+class APITokenCreateResponse(BaseModel):
+    id: str
+    name: str
+    token: str
+    family_id: int
+    capabilities: list[DelegatableCapability]
+    expires_at: datetime
+    created_at: datetime
+
+
+class APITokenRead(BaseModel):
+    id: str
+    name: str
+    family_id: int
+    capabilities: list[DelegatableCapability]
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    last_used_at: datetime | None = None
+    created_at: datetime
+    created_by_user_id: int
 
 
 LoginResponse = AuthSessionResponse

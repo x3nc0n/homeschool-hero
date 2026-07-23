@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -13,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, get_db
-from backend.models import Family, FamilyMembership, FamilyRole, FamilySettings, User, UserPreference
+from backend.models import ApiToken, Family, FamilyMembership, FamilyRole, FamilySettings, User, UserPreference
 from backend.services.auth_jwt import BearerSessionClaims, authenticate_bearer_token
 from backend.services.preferences import serialize_user_preferences
 from backend.services.rbac import (
@@ -50,6 +51,7 @@ class SessionClaims(TypedDict, total=False):
     enabled_features: dict[str, bool] | None
     student_id: int | None
     ui_preferences: dict[str, str] | None
+    effective_capabilities: list[str]
 
 
 @dataclass(slots=True)
@@ -68,7 +70,7 @@ class AuthSession:
     enabled_features: dict[str, bool] | None = None
     student_id: int | None = None
     ui_preferences: dict[str, str] | None = None
-    effective_capabilities: set[str] = field(default_factory=set)
+    effective_capabilities: set[str] | None = None
 
     def __post_init__(self) -> None:
         family_role_value = self.family_role or self.role
@@ -79,7 +81,7 @@ class AuthSession:
         normalized_app_roles = normalize_app_role_names(self.app_roles or synthesize_app_roles(family_role))
         validate_app_role_assignment(family_role=family_role, app_roles=normalized_app_roles)
         self.app_roles = [app_role.value for app_role in normalized_app_roles]
-        if not self.effective_capabilities:
+        if self.effective_capabilities is None:
             effective_capabilities = derive_effective_capabilities(
                 family_role=family_role,
                 app_roles=normalized_app_roles,
@@ -355,10 +357,39 @@ def _session_claims_from_membership_row(
     }
 
 
+async def _validate_registered_api_token(db: AsyncSession, bearer_claims: BearerSessionClaims) -> None:
+    if bearer_claims.token_type != 'api_token':
+        return
+    if bearer_claims.jti is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='API token is missing a token id')
+    if bearer_claims.token_digest is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='API token digest is missing')
+
+    token_row = (await db.execute(select(ApiToken).where(ApiToken.id == bearer_claims.jti))).scalar_one_or_none()
+    if token_row is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='API token is not registered')
+    if token_row.family_id != bearer_claims.family_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='API token family scope is invalid')
+    if token_row.revoked_at is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='API token has been revoked')
+
+    now = datetime.now(timezone.utc)
+    expires_at = token_row.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= now:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='API token has expired')
+
+    if not hmac.compare_digest(token_row.token_digest, bearer_claims.token_digest):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='API token digest does not match')
+    token_row.last_used_at = now
+
+
 async def _resolve_bearer_session_claims(
     db: AsyncSession,
     bearer_claims: BearerSessionClaims,
 ) -> SessionClaims:
+    await _validate_registered_api_token(db, bearer_claims)
     row = None
     if bearer_claims.user_id is not None:
         row = await _get_authenticated_membership_row(
@@ -376,7 +407,7 @@ async def _resolve_bearer_session_claims(
     if row is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Bearer token family access is forbidden')
     user, membership, family, state_code, enabled_features, preferences = row
-    return _session_claims_from_membership_row(
+    claims = _session_claims_from_membership_row(
         user,
         membership,
         family,
@@ -388,6 +419,11 @@ async def _resolve_bearer_session_claims(
         rotatable=False,
         auth_provider=bearer_claims.auth_provider,
     )
+    if bearer_claims.token_capabilities is not None:
+        role_derived_auth = _auth_session_from_bearer_claims(claims)
+        delegated_capabilities = {capability for capability in bearer_claims.token_capabilities if capability.strip()}
+        claims['effective_capabilities'] = sorted(role_derived_auth.effective_capabilities.intersection(delegated_capabilities))
+    return claims
 
 
 async def resolve_request_session_claims(request: Request, db: AsyncSession | None = None) -> SessionClaims | None:
@@ -413,6 +449,7 @@ async def resolve_request_session_claims(request: Request, db: AsyncSession | No
 
 
 def _auth_session_from_bearer_claims(claims: SessionClaims) -> AuthSession:
+    effective_capabilities = claims.get('effective_capabilities')
     return AuthSession(
         user_id=claims['user_id'],
         family_id=claims['family_id'],
@@ -427,6 +464,7 @@ def _auth_session_from_bearer_claims(claims: SessionClaims) -> AuthSession:
         enabled_features=claims.get('enabled_features'),
         student_id=claims.get('student_id'),
         ui_preferences=claims.get('ui_preferences'),
+        effective_capabilities=set(effective_capabilities) if effective_capabilities is not None else None,
     )
 
 

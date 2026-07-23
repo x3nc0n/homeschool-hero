@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ from jwt.algorithms import RSAAlgorithm
 
 from backend.config import settings
 from backend.models import FamilyRole
-from backend.services.rbac import normalize_external_app_roles
+from backend.services.rbac import Capability, normalize_external_app_roles
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,10 @@ class BearerSessionClaims:
     student_id: int | None = None
     enabled_features: dict[str, bool] | None = None
     ui_preferences: dict[str, str] | None = None
+    token_type: str | None = None
+    jti: str | None = None
+    token_digest: str | None = None
+    token_capabilities: tuple[str, ...] | None = None
 
 
 async def authenticate_bearer_token(request: Request) -> BearerSessionClaims | None:
@@ -70,8 +75,9 @@ async def authenticate_bearer_token(request: Request) -> BearerSessionClaims | N
     if not token.strip():
         raise JWTAuthenticationError(status_code=status.HTTP_401_UNAUTHORIZED, detail='Bearer token is required')
 
-    claims = await _decode_token(token.strip())
-    return _build_bearer_claims(claims, request=request)
+    token_value = token.strip()
+    claims = await _decode_token(token_value)
+    return _build_bearer_claims(claims, request=request, raw_token=token_value)
 
 
 async def _decode_token(token: str) -> dict[str, Any]:
@@ -170,7 +176,7 @@ async def _get_jwks(jwks_url: str) -> dict[str, Any]:
         return payload
 
 
-def _build_bearer_claims(raw_claims: dict[str, Any], *, request: Request) -> BearerSessionClaims:
+def _build_bearer_claims(raw_claims: dict[str, Any], *, request: Request, raw_token: str) -> BearerSessionClaims:
     app_roles = [
         app_role.value
         for app_role in normalize_external_app_roles(
@@ -184,11 +190,31 @@ def _build_bearer_claims(raw_claims: dict[str, Any], *, request: Request) -> Bea
             detail='Bearer token does not grant any mapped application roles',
         )
 
-    family_id = _claim_int(raw_claims.get('family_id')) or _claim_int(request.headers.get(_FAMILY_ID_HEADER))
+    token_type = _claim_string(raw_claims.get('token_type'))
+    normalized_token_type = token_type.strip().lower() if token_type else None
+
+    family_id = _claim_int(raw_claims.get('family_id'))
+    if family_id is None and normalized_token_type != 'api_token':
+        family_id = _claim_int(request.headers.get(_FAMILY_ID_HEADER))
     if family_id is None:
         raise JWTAuthenticationError(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail='Bearer token is missing family context',
+        )
+
+    token_digest = hashlib.sha256(raw_token.encode('utf-8')).hexdigest() if normalized_token_type == 'api_token' else None
+    jti = _claim_string(raw_claims.get('jti'))
+    if normalized_token_type == 'api_token' and jti is None:
+        raise JWTAuthenticationError(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Bearer token is missing token registration context',
+        )
+
+    token_capabilities = _claim_capabilities(raw_claims.get('capabilities')) if normalized_token_type == 'api_token' else None
+    if normalized_token_type == 'api_token' and not token_capabilities:
+        raise JWTAuthenticationError(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Bearer token is missing delegated capabilities',
         )
 
     tenant_id = _validate_tenant_id(raw_claims)
@@ -232,6 +258,10 @@ def _build_bearer_claims(raw_claims: dict[str, Any], *, request: Request) -> Bea
         student_id=_claim_int(raw_claims.get('student_id')),
         enabled_features=_claim_dict(raw_claims.get('enabled_features')),
         ui_preferences=_claim_string_dict(raw_claims.get('ui_preferences')),
+        token_type=normalized_token_type,
+        jti=jti,
+        token_digest=token_digest,
+        token_capabilities=token_capabilities,
     )
 
 
@@ -255,6 +285,21 @@ def _claim_values(value: Any) -> list[str]:
                 seen.add(candidate)
         return values
     return []
+
+
+def _claim_capabilities(value: Any) -> tuple[str, ...]:
+    values = _claim_values(value)
+    normalized: list[str] = []
+    seen: set[str] = set()
+    valid_capabilities = {item.value for item in Capability}
+    for item in values:
+        candidate = item.strip()
+        if candidate not in valid_capabilities:
+            raise JWTAuthenticationError(status_code=status.HTTP_401_UNAUTHORIZED, detail='Bearer token is invalid')
+        if candidate not in seen:
+            normalized.append(candidate)
+            seen.add(candidate)
+    return tuple(normalized)
 
 
 def _claim_string(value: Any) -> str | None:

@@ -655,7 +655,47 @@ JWT_TENANT_ID=<tenant-id>
 JWT_ALGORITHM=RS256
 ```
 
-Bearer callers must send `X-Family-Id`, and Homeschool Hero uses the Entra `roles` claim for RBAC while treating `groups` only as optional supporting data.
+Bearer callers must send `X-Family-Id` when the JWT does not include `family_id`, and Homeschool Hero uses the Entra `roles` claim for RBAC while treating `groups` only as optional supporting data.
+
+
+### Family-scoped API token automation
+
+For non-interactive curriculum/grading automation, configure HS256 signing and API token limits:
+
+```env
+JWT_ENABLED=true
+JWT_SECRET=<32+-character-random-secret>
+JWT_ALGORITHM=HS256
+JWT_ISSUER=https://your-app.example
+JWT_AUDIENCE=homeschool-hero
+API_TOKEN_DEFAULT_EXPIRY_DAYS=90
+API_TOKEN_MAX_EXPIRY_DAYS=365
+API_TOKEN_MAX_ACTIVE_PER_FAMILY=10
+```
+
+Owner flow:
+
+1. `POST /api/auth/api-tokens` (requires `manage_security`).
+2. Persist the returned token value immediately (write-once response).
+3. Use `Authorization: Bearer <api-token>` for `manage_curriculum`, `manage_submissions`, and/or `manage_grading` automation.
+4. `GET /api/auth/api-tokens` for metadata, `DELETE /api/auth/api-tokens/{id}` to revoke.
+
+Placeholder examples:
+
+```bash
+curl -X POST "$BASE_URL/api/auth/api-tokens" \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: <csrf-token>" \
+  -b "<session-cookie>" \
+  -d '{"name":"curriculum-importer","capabilities":["manage_curriculum"],"expires_in_days":90}'
+
+curl -X POST "$BASE_URL/api/submissions" \
+  -H "Authorization: Bearer <api-token>" \
+  -F "assignment_id=<assignment-id>" \
+  -F "student_id=<student-id>" \
+  -F "file=@<submission-file>"
+```
+
 
 ### Secrets and credential handling
 
