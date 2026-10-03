@@ -161,6 +161,63 @@ async def test_ai_import_upload_and_confirm_flow(authorized_client, monkeypatch)
     assert detail.json()['subjects'][0]['units'][0]['lessons'][0]['name'] == 'Lesson 1'
 
 
+@pytest.mark.asyncio
+async def test_local_only_ai_import_uses_ollama_compatible_endpoint(monkeypatch):
+    _FakeAIAsyncClient.requests.clear()
+    monkeypatch.setattr('backend.config.settings.ai_import_enabled', True, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_local_only', True, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_provider', 'ollama', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_endpoint', None, raising=False)
+    monkeypatch.setattr('backend.config.settings.ollama_host', 'http://ollama.internal:11434', raising=False)
+    monkeypatch.setattr('backend.config.settings.ollama_model', 'qwen2.5:14b', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_retry_attempts', 1, raising=False)
+    monkeypatch.setattr('backend.services.curriculum_ai_import.httpx.AsyncClient', _FakeAIAsyncClient)
+
+    service = AICurriculumImportService()
+    service._ensure_configured()
+    extracted = ExtractedSource(
+        source_kind='file',
+        source_name='scope.txt',
+        content_type='text/plain',
+        text='Algebra scope and sequence',
+        warnings=[],
+    )
+
+    result = await service._call_ai_parser(extracted)
+
+    request = _FakeAIAsyncClient.requests[0]
+    assert request['url'] == 'http://ollama.internal:11434/v1/chat/completions'
+    assert request['headers'] == {'Content-Type': 'application/json'}
+    assert request['params'] is None
+    assert request['json']['model'] == 'qwen2.5:14b'
+    assert request['json']['tools'][0]['function']['name'] == 'create_curriculum_import'
+    assert result['name'] == 'AI Draft Curriculum'
+
+
+def test_ai_import_parses_ollama_tool_arguments_as_object():
+    service = AICurriculumImportService()
+    parsed = service._parse_ai_response(
+        {
+            'choices': [
+                {
+                    'message': {
+                        'tool_calls': [
+                            {
+                                'function': {
+                                    'name': 'create_curriculum_import',
+                                    'arguments': {'name': 'Local draft'},
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    )
+
+    assert parsed == {'name': 'Local draft'}
+
+
 def test_ai_import_service_extracts_pdf_and_docx_text():
     service = AICurriculumImportService()
 

@@ -276,9 +276,12 @@ Homeschool Hero reads settings from environment variables through `backend/confi
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `AI_PROVIDER` | `ollama` | `ollama` or `openai`. |
+| `AI_PROVIDER` | `ollama` | `ollama`, `openai`, or an Azure OpenAI alias. |
 | `OLLAMA_HOST` | `http://ollama:11434` | Ollama API base URL. |
 | `OLLAMA_MODEL` | `llama3.2` | Model name; Compose preloads this model. |
+| `AI_LOCAL_ONLY` | `false` | Set `true` to require Ollama for grading and curriculum AI import; startup rejects cloud providers and `AI_IMPORT_ENDPOINT`. |
+| `AI_IMPORT_ENABLED` | `false` | Enables curriculum AI import. Under `AI_LOCAL_ONLY=true`, it uses Ollama's OpenAI-compatible `/v1/chat/completions` endpoint. |
+| `AI_IMPORT_ENDPOINT` | unset | Remote curriculum-import endpoint; must be unset under `AI_LOCAL_ONLY=true`. |
 | `OPENAI_API_KEY` | unset | Required when `AI_PROVIDER=openai`. |
 | `CONFIDENCE_THRESHOLD` | `0.8` | Auto-approve threshold. Lower-confidence jobs go to review. |
 | `GRADING_POLL_INTERVAL` | `5` | Background worker poll interval, in seconds. |
@@ -728,6 +731,8 @@ Notes:
 - the `ollama` container preloads `OLLAMA_MODEL` through `scripts/ollama-entrypoint.sh`
 - health stays degraded until the model is actually available
 - low confidence, OCR failure, AI outage, or an open circuit breaker routes work to human review
+- set `AI_LOCAL_ONLY=true` to prevent grading and curriculum import from using cloud AI; local curriculum import requires a model with tool-calling support
+- OCR uses the app container's local Tesseract installation and does not require a separate AI service
 
 ### OpenAI alternative
 

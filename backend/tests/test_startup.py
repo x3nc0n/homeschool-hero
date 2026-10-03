@@ -50,6 +50,57 @@ def test_startup_validation_succeeds_with_only_required_config(tmp_path: Path) -
     assert summary['backup_configured'] is False
 
 
+def test_startup_validation_accepts_local_only_ollama_configuration(tmp_path: Path) -> None:
+    config = settings.model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': True,
+            'ai_provider': 'ollama',
+            'ai_local_only': True,
+            'ollama_host': 'http://ollama:11434',
+            'ai_import_enabled': True,
+            'ai_import_endpoint': None,
+        }
+    )
+
+    summary = validate_runtime_config(config)
+
+    assert summary['ai_provider'] == 'ollama'
+    assert summary['ai_local_only'] is True
+
+
+@pytest.mark.parametrize(
+    ('updates', 'error'),
+    [
+        ({'ai_provider': 'openai', 'ai_local_only': True}, 'AI_LOCAL_ONLY=true requires AI_PROVIDER=ollama.'),
+        (
+            {
+                'ai_provider': 'ollama',
+                'ai_local_only': True,
+                'ai_import_endpoint': 'https://api.openai.com/v1/chat/completions',
+            },
+            'AI_IMPORT_ENDPOINT must be unset when AI_LOCAL_ONLY=true',
+        ),
+        ({'ai_provider': 'typo'}, 'AI_PROVIDER must be one of'),
+    ],
+)
+def test_startup_validation_rejects_unsafe_ai_configuration(tmp_path: Path, updates: dict, error: str) -> None:
+    config = settings.model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': True,
+            **updates,
+        }
+    )
+
+    with pytest.raises(StartupValidationError, match=error):
+        validate_runtime_config(config)
+
+
 def test_startup_validation_requires_oidc_settings(tmp_path: Path) -> None:
     config = settings.model_copy(
         update={

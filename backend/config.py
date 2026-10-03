@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     legacy_family_password_hash: str | None = Field(default=None, alias='FAMILY_PASSWORD_HASH')
 
     ai_provider: str = Field('ollama', alias='AI_PROVIDER')
+    ai_local_only: bool = Field(False, alias='AI_LOCAL_ONLY')
     ollama_host: str = Field('http://ollama:11434', alias='OLLAMA_HOST')
     ollama_model: str = Field('llama3.2', alias='OLLAMA_MODEL')
     openai_api_key: str | None = Field(default=None, alias='OPENAI_API_KEY')

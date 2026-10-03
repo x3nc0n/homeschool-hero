@@ -137,6 +137,15 @@ def _check_azure_openai_grading(config: Settings, provider: str) -> dict[str, An
 def check_ai_grading(config: Settings = settings) -> dict[str, Any]:
     provider = config.ai_provider.strip().lower() or 'ollama'
 
+    if config.ai_local_only and provider != 'ollama':
+        return _status(
+            'ai_grading',
+            enabled=False,
+            configured=False,
+            reason='AI_LOCAL_ONLY=true requires AI_PROVIDER=ollama.',
+            details={'provider': provider},
+        )
+
     if provider in _AZURE_PROVIDER_ALIASES:
         return _check_azure_openai_grading(config, provider)
 

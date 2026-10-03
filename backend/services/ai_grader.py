@@ -226,11 +226,15 @@ def _call_model(*_: Any, **kwargs: Any) -> dict[str, Any]:
         submission_text=str(kwargs.get("submission_text", "")),
     )
     provider = settings.ai_provider.lower().strip()
+    if settings.ai_local_only and provider != 'ollama':
+        raise AIServiceUnavailable('AI_LOCAL_ONLY=true requires AI_PROVIDER=ollama')
     if provider in AZURE_PROVIDER_ALIASES:
         return _call_azure_openai(prompt)
     if provider == "openai":
         return _call_openai(prompt)
-    return _call_ollama(prompt)
+    if provider == 'ollama':
+        return _call_ollama(prompt)
+    raise AIServiceUnavailable(f"Unsupported AI provider '{provider}'")
 
 
 def grade_submission_text(assignment_description: str, answer_key: str | None, submission_text: str) -> dict[str, Any]:
