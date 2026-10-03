@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from backend.config import Settings, settings
+from backend.local_ai import validate_local_ollama_host
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,11 @@ def _validate_ai_config(config: Settings) -> str:
         )
     if provider == 'ollama' and not (config.ollama_host or '').strip():
         raise StartupValidationError('OLLAMA_HOST is required when AI_PROVIDER=ollama.')
+    if config.ai_local_only:
+        try:
+            validate_local_ollama_host(config.ollama_host)
+        except ValueError as exc:
+            raise StartupValidationError(str(exc)) from exc
     return provider
 
 

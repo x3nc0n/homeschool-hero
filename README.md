@@ -214,7 +214,7 @@ See `docs/development.md` for the full development workflow.
 | `AI_PROVIDER` | No | `ollama`, `openai`, or an Azure OpenAI alias (`azure_openai`, `azure`, `azure-openai`, `foundry`). |
 | `OLLAMA_HOST` | No | Ollama base URL. |
 | `OLLAMA_MODEL` | No | Ollama model name. |
-| `AI_LOCAL_ONLY` | No | When `true`, require `AI_PROVIDER=ollama`, route curriculum AI import through Ollama, and reject configured remote AI import endpoints. |
+| `AI_LOCAL_ONLY` | No | When `true`, require `AI_PROVIDER=ollama`, restrict `OLLAMA_HOST` to localhost/private addresses, route curriculum AI import through Ollama, and reject configured remote AI import endpoints. |
 | `AI_IMPORT_ENABLED` | No | Enables AI-assisted curriculum import. With `AI_LOCAL_ONLY=true`, the Ollama model must support tool calling. |
 | `AI_IMPORT_ENDPOINT` | No | Remote-compatible endpoint for curriculum import; must be unset when `AI_LOCAL_ONLY=true`. |
 | `OPENAI_API_KEY` | No | Required when `AI_PROVIDER=openai`. |

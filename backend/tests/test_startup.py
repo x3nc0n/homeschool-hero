@@ -59,7 +59,7 @@ def test_startup_validation_accepts_local_only_ollama_configuration(tmp_path: Pa
             'testing': True,
             'ai_provider': 'ollama',
             'ai_local_only': True,
-            'ollama_host': 'http://ollama:11434',
+            'ollama_host': 'http://192.168.50.135:11434',
             'ai_import_enabled': True,
             'ai_import_endpoint': None,
         }
@@ -83,10 +83,35 @@ def test_startup_validation_accepts_local_only_ollama_configuration(tmp_path: Pa
             },
             'AI_IMPORT_ENDPOINT must be unset when AI_LOCAL_ONLY=true',
         ),
+        (
+            {
+                'ai_provider': 'ollama',
+                'ai_local_only': True,
+                'ollama_host': 'https://api.openai.com:11434',
+            },
+            'OLLAMA_HOST must resolve only to localhost or a private network',
+        ),
+        (
+            {
+                'ai_provider': 'ollama',
+                'ai_local_only': True,
+                'ollama_host': 'http://8.8.8.8:11434',
+            },
+            'OLLAMA_HOST must resolve only to localhost or a private network',
+        ),
         ({'ai_provider': 'typo'}, 'AI_PROVIDER must be one of'),
     ],
 )
-def test_startup_validation_rejects_unsafe_ai_configuration(tmp_path: Path, updates: dict, error: str) -> None:
+def test_startup_validation_rejects_unsafe_ai_configuration(
+    tmp_path: Path, updates: dict, error: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if updates.get('ollama_host') == 'https://api.openai.com:11434':
+        monkeypatch.setattr(
+            'backend.local_ai.socket.getaddrinfo',
+            lambda *_args, **_kwargs: [
+                (2, 1, 6, '', ('104.18.33.45', 0)),
+            ],
+        )
     config = settings.model_copy(
         update={
             'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
@@ -99,6 +124,30 @@ def test_startup_validation_rejects_unsafe_ai_configuration(tmp_path: Path, upda
 
     with pytest.raises(StartupValidationError, match=error):
         validate_runtime_config(config)
+
+
+def test_local_only_startup_accepts_private_ollama_dns(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        'backend.local_ai.socket.getaddrinfo',
+        lambda *_args, **_kwargs: [
+            (2, 1, 6, '', ('192.168.50.135', 0)),
+        ],
+    )
+    config = settings.model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'testing': True,
+            'ai_provider': 'ollama',
+            'ai_local_only': True,
+            'ollama_host': 'http://docker1.home.spaid.xyz:11434',
+        }
+    )
+
+    summary = validate_runtime_config(config)
+
+    assert summary['ai_local_only'] is True
 
 
 def test_startup_validation_requires_oidc_settings(tmp_path: Path) -> None:

@@ -19,6 +19,7 @@ from docx import Document as DocxDocument
 from pypdf import PdfReader
 
 from backend.config import settings
+from backend.local_ai import validate_local_ollama_host
 from backend.schemas.curriculum import CurriculumImportDocument
 from backend.services import ai_grader
 
@@ -108,6 +109,10 @@ class AICurriculumImportService:
                 )
             if not settings.ollama_host.strip() or not settings.ollama_model.strip():
                 raise AIImportUnavailable('OLLAMA_HOST and OLLAMA_MODEL must be configured for local AI import.')
+            try:
+                validate_local_ollama_host(settings.ollama_host)
+            except ValueError as exc:
+                raise AIImportUnavailable(str(exc)) from exc
             return
         endpoint = (settings.ai_import_endpoint or '').strip()
         if not endpoint:
@@ -362,7 +367,11 @@ class AICurriculumImportService:
         last_error: Exception | None = None
         for attempt in range(1, max(settings.ai_import_retry_attempts, 1) + 1):
             try:
-                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                async with httpx.AsyncClient(
+                    timeout=timeout,
+                    follow_redirects=True,
+                    trust_env=not settings.ai_local_only,
+                ) as client:
                     response = await client.post(request_url, headers=headers, params=request_params, json=payload)
                 response.raise_for_status()
                 body = response.json()

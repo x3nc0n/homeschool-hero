@@ -16,9 +16,10 @@ from tests.helpers import response_id
 
 class _FakeAIAsyncClient:
     requests: list[dict] = []
+    options: dict = {}
 
     def __init__(self, *args, **kwargs):
-        pass
+        type(self).options = kwargs
 
     async def __aenter__(self):
         return self
@@ -168,7 +169,7 @@ async def test_local_only_ai_import_uses_ollama_compatible_endpoint(monkeypatch)
     monkeypatch.setattr('backend.config.settings.ai_local_only', True, raising=False)
     monkeypatch.setattr('backend.config.settings.ai_provider', 'ollama', raising=False)
     monkeypatch.setattr('backend.config.settings.ai_import_endpoint', None, raising=False)
-    monkeypatch.setattr('backend.config.settings.ollama_host', 'http://ollama.internal:11434', raising=False)
+    monkeypatch.setattr('backend.config.settings.ollama_host', 'http://192.168.50.135:11434', raising=False)
     monkeypatch.setattr('backend.config.settings.ollama_model', 'qwen2.5:14b', raising=False)
     monkeypatch.setattr('backend.config.settings.ai_import_retry_attempts', 1, raising=False)
     monkeypatch.setattr('backend.services.curriculum_ai_import.httpx.AsyncClient', _FakeAIAsyncClient)
@@ -186,11 +187,12 @@ async def test_local_only_ai_import_uses_ollama_compatible_endpoint(monkeypatch)
     result = await service._call_ai_parser(extracted)
 
     request = _FakeAIAsyncClient.requests[0]
-    assert request['url'] == 'http://ollama.internal:11434/v1/chat/completions'
+    assert request['url'] == 'http://192.168.50.135:11434/v1/chat/completions'
     assert request['headers'] == {'Content-Type': 'application/json'}
     assert request['params'] is None
     assert request['json']['model'] == 'qwen2.5:14b'
     assert request['json']['tools'][0]['function']['name'] == 'create_curriculum_import'
+    assert _FakeAIAsyncClient.options['trust_env'] is False
     assert result['name'] == 'AI Draft Curriculum'
 
 

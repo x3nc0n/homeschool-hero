@@ -279,7 +279,7 @@ Homeschool Hero reads settings from environment variables through `backend/confi
 | `AI_PROVIDER` | `ollama` | `ollama`, `openai`, or an Azure OpenAI alias. |
 | `OLLAMA_HOST` | `http://ollama:11434` | Ollama API base URL. |
 | `OLLAMA_MODEL` | `llama3.2` | Model name; Compose preloads this model. |
-| `AI_LOCAL_ONLY` | `false` | Set `true` to require Ollama for grading and curriculum AI import; startup rejects cloud providers and `AI_IMPORT_ENDPOINT`. |
+| `AI_LOCAL_ONLY` | `false` | Set `true` to require Ollama for grading and curriculum AI import; `OLLAMA_HOST` must be localhost/private, and startup rejects cloud providers and `AI_IMPORT_ENDPOINT`. |
 | `AI_IMPORT_ENABLED` | `false` | Enables curriculum AI import. Under `AI_LOCAL_ONLY=true`, it uses Ollama's OpenAI-compatible `/v1/chat/completions` endpoint. |
 | `AI_IMPORT_ENDPOINT` | unset | Remote curriculum-import endpoint; must be unset under `AI_LOCAL_ONLY=true`. |
 | `OPENAI_API_KEY` | unset | Required when `AI_PROVIDER=openai`. |

@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from backend.config import Settings, settings
+from backend.local_ai import validate_local_ollama_host
 
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 AZURE_OPENAI_SCOPE = "https://cognitiveservices.azure.com/.default"
@@ -152,7 +153,10 @@ def _call_ollama(prompt: str) -> dict[str, Any]:
     url = f"{settings.ollama_host.rstrip('/')}/api/generate"
     payload = {"model": settings.ollama_model, "prompt": prompt, "stream": False}
     try:
-        with httpx.Client(timeout=settings.grading_request_timeout_seconds) as client:
+        with httpx.Client(
+            timeout=settings.grading_request_timeout_seconds,
+            trust_env=not settings.ai_local_only,
+        ) as client:
             response = client.post(url, json=payload)
             response.raise_for_status()
         body = response.json()
@@ -226,8 +230,13 @@ def _call_model(*_: Any, **kwargs: Any) -> dict[str, Any]:
         submission_text=str(kwargs.get("submission_text", "")),
     )
     provider = settings.ai_provider.lower().strip()
-    if settings.ai_local_only and provider != 'ollama':
-        raise AIServiceUnavailable('AI_LOCAL_ONLY=true requires AI_PROVIDER=ollama')
+    if settings.ai_local_only:
+        if provider != 'ollama':
+            raise AIServiceUnavailable('AI_LOCAL_ONLY=true requires AI_PROVIDER=ollama')
+        try:
+            validate_local_ollama_host(settings.ollama_host)
+        except ValueError as exc:
+            raise AIServiceUnavailable(str(exc)) from exc
     if provider in AZURE_PROVIDER_ALIASES:
         return _call_azure_openai(prompt)
     if provider == "openai":
