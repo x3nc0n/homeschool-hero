@@ -305,6 +305,13 @@ Homeschool Hero reads settings from environment variables through `backend/confi
 | `SMTP_DEV_PORT` | `1025` | Host SMTP port for Mailpit. |
 | `SMTP_WEB_PORT` | `8025` | Host web UI port for Mailpit. |
 | `ENABLE_METRICS_ENDPOINT` | `false` | Enables authenticated `GET /api/metrics`. |
+| `SIEM_SYSLOG_ENABLED` | `false` | Also exports security events as CEF over syslog. JSON stdout logging is unchanged. See [SIEM security event export](#siem-security-event-export-cef-over-syslog). |
+| `SIEM_SYSLOG_HOST` | unset | Collector hostname or IP (no scheme, credentials, or path). Required when export is enabled. |
+| `SIEM_SYSLOG_PORT` | `514` | Collector port (`1`-`65535`). |
+| `SIEM_SYSLOG_PROTOCOL` | `udp` | `udp` (one datagram per event) or `tcp` (LF-framed, RFC 6587 non-transparent framing). TLS is not built in. |
+| `SIEM_SYSLOG_FACILITY` | `local4` | Syslog facility name, for example `local4`, `authpriv`, or `auth`. |
+| `SIEM_SYSLOG_MAX_MESSAGE_BYTES` | `2048` | Upper bound for each syslog message (`480`-`65000`). Long fields are truncated or dropped to fit. |
+| `SIEM_SYSLOG_TIMEOUT_SECONDS` | `5` | TCP connect/send timeout (`>0`-`60`). |
 
 ### Backups and restore
 
@@ -921,6 +928,38 @@ curl http://localhost:8000/api/health
 curl http://localhost:8000/api/health/ready
 curl http://localhost:8000/api/capabilities
 ```
+
+### SIEM security event export (CEF over syslog)
+
+Security events (`auth_success`, `auth_failure`, `breakglass_login`, `rbac_denial`, `role_mapping_failure`, `session_created`, `session_destroyed`) are always written to stdout as structured JSON with `event_category="security"`; Azure Container Apps forwards stdout to Log Analytics. Set `SIEM_SYSLOG_ENABLED=true` and `SIEM_SYSLOG_HOST` to *also* send these events to a syslog collector in Common Event Format, for example a Microsoft Sentinel CEF collector (Azure Monitor Agent) or rsyslog/syslog-ng. Only security events are exported; ordinary application, request, and audit-table logs are not.
+
+Each event is one RFC 5424 syslog message with a CEF:0 payload:
+
+```text
+<164>1 2026-10-04T16:00:00.123Z host homeschool-hero 42 auth_failure - CEF:0|Homeschool Hero|Homeschool Hero API|0.1.0|auth_failure|Authentication failed|6|rt=1791129600123 cat=security act=auth_failure outcome=failure src=203.0.113.10 suser=parent@example.com cs3Label=correlationId cs3=... cs1Label=targetType cs1=auth_endpoint request=/api/auth/login requestClientApplication=... msg={"family_id":1,"reason":"bad_password"}
+```
+
+| CEF field | Source |
+| --- | --- |
+| Device Event Class ID / `act` | `event_type` |
+| Severity | log level: INFO `3`, WARNING `6`, ERROR `8`, CRITICAL `10` |
+| `rt` | event timestamp (epoch milliseconds) |
+| `outcome` | `result` |
+| `src` | client IP (omitted if it is not a valid IP address) |
+| `suser` / `suid` | actor email / user ID |
+| `cs1` / `cs2` | target type / target ID; session IDs are exported only as a `sha256:` fingerprint |
+| `cs3` | correlation ID (matches `X-Correlation-ID` and the JSON log record) |
+| `request` | target resource or API path |
+| `requestClientApplication` | User-Agent |
+| `msg` | event `details` as compact JSON |
+| `cs6=true` (`cs6Label=exportTruncated`) | present when fields were truncated or dropped to respect `SIEM_SYSLOG_MAX_MESSAGE_BYTES` |
+
+Behavior notes:
+
+- Values are CEF-escaped (`\`, `|` in the header, `=` in extensions, CR/LF as `\r`/`\n`) and other control characters are removed, so a field cannot inject a new event. Passwords are never part of security events. The JSON stdout record keeps the session ID in `target.id`; the syslog export replaces it with a `sha256:` fingerprint.
+- Export honors `LOG_LEVEL`; setting it above `INFO` drops INFO security events (for example `auth_success`) from both outputs.
+- Delivery is best-effort and never fails a user request. An unreachable collector at startup or a send failure is logged to stdout as an ERROR record with `action="siem_export_failure"` (rate-limited to one per minute, with a `dropped_events` count); after a failed TCP connect or send, it waits 30 seconds before reconnecting on a subsequent event (events in that window are dropped and counted) so requests are not repeatedly delayed by connect timeouts. Sends are synchronous, so a slow TCP collector can add up to `SIEM_SYSLOG_TIMEOUT_SECONDS` to a request that emits a security event. UDP can lose messages silently in the network, so prefer TCP or a local collector when delivery matters.
+- The transport is plaintext. Keep the collector on a private network or a local sidecar/agent that forwards over TLS.
 
 ---
 
