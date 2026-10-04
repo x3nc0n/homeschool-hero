@@ -113,13 +113,9 @@ CSV_HEADERS: dict[str, list[str]] = {
         'attendance_id',
         'student_name',
         'date',
-        'status',
+        'is_instructional_day',
         'instructional_hours',
-        'check_in_time',
-        'check_out_time',
         'notes',
-        'excuse_reason',
-        'excuse_document_path',
         'created_at',
         'updated_at',
     ],
@@ -710,7 +706,7 @@ async def _collect_attendance(
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], set[str]]:
     stmt = (
         select(AttendanceRecord)
-        .options(selectinload(AttendanceRecord.student), selectinload(AttendanceRecord.excuse))
+        .options(selectinload(AttendanceRecord.student))
         .where(AttendanceRecord.family_id == family_id)
         .order_by(AttendanceRecord.date.asc(), AttendanceRecord.id.asc())
     )
@@ -720,30 +716,14 @@ async def _collect_attendance(
     payload: list[dict[str, object]] = []
     rows: list[dict[str, object]] = []
     for item in items:
-        excuse = item.excuse
-        if excuse and excuse.document_path:
-            file_refs.add(excuse.document_path)
         serialized = {
             'id': item.id,
             'student_id': item.student_id,
             'student_name': item.student.name if item.student else None,
             'date': item.date.isoformat(),
-            'status': item.status,
-            'check_in_time': item.check_in_time.isoformat() if item.check_in_time else None,
-            'check_out_time': item.check_out_time.isoformat() if item.check_out_time else None,
+            'is_instructional_day': item.is_instructional_day,
             'instructional_hours': item.instructional_hours,
             'notes': item.notes,
-            'excuse': (
-                {
-                    'id': excuse.id,
-                    'reason': excuse.reason,
-                    'document_path': excuse.document_path,
-                    'approved_by_user_id': excuse.approved_by_user_id,
-                    'approved_at': excuse.approved_at,
-                }
-                if excuse
-                else None
-            ),
             'created_at': item.created_at,
             'updated_at': item.updated_at,
         }
@@ -753,13 +733,9 @@ async def _collect_attendance(
                 'attendance_id': item.id,
                 'student_name': item.student.name if item.student else None,
                 'date': item.date.isoformat(),
-                'status': item.status,
+                'is_instructional_day': item.is_instructional_day,
                 'instructional_hours': item.instructional_hours,
-                'check_in_time': item.check_in_time.isoformat() if item.check_in_time else None,
-                'check_out_time': item.check_out_time.isoformat() if item.check_out_time else None,
                 'notes': item.notes,
-                'excuse_reason': excuse.reason if excuse else None,
-                'excuse_document_path': excuse.document_path if excuse else None,
                 'created_at': item.created_at,
                 'updated_at': item.updated_at,
             }

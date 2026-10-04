@@ -150,9 +150,8 @@ ATTENDANCE = {
     'collection': f'{API_PREFIX}/attendance',
     'daily': f'{API_PREFIX}/attendance/daily',
     'hours': f'{API_PREFIX}/attendance/hours',
+    'state_profiles': f'{API_PREFIX}/attendance/state-profiles',
     'summary': f'{API_PREFIX}/attendance/summary',
-    'excuses': f'{API_PREFIX}/attendance/excuses',
-    'excuse_approve': f'{API_PREFIX}/attendance/excuses/{{excuse_id}}/approve',
 }
 
 REPORT_CARDS = {
@@ -435,22 +434,16 @@ def attendance_daily_payload(
 def attendance_record_payload(
     student_id: int | str,
     *,
-    status: str = 'present',
+    is_instructional_day: bool = True,
     instructional_hours: str | float | None = '5.50',
-    check_in_time: str | None = None,
-    check_out_time: str | None = None,
     notes: str | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         'student_id': student_id,
-        'status': status,
+        'is_instructional_day': is_instructional_day,
     }
     if instructional_hours is not None:
         payload['instructional_hours'] = instructional_hours
-    if check_in_time is not None:
-        payload['check_in_time'] = check_in_time
-    if check_out_time is not None:
-        payload['check_out_time'] = check_out_time
     if notes is not None:
         payload['notes'] = notes
     return payload
@@ -461,16 +454,12 @@ def attendance_hours_payload(
     *,
     attendance_date: str = '2025-09-10',
     instructional_hours: str | float = '4.25',
-    check_in_time: str | None = '09:00:00',
-    check_out_time: str | None = '13:15:00',
     notes: str | None = 'Independent reading and math drills',
 ) -> dict[str, Any]:
     return {
         'student_id': student_id,
         'date': attendance_date,
         'instructional_hours': instructional_hours,
-        'check_in_time': check_in_time,
-        'check_out_time': check_out_time,
         'notes': notes,
     }
 

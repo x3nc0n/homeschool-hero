@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from tests.contracts import (
@@ -137,7 +139,14 @@ async def test_generate_lesson_plans_from_curriculum_builds_sequence_and_pacing_
 
 
 @pytest.mark.asyncio
-async def test_pacing_status_turns_ahead_when_lessons_complete(authorized_client):
+async def test_pacing_status_turns_ahead_when_lessons_complete(authorized_client, monkeypatch):
+    # Completion is stamped with the real clock; pin it inside unit 1's 2026-08-17..19 window so the result does not depend on today's date.
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 8, 17, 15, 0, tzinfo=UTC)
+
+    monkeypatch.setattr('backend.routers.lesson_plans.datetime', _FixedDatetime)
     seeded = await _seed_package_with_schedule(authorized_client)
     generate = await authorized_client.post(
         LESSON_PLANS['generate'],

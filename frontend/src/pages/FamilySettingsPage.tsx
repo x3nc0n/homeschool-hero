@@ -30,7 +30,13 @@ const defaultRanges: GradeScaleRange[] = [
   { letter: 'F', min: 0, max: 59.99, gpa_points: 0 },
 ]
 
-const stateCodes = ['CUSTOM', 'TX', 'CA', 'VA', 'NY', 'FL'] as const
+const stateCodes = [
+  'CUSTOM', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL',
+  'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME',
+  'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH',
+  'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI',
+  'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+] as const
 const ruleTypeValues: ComplianceRuleType[] = [
   'attendance_days',
   'attendance_hours',
@@ -118,7 +124,7 @@ export function FamilySettingsPage() {
 
   const totalDefaults = useMemo(() => scales.filter((scale) => scale.is_default).length, [scales])
   const stateOptions = useMemo(
-    () => stateCodes.map((value) => ({ value, label: t(`settings:family.states.${value}`) })),
+    () => stateCodes.map((value) => ({ value, label: t(`states.${value}`) })),
     [t],
   )
   const ruleTypes = useMemo(
@@ -412,6 +418,7 @@ export function FamilySettingsPage() {
             <Button onClick={() => void saveState()} disabled={savingState}>
               {t('settings:family.compliance.saveState')}
             </Button>
+            <p className="max-w-3xl text-sm text-muted-foreground">{t('attendance.profileDisclaimer')}</p>
 
             <div className="space-y-2 border-t pt-4">
               <Label>{t('settings:family.compliance.customRuleType')}</Label>

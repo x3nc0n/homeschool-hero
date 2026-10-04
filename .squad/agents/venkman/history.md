@@ -47,3 +47,5 @@ Egon completed comprehensive GitHub issue triage. All security findings have bee
 - Archived old decisions (before 2026-06-05)
 - Source browser UI work: PR #240 (merged), PR #244 (XSS fix)
 - Releases: v0.12.0 (Import), v0.13.0 (Enterprise Security), v0.14.0 (Sources+AI), v0.14.1 (Hardening)
+
+- 2026-10-04 — Attendance redesign integration: keep attendance entry on /attendance/daily with is_instructional_day and optional instructional_hours; annual progress comes from /attendance/summary (period=year, school_year_id) and state_profile_progress. Use /attendance/state-profiles plus /compliance/family/state to honor show_hours_ui (including profiles that track hours without a numeric minimum). Attendance page UI strings and all 50 state names belong in bilingual common resources.

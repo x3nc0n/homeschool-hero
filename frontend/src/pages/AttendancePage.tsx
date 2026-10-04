@@ -1,14 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Paperclip, ShieldCheck, UserCheck } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ChevronLeft, ChevronRight, UserCheck } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
-import type {
-  AttendanceHoursSummary,
-  AttendanceRecord,
-  AttendanceStatus,
-  AttendanceSummary,
-  SchoolYear,
-  Student,
-} from '@/types/api'
+import type { AttendanceRecord, AttendanceStateProfile, AttendanceStateProfileProgress, AttendanceSummary, SchoolYear, Student } from '@/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,23 +13,16 @@ import { PullToRefresh } from '@/components/common/PullToRefresh'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 
-const statusOptions: AttendanceStatus[] = ['present', 'absent', 'tardy', 'excused']
-const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-
-type DailyDraft = {
-  status: AttendanceStatus
+interface DailyDraft {
+  is_instructional_day: boolean
   instructional_hours: string
-  check_in_time: string
-  check_out_time: string
   notes: string
 }
 
-function toLocalDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year, month - 1, day)
+function localDateString(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 function monthKeyFromDate(value: string) {
@@ -53,112 +40,188 @@ function addMonths(monthKey: string, delta: number) {
   return `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`
 }
 
-function monthBounds(monthKey: string) {
+function monthBounds(monthKey: string, locale: string) {
   const start = startOfMonth(monthKey)
   const end = new Date(start.getFullYear(), start.getMonth() + 1, 0)
-  const format = (value: Date) =>
-    `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-  return { start: format(start), end: format(end), label: `${monthNames[start.getMonth()]} ${start.getFullYear()}` }
+  return {
+    start: localDateString(start),
+    end: localDateString(end),
+    label: new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(start),
+  }
 }
 
 function emptyDailyDraft(record?: AttendanceRecord): DailyDraft {
   return {
-    status: record?.status || 'present',
-    instructional_hours: record?.instructional_hours || '0.00',
-    check_in_time: record?.check_in_time?.slice(0, 5) || '',
-    check_out_time: record?.check_out_time?.slice(0, 5) || '',
-    notes: record?.notes || '',
+    is_instructional_day: record?.is_instructional_day ?? false,
+    instructional_hours: record?.instructional_hours ?? '',
+    notes: record?.notes ?? '',
   }
 }
 
-function statusBadgeVariant(status: AttendanceStatus) {
-  if (status === 'absent') return 'destructive'
-  if (status === 'excused') return 'secondary'
-  return 'outline'
+function formatCount(value: number | string | null | undefined, locale: string) {
+  const numericValue = typeof value === 'number' ? value : Number(value ?? 0)
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(Number.isFinite(numericValue) ? numericValue : 0)
 }
 
-function statusDayClasses(status: AttendanceStatus) {
-  if (status === 'present') return 'border-emerald-500 bg-emerald-100 text-emerald-800'
-  if (status === 'tardy') return 'border-amber-500 bg-amber-100 text-amber-900'
-  if (status === 'excused') return 'border-sky-500 bg-sky-100 text-sky-900'
-  return 'border-rose-500 bg-rose-100 text-rose-900'
+function ProfileProgress({
+  progress,
+  instructionalDays,
+  totalHours,
+  locale,
+  t,
+}: {
+  progress: AttendanceStateProfileProgress
+  instructionalDays: number
+  totalHours: string | null
+  locale: string
+  t: (key: string, options?: Record<string, unknown>) => string
+}) {
+  const hasDayRequirement = progress.required_days != null
+  const hasHourRequirement = progress.required_hours != null
+  const daysRemaining = Math.max(0, progress.days_remaining ?? (progress.required_days ?? 0) - instructionalDays)
+  const parsedHours = Number(totalHours ?? 0)
+  const completedHours = Number.isFinite(parsedHours) ? parsedHours : 0
+  const parsedHoursRemaining = Number(progress.hours_remaining)
+  const hoursRemaining = Math.max(
+    0,
+    progress.hours_remaining != null && Number.isFinite(parsedHoursRemaining)
+      ? parsedHoursRemaining
+      : (progress.required_hours ?? 0) - completedHours,
+  )
+  const dayPercent = progress.required_days
+    ? Math.min(100, (instructionalDays / progress.required_days) * 100)
+    : 100
+  const hourPercent = progress.required_hours
+    ? Math.min(100, (completedHours / progress.required_hours) * 100)
+    : 100
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('attendance.progress.title')}</CardTitle>
+        <CardDescription>{t('attendance.progress.description')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {hasDayRequirement && progress.required_days === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('attendance.progress.zeroDays')}</p>
+        ) : null}
+        {hasDayRequirement && progress.required_days !== 0 ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span>{t('attendance.progress.days', { completed: formatCount(instructionalDays, locale), required: formatCount(progress.required_days, locale) })}</span>
+              <span className="text-muted-foreground">
+                {daysRemaining ? t('attendance.progress.daysRemaining', { count: formatCount(daysRemaining, locale) }) : t('attendance.progress.daysComplete')}
+              </span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={t('attendance.progress.days', { completed: formatCount(instructionalDays, locale), required: formatCount(progress.required_days, locale) })}
+              aria-valuemin={0}
+              aria-valuemax={progress.required_days ?? undefined}
+              aria-valuenow={Math.min(instructionalDays, progress.required_days ?? 0)}
+              className="h-2 overflow-hidden rounded-full bg-muted"
+            >
+              <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${dayPercent}%` }} />
+            </div>
+          </div>
+        ) : null}
+        {hasHourRequirement && progress.required_hours === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('attendance.progress.zeroHours')}</p>
+        ) : null}
+        {hasHourRequirement && progress.required_hours !== 0 ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span>{t('attendance.progress.hours', { completed: formatCount(totalHours, locale), required: formatCount(progress.required_hours, locale) })}</span>
+              <span className="text-muted-foreground">
+                {hoursRemaining ? t('attendance.progress.hoursRemaining', { count: formatCount(hoursRemaining, locale) }) : t('attendance.progress.hoursComplete')}
+              </span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={t('attendance.progress.hours', { completed: formatCount(totalHours, locale), required: formatCount(progress.required_hours, locale) })}
+              aria-valuemin={0}
+              aria-valuemax={progress.required_hours ?? undefined}
+              aria-valuenow={Math.min(completedHours, progress.required_hours ?? 0)}
+              className="h-2 overflow-hidden rounded-full bg-muted"
+            >
+              <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${hourPercent}%` }} />
+            </div>
+          </div>
+        ) : null}
+        {!hasDayRequirement && !hasHourRequirement ? (
+          <p className="text-sm text-muted-foreground">{t('attendance.progress.none')}</p>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
 }
 
 export function AttendancePage() {
-  const today = new Date().toISOString().slice(0, 10)
+  const { t, i18n } = useTranslation()
+  const today = localDateString(new Date())
+  const locale = i18n.resolvedLanguage || i18n.language
   const [students, setStudents] = useState<Student[]>([])
   const [schoolYears, setSchoolYears] = useState<SchoolYear[]>([])
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [summary, setSummary] = useState<AttendanceSummary | null>(null)
-  const [hoursSummary, setHoursSummary] = useState<AttendanceHoursSummary | null>(null)
+  const [stateProfile, setStateProfile] = useState<AttendanceStateProfile | null>(null)
   const [selectedDate, setSelectedDate] = useState(today)
   const [selectedMonth, setSelectedMonth] = useState(today.slice(0, 7))
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null)
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState<number | null>(null)
   const [dailyDrafts, setDailyDrafts] = useState<Record<number, DailyDraft>>({})
-  const [hoursForm, setHoursForm] = useState({
-    student_id: 0,
-    date: today,
-    instructional_hours: '4.00',
-    check_in_time: '09:00',
-    check_out_time: '13:00',
-    notes: '',
-  })
-  const [excuseRecordId, setExcuseRecordId] = useState<number | null>(null)
-  const [excuseReason, setExcuseReason] = useState('')
-  const [excuseFile, setExcuseFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
-  const touchStartX = useRef<Record<number, number>>({})
 
   const selectedStudent = useMemo(
     () => students.find((student) => student.id === selectedStudentId) || null,
     [selectedStudentId, students],
   )
-  const monthRange = useMemo(() => monthBounds(selectedMonth), [selectedMonth])
+  const monthRange = useMemo(() => monthBounds(selectedMonth, locale), [locale, selectedMonth])
+  const progress = summary?.state_profile_progress ?? null
+  const showHours = stateProfile?.show_hours_ui ?? (progress?.required_hours != null && progress.required_hours > 0)
+  const hasApplicableMinimum = progress && (progress.required_days != null || progress.required_hours != null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const [studentData, schoolYearData] = await Promise.all([api.listStudents(), api.listSchoolYears()])
+      const [studentData, schoolYearData, records, profiles, familyState] = await Promise.all([
+        api.listStudents(),
+        api.listSchoolYears(),
+        api.listAttendance({ date_from: monthRange.start, date_to: monthRange.end }),
+        api.listAttendanceStateProfiles(),
+        api.getFamilyComplianceState(),
+      ])
       const resolvedStudentId =
         selectedStudentId && studentData.some((student) => student.id === selectedStudentId)
           ? selectedStudentId
-          : studentData[0]?.id || null
+          : studentData[0]?.id ?? null
       const resolvedSchoolYearId =
         selectedSchoolYearId && schoolYearData.some((schoolYear) => schoolYear.id === selectedSchoolYearId)
           ? selectedSchoolYearId
-          : schoolYearData.find((schoolYear) => schoolYear.is_active)?.id || schoolYearData[0]?.id || null
+          : schoolYearData.find((schoolYear) => schoolYear.is_active)?.id ?? schoolYearData[0]?.id ?? null
+      const summaryData = resolvedStudentId && resolvedSchoolYearId
+        ? await api.getAttendanceSummary(resolvedStudentId, 'year', resolvedSchoolYearId)
+        : null
 
       setStudents(studentData)
       setSchoolYears(schoolYearData)
+      setAttendanceRecords(records)
+      setStateProfile(
+        profiles.find((profile) => profile.state_code === familyState?.state_code) ?? null,
+      )
       setSelectedStudentId(resolvedStudentId)
       setSelectedSchoolYearId(resolvedSchoolYearId)
-      setHoursForm((current) => ({ ...current, student_id: current.student_id || resolvedStudentId || 0 }))
-
-      const records = await api.listAttendance({ date_from: monthRange.start, date_to: monthRange.end })
-      setAttendanceRecords(records)
-
-      if (resolvedStudentId) {
-        const [summaryData, hoursData] = await Promise.all([
-          api.getAttendanceSummary(resolvedStudentId, 'term', resolvedSchoolYearId || undefined),
-          resolvedSchoolYearId ? api.getAttendanceHours(resolvedStudentId, resolvedSchoolYearId) : Promise.resolve(null),
-        ])
-        setSummary(summaryData)
-        setHoursSummary(hoursData)
-      } else {
-        setSummary(null)
-        setHoursSummary(null)
-      }
+      setSummary(summaryData)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load attendance')
+      setError(loadError instanceof Error ? loadError.message : t('attendance.errors.load'))
     } finally {
       setLoading(false)
     }
-  }, [monthRange.end, monthRange.start, selectedSchoolYearId, selectedStudentId])
+  }, [monthRange.end, monthRange.start, selectedSchoolYearId, selectedStudentId, t])
 
   useEffect(() => {
     void load()
@@ -173,17 +236,14 @@ export function AttendancePage() {
     setDailyDrafts(nextDrafts)
   }, [attendanceRecords, selectedDate, students])
 
-  const calendarRecords = useMemo(
-    () => attendanceRecords.filter((record) => record.student_id === selectedStudentId),
-    [attendanceRecords, selectedStudentId],
-  )
   const recordsByDate = useMemo(
-    () =>
-      calendarRecords.reduce<Record<string, AttendanceRecord[]>>((accumulator, record) => {
-        accumulator[record.date] = [...(accumulator[record.date] || []), record]
+    () => attendanceRecords
+      .filter((record) => record.student_id === selectedStudentId)
+      .reduce<Record<string, AttendanceRecord>>((accumulator, record) => {
+        accumulator[record.date] = record
         return accumulator
       }, {}),
-    [calendarRecords],
+    [attendanceRecords, selectedStudentId],
   )
   const monthGrid = useMemo(() => {
     const firstDay = startOfMonth(selectedMonth)
@@ -192,99 +252,10 @@ export function AttendancePage() {
     return Array.from({ length: 42 }, (_, index) => {
       const current = new Date(start)
       current.setDate(start.getDate() + index)
-      const key = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`
-      return { key, inMonth: monthKeyFromDate(key) === selectedMonth, records: recordsByDate[key] || [] }
+      const key = localDateString(current)
+      return { key, inMonth: monthKeyFromDate(key) === selectedMonth, record: recordsByDate[key] }
     })
   }, [recordsByDate, selectedMonth])
-
-  const excuseCandidates = useMemo(
-    () =>
-      attendanceRecords
-        .filter((record) => record.status !== 'present' || record.excuse)
-        .sort((left, right) => right.date.localeCompare(left.date)),
-    [attendanceRecords],
-  )
-
-  const saveDailyAttendance = async () => {
-    if (!students.length) return
-    setSaving(true)
-    setStatusMessage('')
-    try {
-      await api.recordDailyAttendance({
-        date: selectedDate,
-        records: students.map((student) => ({
-          student_id: student.id,
-          status: dailyDrafts[student.id]?.status || 'present',
-          instructional_hours: dailyDrafts[student.id]?.instructional_hours || '0.00',
-          check_in_time: dailyDrafts[student.id]?.check_in_time || undefined,
-          check_out_time: dailyDrafts[student.id]?.check_out_time || undefined,
-          notes: dailyDrafts[student.id]?.notes || null,
-        })),
-      })
-      setStatusMessage('Daily attendance saved.')
-      await load()
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save attendance')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const saveHours = async () => {
-    if (!hoursForm.student_id) return
-    setSaving(true)
-    setStatusMessage('')
-    try {
-      await api.logInstructionalHours({
-        ...hoursForm,
-        check_in_time: hoursForm.check_in_time || null,
-        check_out_time: hoursForm.check_out_time || null,
-        notes: hoursForm.notes || null,
-      })
-      setStatusMessage('Instructional hours logged.')
-      await load()
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to log instructional hours')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const saveExcuse = async () => {
-    if (!excuseRecordId || !excuseReason.trim()) return
-    setSaving(true)
-    setStatusMessage('')
-    try {
-      const formData = new FormData()
-      formData.append('attendance_record_id', String(excuseRecordId))
-      formData.append('reason', excuseReason.trim())
-      if (excuseFile) formData.append('document', excuseFile)
-      await api.createAttendanceExcuse(formData)
-      setExcuseReason('')
-      setExcuseFile(null)
-      setExcuseRecordId(null)
-      setStatusMessage('Excuse saved.')
-      await load()
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save excuse')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const approveExcuse = async (excuseId: number) => {
-    setSaving(true)
-    setStatusMessage('')
-    try {
-      await api.approveAttendanceExcuse(excuseId)
-      setStatusMessage('Excuse approved.')
-      await load()
-    } catch (approveError) {
-      setError(approveError instanceof Error ? approveError.message : 'Unable to approve excuse')
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const updateDailyDraft = (studentId: number, patch: Partial<DailyDraft>) => {
     setDailyDrafts((current) => ({
@@ -293,305 +264,263 @@ export function AttendancePage() {
     }))
   }
 
-  const applySwipeStatus = (studentId: number, status: AttendanceStatus) => {
-    updateDailyDraft(studentId, { status })
-    setStatusMessage(`Set ${students.find((student) => student.id === studentId)?.name || 'student'} to ${status}.`)
+  const saveDailyAttendance = async () => {
+    if (!students.length) return
+    setSaving(true)
+    setError('')
+    setStatusMessage('')
+    try {
+      await api.recordDailyAttendance({
+        date: selectedDate,
+        records: students.map((student) => {
+          const draft = dailyDrafts[student.id] ?? emptyDailyDraft()
+          return {
+            student_id: student.id,
+            is_instructional_day: draft.is_instructional_day,
+            instructional_hours: showHours ? draft.instructional_hours || null : undefined,
+            notes: draft.notes || null,
+          }
+        }),
+      })
+      setStatusMessage(t('attendance.messages.saved'))
+      await load()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : t('attendance.errors.save'))
+    } finally {
+      setSaving(false)
+    }
   }
 
-  if (loading) return <LoadingState message="Loading attendance…" />
+  if (loading) return <LoadingState message={t('attendance.loading')} />
   if (error) return <ErrorState message={error} onRetry={() => void load()} />
   if (!students.length) {
-    return <EmptyState title="No students yet" description="Add at least one student before tracking attendance." />
+    return <EmptyState title={t('attendance.students.emptyTitle')} description={t('attendance.students.emptyDescription')} />
   }
 
   return (
     <PullToRefresh onRefresh={load}>
       <div className="space-y-4">
         {statusMessage ? (
-          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{statusMessage}</div>
+          <div role="status" aria-live="polite" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            {statusMessage}
+          </div>
         ) : null}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader>
-            <CardDescription>Selected student</CardDescription>
-            <CardTitle>{selectedStudent?.name || '—'}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Attendance rate</CardDescription>
-            <CardTitle>{summary ? `${summary.attendance_rate.toFixed(1)}%` : '—'}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Total hours</CardDescription>
-            <CardTitle>{hoursSummary?.total_hours || '0.00'}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Recorded days</CardDescription>
-            <CardTitle>{hoursSummary?.recorded_days ?? 0}</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card>
+            <CardHeader>
+              <CardDescription>{t('attendance.summary.title')}</CardDescription>
+              <CardTitle>{selectedStudent?.name || '—'}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardDescription>{t('attendance.summary.instructionalDays')}</CardDescription>
+              <CardTitle>{formatCount(summary?.instructional_days, locale)}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardDescription>{t('attendance.summary.nonInstructionalDays')}</CardDescription>
+              <CardTitle>{formatCount(summary?.non_instructional_days, locale)}</CardTitle>
+            </CardHeader>
+          </Card>
+          {showHours ? (
+            <Card>
+              <CardHeader>
+                <CardDescription>{t('attendance.summary.totalHours')}</CardDescription>
+                <CardTitle>{formatCount(summary?.total_hours, locale)}</CardTitle>
+              </CardHeader>
+            </Card>
+          ) : null}
+        </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Daily attendance</CardTitle>
-            <CardDescription>Mark present, absent, tardy, or excused for every student on one date.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-              <div className="w-full space-y-2 sm:w-auto">
-                <Label>Date</Label>
-                <Input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
-              </div>
-              <Button className="w-full sm:w-auto" onClick={() => void saveDailyAttendance()} disabled={saving}>
-                <UserCheck className="mr-2 h-4 w-4" />
-                Save day
-              </Button>
-            </div>
-
-            <div className="space-y-3 md:hidden">
-              {students.map((student) => {
-                const draft = dailyDrafts[student.id] || emptyDailyDraft()
-                return (
-                  <div
-                    key={student.id}
-                    className="rounded-lg border p-4"
-                    onTouchStart={(event) => {
-                      touchStartX.current[student.id] = event.changedTouches[0]?.clientX || 0
+        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('attendance.title')}</CardTitle>
+              <CardDescription>{t('attendance.description')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                <div className="w-full space-y-2 sm:w-auto">
+                  <Label htmlFor="attendance-date">{t('attendance.date')}</Label>
+                  <Input
+                    id="attendance-date"
+                    type="date"
+                    value={selectedDate}
+                    onChange={(event) => {
+                      const nextDate = event.target.value
+                      setSelectedDate(nextDate)
+                      if (nextDate) setSelectedMonth(monthKeyFromDate(nextDate))
                     }}
-                    onTouchEnd={(event) => {
-                      const deltaX = (event.changedTouches[0]?.clientX || 0) - (touchStartX.current[student.id] || 0)
-                      if (deltaX >= 60) applySwipeStatus(student.id, 'present')
-                      if (deltaX <= -60) applySwipeStatus(student.id, 'absent')
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium">{student.name}</p>
-                        <p className="text-xs text-muted-foreground">Swipe right for present, left for absent.</p>
-                      </div>
-                      <Badge variant={statusBadgeVariant(draft.status)}>{draft.status}</Badge>
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      {statusOptions.map((status) => (
-                        <Button
-                          key={status}
-                          type="button"
-                          variant={draft.status === status ? 'default' : 'outline'}
-                          className="capitalize"
-                          onClick={() => updateDailyDraft(student.id, { status })}
-                        >
-                          {status}
-                        </Button>
-                      ))}
-                    </div>
-                    <div className="mt-3 grid gap-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2">
-                          <Label>Hours</Label>
-                          <Input value={draft.instructional_hours || '0.00'} onChange={(event) => updateDailyDraft(student.id, { instructional_hours: event.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Check in</Label>
-                          <Input type="time" value={draft.check_in_time || ''} onChange={(event) => updateDailyDraft(student.id, { check_in_time: event.target.value })} />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2">
-                          <Label>Check out</Label>
-                          <Input type="time" value={draft.check_out_time || ''} onChange={(event) => updateDailyDraft(student.id, { check_out_time: event.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Notes</Label>
-                          <Input value={draft.notes || ''} placeholder="Optional note" onChange={(event) => updateDailyDraft(student.id, { notes: event.target.value })} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Hours</TableHead>
-                    <TableHead>Check in</TableHead>
-                    <TableHead>Check out</TableHead>
-                    <TableHead>Notes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {students.map((student) => (
-                    <TableRow key={student.id}>
-                      <TableCell className="font-medium">{student.name}</TableCell>
-                      <TableCell>
-                        <Select value={dailyDrafts[student.id]?.status || 'present'} onValueChange={(value) => updateDailyDraft(student.id, { status: value as AttendanceStatus })}>
-                          <SelectTrigger className="min-w-[130px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {statusOptions.map((status) => (
-                              <SelectItem key={status} value={status}>
-                                {status}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Input value={dailyDrafts[student.id]?.instructional_hours || '0.00'} onChange={(event) => updateDailyDraft(student.id, { instructional_hours: event.target.value })} />
-                      </TableCell>
-                      <TableCell>
-                        <Input type="time" value={dailyDrafts[student.id]?.check_in_time || ''} onChange={(event) => updateDailyDraft(student.id, { check_in_time: event.target.value })} />
-                      </TableCell>
-                      <TableCell>
-                        <Input type="time" value={dailyDrafts[student.id]?.check_out_time || ''} onChange={(event) => updateDailyDraft(student.id, { check_out_time: event.target.value })} />
-                      </TableCell>
-                      <TableCell>
-                        <Input value={dailyDrafts[student.id]?.notes || ''} onChange={(event) => updateDailyDraft(student.id, { notes: event.target.value })} placeholder="Optional note" />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Compliance snapshot</CardTitle>
-            <CardDescription>Term-ready totals for the currently selected student and school year.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Student</Label>
-                <Select value={selectedStudentId ? String(selectedStudentId) : undefined} onValueChange={(value) => setSelectedStudentId(Number(value))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select student" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {students.map((student) => (
-                      <SelectItem key={student.id} value={String(student.id)}>
-                        {student.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>School year</Label>
-                <Select
-                  value={selectedSchoolYearId ? String(selectedSchoolYearId) : undefined}
-                  onValueChange={(value) => setSelectedSchoolYearId(Number(value))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select school year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {schoolYears.map((schoolYear) => (
-                      <SelectItem key={schoolYear.id} value={String(schoolYear.id)}>
-                        {schoolYear.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-md border p-3">
-                <p className="text-xs uppercase text-muted-foreground">Present / tardy / excused</p>
-                <p className="text-2xl font-semibold">{(summary?.present || 0) + (summary?.tardy || 0) + (summary?.excused || 0)}</p>
-              </div>
-              <div className="rounded-md border p-3">
-                <p className="text-xs uppercase text-muted-foreground">Absent days</p>
-                <p className="text-2xl font-semibold">{summary?.absent || 0}</p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Term summary buckets</p>
-              {summary?.buckets.length ? (
-                <div className="space-y-2">
-                  {summary.buckets.map((bucket) => (
-                    <div key={`${bucket.label}-${bucket.start_date}`} className="rounded-md border p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{bucket.label}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {toLocalDate(bucket.start_date).toLocaleDateString()} – {toLocalDate(bucket.end_date).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <Badge variant="secondary">{bucket.attendance_rate.toFixed(1)}%</Badge>
-                      </div>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {bucket.total_records} days tracked · {bucket.total_hours} hours
-                      </p>
-                    </div>
-                  ))}
+                  />
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No attendance records yet for this school year.</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                <Button className="w-full sm:w-auto" onClick={() => void saveDailyAttendance()} disabled={saving}>
+                  <UserCheck className="mr-2 h-4 w-4" aria-hidden="true" />
+                  {saving ? t('attendance.saving') : t('attendance.saveDay')}
+                </Button>
+              </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="space-y-3">
+                {students.map((student) => {
+                  const draft = dailyDrafts[student.id] ?? emptyDailyDraft()
+                  const hoursId = `attendance-hours-${student.id}`
+                  const notesId = `attendance-notes-${student.id}`
+                  return (
+                    <div key={student.id} className="rounded-lg border p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h3 className="font-medium">{student.name}</h3>
+                        <Badge variant={draft.is_instructional_day ? 'default' : 'secondary'}>
+                          {draft.is_instructional_day ? t('attendance.instructional') : t('attendance.nonInstructional')}
+                        </Badge>
+                      </div>
+                      <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={draft.is_instructional_day}
+                          aria-label={t('attendance.instructionalDayFor', { student: student.name })}
+                          onChange={(event) => updateDailyDraft(student.id, { is_instructional_day: event.target.checked })}
+                          className="h-5 w-5 accent-primary"
+                        />
+                        <span className="font-medium">{t('attendance.instructionalDay')}</span>
+                      </label>
+                      <div className={`mt-3 grid gap-3 ${showHours ? 'sm:grid-cols-2' : ''}`}>
+                        {showHours ? (
+                          <div className="space-y-2">
+                            <Label htmlFor={hoursId}>{t('attendance.hours')}</Label>
+                            <Input
+                              id={hoursId}
+                              type="number"
+                              min="0"
+                              step="0.25"
+                              inputMode="decimal"
+                              value={draft.instructional_hours}
+                              onChange={(event) => updateDailyDraft(student.id, { instructional_hours: event.target.value })}
+                            />
+                            <p className="text-xs text-muted-foreground">{t('attendance.optionalHours')}</p>
+                          </div>
+                        ) : null}
+                        <div className="space-y-2">
+                          <Label htmlFor={notesId}>{t('attendance.notes')}</Label>
+                          <Textarea
+                            id={notesId}
+                            value={draft.notes}
+                            placeholder={t('attendance.optionalNote')}
+                            onChange={(event) => updateDailyDraft(student.id, { notes: event.target.value })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t('attendance.schoolYear')}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="attendance-student">{t('attendance.student')}</Label>
+                  <Select value={selectedStudentId ? String(selectedStudentId) : undefined} onValueChange={(value) => setSelectedStudentId(Number(value))}>
+                    <SelectTrigger id="attendance-student">
+                      <SelectValue placeholder={t('attendance.selectStudent')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {students.map((student) => (
+                        <SelectItem key={student.id} value={String(student.id)}>{student.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="attendance-school-year">{t('attendance.schoolYear')}</Label>
+                  <Select
+                    value={selectedSchoolYearId ? String(selectedSchoolYearId) : undefined}
+                    onValueChange={(value) => setSelectedSchoolYearId(Number(value))}
+                  >
+                    <SelectTrigger id="attendance-school-year">
+                      <SelectValue placeholder={t('attendance.selectSchoolYear')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {schoolYears.map((schoolYear) => (
+                        <SelectItem key={schoolYear.id} value={String(schoolYear.id)}>{schoolYear.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+
+            {hasApplicableMinimum ? (
+              <ProfileProgress
+                progress={progress}
+                instructionalDays={summary?.instructional_days ?? 0}
+                totalHours={summary?.total_hours ?? null}
+                locale={locale}
+                t={t}
+              />
+            ) : null}
+            {!selectedSchoolYearId ? (
+              <p className="rounded-md border p-3 text-sm text-muted-foreground">{t('attendance.progress.noSchoolYear')}</p>
+            ) : null}
+          </div>
+        </div>
+
         <Card>
           <CardHeader>
-            <CardTitle>Attendance calendar</CardTitle>
-            <CardDescription>Color-coded monthly view for the selected student.</CardDescription>
+            <CardTitle>{t('attendance.calendar.title')}</CardTitle>
+            <CardDescription>{t('attendance.calendar.description')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <Button variant="outline" size="sm" onClick={() => setSelectedMonth((current) => addMonths(current, -1))}>
-                <ChevronLeft className="mr-2 h-4 w-4" />
-                Previous
+              <Button variant="outline" size="sm" aria-label={t('attendance.calendar.previous')} onClick={() => setSelectedMonth((current) => addMonths(current, -1))}>
+                <ChevronLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+                {t('attendance.calendar.previous')}
               </Button>
-              <p className="font-medium">{monthRange.label}</p>
-              <Button variant="outline" size="sm" onClick={() => setSelectedMonth((current) => addMonths(current, 1))}>
-                Next
-                <ChevronRight className="ml-2 h-4 w-4" />
+              <p className="font-medium" aria-live="polite">{monthRange.label}</p>
+              <Button variant="outline" size="sm" aria-label={t('attendance.calendar.next')} onClick={() => setSelectedMonth((current) => addMonths(current, 1))}>
+                {t('attendance.calendar.next')}
+                <ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
 
-            <div className="grid grid-cols-7 gap-2 text-center text-xs font-medium text-muted-foreground">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                <div key={day}>{day}</div>
-              ))}
+            <div className="grid grid-cols-7 gap-2 text-center text-xs font-medium text-muted-foreground" aria-hidden="true">
+              {(t('attendance.weekdays', { returnObjects: true }) as string[]).map((day) => <div key={day}>{day}</div>)}
             </div>
             <div className="grid grid-cols-7 gap-2">
               {monthGrid.map((cell) => {
-                const primaryRecord = cell.records[0]
+                const dayState = cell.record
+                  ? cell.record.is_instructional_day
+                    ? t('attendance.calendar.instructional')
+                    : t('attendance.calendar.nonInstructional')
+                  : t('attendance.calendar.noRecord')
+                const calendarLabel = `${cell.key}: ${dayState}`
+                const calendarClass = cell.record
+                  ? cell.record.is_instructional_day
+                    ? 'border-emerald-500 bg-emerald-100 text-emerald-900'
+                    : 'border-slate-300 bg-slate-100 text-slate-700'
+                  : ''
                 return (
                   <div
                     key={cell.key}
-                    className={`min-h-[88px] rounded-md border p-2 text-xs ${cell.inMonth ? 'bg-card' : 'bg-muted/50 text-muted-foreground'} ${primaryRecord ? statusDayClasses(primaryRecord.status) : ''}`}
+                    aria-label={calendarLabel}
+                    className={`min-h-[76px] rounded-md border p-2 text-xs ${cell.inMonth ? 'bg-card' : 'bg-muted/50 text-muted-foreground'} ${calendarClass}`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{cell.key.slice(-2)}</span>
-                      {primaryRecord ? <Badge variant={statusBadgeVariant(primaryRecord.status)}>{primaryRecord.status}</Badge> : null}
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-medium">{Number(cell.key.slice(-2))}</span>
+                      {cell.record ? (
+                        <Badge variant={cell.record.is_instructional_day ? 'default' : 'secondary'}>
+                          {cell.record.is_instructional_day ? t('attendance.instructional') : t('attendance.nonInstructional')}
+                        </Badge>
+                      ) : null}
                     </div>
-                    {primaryRecord ? (
-                      <div className="mt-2 space-y-1">
-                        <p>{primaryRecord.instructional_hours} hrs</p>
-                        {primaryRecord.excuse ? <p className="truncate">Excuse: {primaryRecord.excuse.reason}</p> : null}
-                      </div>
+                    {cell.record?.instructional_hours ? (
+                      <p className="mt-2">{t('attendance.calendar.hours', { hours: formatCount(cell.record.instructional_hours, locale) })}</p>
                     ) : null}
                   </div>
                 )
@@ -599,131 +528,6 @@ export function AttendancePage() {
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Hourly instructional log</CardTitle>
-            <CardDescription>Track state-ready instructional time for a single student and date.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Student</Label>
-              <Select value={hoursForm.student_id ? String(hoursForm.student_id) : undefined} onValueChange={(value) => setHoursForm((current) => ({ ...current, student_id: Number(value) }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select student" />
-                </SelectTrigger>
-                <SelectContent>
-                  {students.map((student) => (
-                    <SelectItem key={student.id} value={String(student.id)}>
-                      {student.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Date</Label>
-                <Input type="date" value={hoursForm.date} onChange={(event) => setHoursForm((current) => ({ ...current, date: event.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Hours</Label>
-                <Input value={hoursForm.instructional_hours} onChange={(event) => setHoursForm((current) => ({ ...current, instructional_hours: event.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Check in</Label>
-                <Input type="time" value={hoursForm.check_in_time} onChange={(event) => setHoursForm((current) => ({ ...current, check_in_time: event.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Check out</Label>
-                <Input type="time" value={hoursForm.check_out_time} onChange={(event) => setHoursForm((current) => ({ ...current, check_out_time: event.target.value }))} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea value={hoursForm.notes} onChange={(event) => setHoursForm((current) => ({ ...current, notes: event.target.value }))} placeholder="What instructional work was completed?" />
-            </div>
-            <Button onClick={() => void saveHours()} disabled={saving || !hoursForm.student_id}>
-              Log hours
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Excuse management</CardTitle>
-          <CardDescription>Attach documents, approve excuses, and keep the audit trail complete.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Attendance record</Label>
-                <Select value={excuseRecordId ? String(excuseRecordId) : undefined} onValueChange={(value) => setExcuseRecordId(Number(value))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select an absent, tardy, or excused record" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {excuseCandidates.map((record) => (
-                      <SelectItem key={record.id} value={String(record.id)}>
-                        {record.student?.name || `Student ${record.student_id}`} · {record.date} · {record.status}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Reason</Label>
-                <Textarea value={excuseReason} onChange={(event) => setExcuseReason(event.target.value)} placeholder="Doctor visit, family emergency, court filing, etc." />
-              </div>
-              <div className="space-y-2">
-                <Label>Document</Label>
-                <Input type="file" onChange={(event) => setExcuseFile(event.target.files?.[0] || null)} />
-              </div>
-              <Button onClick={() => void saveExcuse()} disabled={saving || !excuseRecordId || !excuseReason.trim()}>
-                <Paperclip className="mr-2 h-4 w-4" />
-                Save excuse
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {excuseCandidates.filter((record) => record.excuse).length ? (
-                excuseCandidates
-                  .filter((record) => record.excuse)
-                  .map((record) => (
-                    <div key={record.id} className="rounded-md border p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{record.student?.name || `Student ${record.student_id}`} · {record.date}</p>
-                          <p className="text-sm text-muted-foreground">{record.excuse?.reason}</p>
-                        </div>
-                        <Badge variant={record.excuse?.approved_at ? 'secondary' : 'outline'}>
-                          {record.excuse?.approved_at ? 'Approved' : 'Pending'}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {record.excuse?.document_url ? (
-                          <a href={record.excuse.document_url} className="inline-flex items-center rounded-md border px-3 py-1 text-sm hover:bg-muted" target="_blank" rel="noreferrer">
-                            View document
-                          </a>
-                        ) : null}
-                        {!record.excuse?.approved_at ? (
-                          <Button size="sm" variant="outline" onClick={() => void approveExcuse(record.excuse!.id)} disabled={saving}>
-                            <ShieldCheck className="mr-2 h-4 w-4" />
-                            Approve
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No excuses attached yet for the current month.</p>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
       </div>
     </PullToRefresh>
   )

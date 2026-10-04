@@ -18,7 +18,6 @@ from sqlalchemy.orm import selectinload
 from backend.models import (
     Assignment,
     AttendanceRecord,
-    AttendanceStatus,
     Grade,
     GradingPeriod,
     ReportCard,
@@ -32,37 +31,27 @@ from backend.models.calendar import SchoolYear, Term
 from backend.services.gradebook import calculate_gradebook
 
 
-def _attendance_rate(*, present: int, tardy: int, excused: int, total_records: int) -> float:
+def _attendance_rate(*, instructional_days: int, total_records: int) -> float:
     if total_records <= 0:
         return 0.0
-    attended = present + tardy + excused
-    return round((attended / total_records) * 100, 2)
+    return round((instructional_days / total_records) * 100, 2)
 
 
 def _sum_hours(records: Sequence[AttendanceRecord]) -> Decimal:
-    return sum((record.instructional_hours for record in records), Decimal('0')).quantize(Decimal('0.01'))
+    return sum((record.instructional_hours or Decimal('0') for record in records), Decimal('0')).quantize(Decimal('0.01'))
 
 
 def summarize_attendance_records(records: Sequence[AttendanceRecord], *, start_date: date, end_date: date) -> dict[str, Any]:
-    present = sum(1 for record in records if record.status == AttendanceStatus.present)
-    absent = sum(1 for record in records if record.status == AttendanceStatus.absent)
-    tardy = sum(1 for record in records if record.status == AttendanceStatus.tardy)
-    excused = sum(1 for record in records if record.status == AttendanceStatus.excused)
+    instructional_days = sum(1 for record in records if record.is_instructional_day)
+    non_instructional_days = len(records) - instructional_days
     total_hours = _sum_hours(records)
     return {
         'start_date': start_date.isoformat(),
         'end_date': end_date.isoformat(),
         'total_records': len(records),
-        'present': present,
-        'absent': absent,
-        'tardy': tardy,
-        'excused': excused,
-        'attendance_rate': _attendance_rate(
-            present=present,
-            tardy=tardy,
-            excused=excused,
-            total_records=len(records),
-        ),
+        'instructional_days': instructional_days,
+        'non_instructional_days': non_instructional_days,
+        'attendance_rate': _attendance_rate(instructional_days=instructional_days, total_records=len(records)),
         'total_hours': float(total_hours),
     }
 

@@ -145,7 +145,7 @@ async def test_report_card_generation_aggregates_grades_and_attendance(authorize
         ATTENDANCE['daily'],
         json=attendance_daily_payload(
             '2025-09-08',
-            [attendance_record_payload(student_id, status='present', instructional_hours='5.50')],
+            [attendance_record_payload(student_id, is_instructional_day=True, instructional_hours='5.50')],
         ),
     )
     assert attendance.status_code == 201, attendance.text
@@ -153,7 +153,7 @@ async def test_report_card_generation_aggregates_grades_and_attendance(authorize
         ATTENDANCE['daily'],
         json=attendance_daily_payload(
             '2025-09-09',
-            [attendance_record_payload(student_id, status='tardy', instructional_hours='4.25', notes='Arrived late')],
+            [attendance_record_payload(student_id, is_instructional_day=True, instructional_hours='4.25', notes='Arrived late')],
         ),
     )
     assert tardy.status_code == 201, tardy.text
@@ -176,7 +176,7 @@ async def test_report_card_generation_aggregates_grades_and_attendance(authorize
     assert math_entry['category_breakdown']['homework'] == 86.0
     assert math_entry['teacher_comments'] == 'Solid understanding of fractions.'
     assert math_entry['attendance_summary']['total_records'] == 2
-    assert math_entry['attendance_summary']['tardy'] == 1
+    assert math_entry['attendance_summary']['instructional_days'] == 2
     assert math_entry['attendance_summary']['attendance_rate'] == 100.0
 
     listing = await authorized_client.get(REPORT_CARDS['collection'], params={'student_id': student_id})

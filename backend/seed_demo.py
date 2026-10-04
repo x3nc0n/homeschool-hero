@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -17,9 +17,7 @@ from backend.models import (
     AssignmentStatus,
     AssignmentTarget,
     AssignmentTargetStatus,
-    AttendanceExcuse,
     AttendanceRecord,
-    AttendanceStatus,
     CalendarEvent,
     CalendarEventType,
     CurriculumLesson,
@@ -484,7 +482,6 @@ async def seed_demo_data(session: AsyncSession) -> bool:
         _seed_attendance_for_student(
             session=session,
             family_id=family.id,
-            user=user,
             student=student,
             school_days=attendance_days,
             student_index=student_index,
@@ -624,61 +621,30 @@ def _seed_attendance_for_student(
     *,
     session: AsyncSession,
     family_id: int,
-    user: User,
     student: Student,
     school_days: list[date],
     student_index: int,
 ) -> None:
     absent_indexes = {5 + (student_index % 4), 18 + (student_index % 5)}
-    excused_indexes = {32 + (student_index % 4)}
-    if student_index % 2 == 0:
-        excused_indexes.add(46 + (student_index % 5))
-
     for day_index, school_day in enumerate(school_days):
-        if day_index in excused_indexes:
-            record = AttendanceRecord(
-                family_id=family_id,
-                student=student,
-                date=school_day,
-                status=AttendanceStatus.excused,
-                instructional_hours=Decimal('0.00'),
-                notes='Excused family appointment.',
-            )
-            session.add(record)
-            session.add(
-                AttendanceExcuse(
-                    family_id=family_id,
-                    attendance_record=record,
-                    reason='Family appointment',
-                    approved_by=user,
-                    approved_at=_as_datetime(school_day, hour=18),
-                )
-            )
-            continue
-
         if day_index in absent_indexes:
             session.add(
                 AttendanceRecord(
                     family_id=family_id,
                     student=student,
                     date=school_day,
-                    status=AttendanceStatus.absent,
-                    instructional_hours=Decimal('0.00'),
-                    notes='Unplanned absence.',
+                    is_instructional_day=False,
+                    notes='No instructional day.',
                 )
             )
             continue
 
-        is_tardy = day_index == (9 + student_index)
         session.add(
             AttendanceRecord(
                 family_id=family_id,
                 student=student,
                 date=school_day,
-                status=AttendanceStatus.tardy if is_tardy else AttendanceStatus.present,
-                check_in_time=time(9, 5) if is_tardy else time(8, 30),
-                check_out_time=time(15, 0),
-                instructional_hours=Decimal('5.50') if is_tardy else Decimal('6.00'),
-                notes='Late arrival due to morning appointment.' if is_tardy else None,
+                is_instructional_day=True,
+                instructional_hours=Decimal('6.00'),
             )
         )

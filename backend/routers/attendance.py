@@ -1,24 +1,18 @@
 from __future__ import annotations
 
-import mimetypes
 from collections import defaultdict
 from collections.abc import Iterable
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
-from pathlib import Path
-from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.config import settings
 from backend.database import get_db
 from backend.models import (
-    AttendanceExcuse,
     AttendanceRecord,
-    AttendanceStatus,
     AuditAction,
     SchoolYear,
     Student,
@@ -26,30 +20,30 @@ from backend.models import (
 )
 from backend.schemas.attendance import (
     AttendanceDailyUpsert,
-    AttendanceExcuseRead,
     AttendanceHoursLog,
     AttendanceHoursResponse,
     AttendanceRecordEntry,
     AttendanceRecordRead,
+    AttendanceStateProfileProgress,
+    AttendanceStateProfileRead,
     AttendanceSummaryBucket,
     AttendanceSummaryResponse,
 )
 from backend.security import AuthSession, get_family_record
 from backend.services.audit import log_event
+from backend.services.attendance_profiles import (
+    get_state_requirement_profile,
+    list_state_requirement_profiles,
+)
 from backend.services.authorization import Capability, ensure_student_scope, get_student_scope_id, require_capabilities
 from backend.services.cache import invalidate_compliance_cache
-from backend.validation import normalize_text, sanitize_filename
+from backend.services.compliance import get_family_state_code
 
 router = APIRouter(prefix='/attendance', tags=['attendance'])
 
-EXCUSE_UPLOAD_PREFIX = 'attendance-excuse'
-
 
 def _record_options():
-    return (
-        selectinload(AttendanceRecord.student),
-        selectinload(AttendanceRecord.excuse).selectinload(AttendanceExcuse.approved_by),
-    )
+    return (selectinload(AttendanceRecord.student),)
 
 
 async def _get_student_or_404(db: AsyncSession, student_id: int, family_id: int) -> Student:
@@ -64,18 +58,6 @@ async def _get_record_or_404(db: AsyncSession, record_id: int, family_id: int) -
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Attendance record not found')
     return record
-
-
-async def _get_excuse_or_404(db: AsyncSession, excuse_id: int, family_id: int) -> AttendanceExcuse:
-    stmt = (
-        select(AttendanceExcuse)
-        .options(selectinload(AttendanceExcuse.attendance_record), selectinload(AttendanceExcuse.approved_by))
-        .where(AttendanceExcuse.id == excuse_id, AttendanceExcuse.family_id == family_id)
-    )
-    excuse = (await db.execute(stmt)).scalar_one_or_none()
-    if not excuse:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Attendance excuse not found')
-    return excuse
 
 
 async def _resolve_school_year(
@@ -119,101 +101,44 @@ async def _resolve_school_year(
 
 
 def _record_snapshot(record: AttendanceRecord) -> dict[str, object]:
-    excuse = record.__dict__.get('excuse')
     return {
         'id': record.id,
         'family_id': record.family_id,
         'student_id': record.student_id,
         'date': record.date.isoformat(),
-        'status': record.status.value,
-        'check_in_time': record.check_in_time.isoformat() if record.check_in_time else None,
-        'check_out_time': record.check_out_time.isoformat() if record.check_out_time else None,
-        'instructional_hours': str(record.instructional_hours),
+        'is_instructional_day': record.is_instructional_day,
+        'instructional_hours': str(record.instructional_hours) if record.instructional_hours is not None else None,
         'notes': record.notes,
-        'excuse': _excuse_snapshot(excuse) if isinstance(excuse, AttendanceExcuse) else None,
-    }
-
-
-def _excuse_snapshot(excuse: AttendanceExcuse | None) -> dict[str, object] | None:
-    if excuse is None:
-        return None
-    return {
-        'id': excuse.id,
-        'family_id': excuse.family_id,
-        'attendance_record_id': excuse.attendance_record_id,
-        'reason': excuse.reason,
-        'document_path': excuse.document_path,
-        'approved_by_user_id': excuse.approved_by_user_id,
-        'approved_at': excuse.approved_at.isoformat() if excuse.approved_at else None,
     }
 
 
 def _apply_record_entry(record: AttendanceRecord, payload: AttendanceRecordEntry, *, is_new: bool) -> None:
-    if is_new or 'status' in payload.model_fields_set:
-        record.status = payload.status
-    if is_new or 'check_in_time' in payload.model_fields_set:
-        record.check_in_time = payload.check_in_time
-    if is_new or 'check_out_time' in payload.model_fields_set:
-        record.check_out_time = payload.check_out_time
+    if is_new or 'is_instructional_day' in payload.model_fields_set:
+        record.is_instructional_day = payload.is_instructional_day
     if is_new or 'instructional_hours' in payload.model_fields_set:
-        record.instructional_hours = payload.instructional_hours or Decimal('0')
+        record.instructional_hours = payload.instructional_hours
     if is_new or 'notes' in payload.model_fields_set:
         record.notes = payload.notes
 
 
 def _apply_hours_log(record: AttendanceRecord, payload: AttendanceHoursLog, *, is_new: bool) -> None:
-    if is_new:
-        record.status = AttendanceStatus.present
-    if record.status == AttendanceStatus.absent and payload.instructional_hours > 0:
-        record.status = AttendanceStatus.present
+    if is_new or payload.instructional_hours > 0:
+        record.is_instructional_day = True
     record.instructional_hours = payload.instructional_hours
-    record.check_in_time = payload.check_in_time
-    record.check_out_time = payload.check_out_time
     record.notes = payload.notes
 
 
-def _remove_document(path_value: str | None) -> None:
-    if not path_value:
-        return
-    path = Path(path_value)
-    if path.exists() and path.is_file():
-        path.unlink()
-
-
-async def _store_excuse_document(file: UploadFile | None) -> str | None:
-    if file is None:
-        return None
-    safe_name = sanitize_filename(file.filename or '')
-    suffix = Path(safe_name).suffix.lower()
-    expected_mime, _ = mimetypes.guess_type(safe_name)
-    effective_type = (file.content_type or expected_mime or 'application/octet-stream').lower()
-    if effective_type not in settings.upload_allowed_mime_types:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unsupported file type')
-    if expected_mime and expected_mime.lower() not in settings.upload_allowed_mime_types:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unsupported file type')
-    contents = await file.read()
-    if not contents:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Uploaded file is empty')
-    if len(contents) > settings.upload_max_bytes:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail='Uploaded file exceeds size limit')
-    upload_dir = Path(settings.upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    destination = upload_dir / f'{EXCUSE_UPLOAD_PREFIX}-{uuid4().hex}{suffix}'
-    destination.write_bytes(contents)
-    return str(destination)
-
-
-def _attendance_rate(*, present: int, tardy: int, excused: int, total_records: int) -> float:
+def _attendance_rate(*, instructional_days: int, total_records: int) -> float:
     if total_records == 0:
         return 0.0
-    return round(((present + tardy + excused) / total_records) * 100, 2)
+    return round((instructional_days / total_records) * 100, 2)
 
 
-def _sum_hours(records: Iterable[AttendanceRecord]) -> Decimal:
-    total = Decimal('0')
-    for record in records:
-        total += record.instructional_hours or Decimal('0')
-    return total.quantize(Decimal('0.01'))
+def _sum_hours(records: Iterable[AttendanceRecord]) -> Decimal | None:
+    hours = [record.instructional_hours for record in records if record.instructional_hours is not None]
+    if not hours:
+        return None
+    return sum(hours, Decimal('0')).quantize(Decimal('0.01'))
 
 
 def _bucket_from_records(
@@ -223,25 +148,16 @@ def _bucket_from_records(
     end_date: date,
     records: list[AttendanceRecord],
 ) -> AttendanceSummaryBucket:
-    counts = defaultdict(int)
-    for record in records:
-        counts[record.status.value] += 1
+    instructional_days = sum(1 for record in records if record.is_instructional_day)
     total_records = len(records)
     return AttendanceSummaryBucket(
         label=label,
         start_date=start_date,
         end_date=end_date,
         total_records=total_records,
-        present=counts[AttendanceStatus.present.value],
-        absent=counts[AttendanceStatus.absent.value],
-        tardy=counts[AttendanceStatus.tardy.value],
-        excused=counts[AttendanceStatus.excused.value],
-        attendance_rate=_attendance_rate(
-            present=counts[AttendanceStatus.present.value],
-            tardy=counts[AttendanceStatus.tardy.value],
-            excused=counts[AttendanceStatus.excused.value],
-            total_records=total_records,
-        ),
+        instructional_days=instructional_days,
+        non_instructional_days=total_records - instructional_days,
+        attendance_rate=_attendance_rate(instructional_days=instructional_days, total_records=total_records),
         total_hours=_sum_hours(records),
     )
 
@@ -272,6 +188,13 @@ async def list_attendance_records(
         stmt = stmt.where(AttendanceRecord.date <= date_to)
     stmt = stmt.order_by(AttendanceRecord.date.desc(), AttendanceRecord.student_id.asc())
     return list((await db.execute(stmt)).scalars().all())
+
+
+@router.get('/state-profiles', response_model=list[AttendanceStateProfileRead])
+async def list_attendance_state_profiles(
+    auth: AuthSession = Depends(require_capabilities(Capability.read_students, action='view attendance state profiles')),
+) -> list[AttendanceStateProfileRead]:
+    return list_state_requirement_profiles()
 
 
 @router.post('/daily', response_model=list[AttendanceRecordRead], status_code=status.HTTP_201_CREATED)
@@ -313,8 +236,7 @@ async def record_daily_attendance(
                 family_id=auth.family_id,
                 student_id=entry.student_id,
                 date=payload.date,
-                status=AttendanceStatus.present,
-                instructional_hours=Decimal('0'),
+                is_instructional_day=True,
             )
             db.add(record)
             await db.flush()
@@ -364,8 +286,7 @@ async def log_instructional_time(
             family_id=auth.family_id,
             student_id=payload.student_id,
             date=payload.date,
-            status=AttendanceStatus.present,
-            instructional_hours=Decimal('0'),
+            is_instructional_day=True,
         )
         db.add(record)
         await db.flush()
@@ -386,91 +307,6 @@ async def log_instructional_time(
     await db.commit()
     invalidate_compliance_cache(family_id=auth.family_id, student_id=payload.student_id)
     return await _get_record_or_404(db, record.id, auth.family_id)
-
-
-@router.post('/excuses', response_model=AttendanceExcuseRead, status_code=status.HTTP_201_CREATED)
-async def add_or_update_excuse(
-    request: Request,
-    attendance_record_id: int = Form(..., gt=0),
-    reason: str = Form(...),
-    document: UploadFile | None = File(default=None),
-    db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='manage attendance excuses')),
-) -> AttendanceExcuse:
-    record = await _get_record_or_404(db, attendance_record_id, auth.family_id)
-    normalized_reason = normalize_text(reason, field_name='Excuse reason')
-    excuse = record.excuse
-    before = _excuse_snapshot(excuse)
-    old_document_path = excuse.document_path if excuse else None
-    uploaded_path = await _store_excuse_document(document)
-
-    if excuse is None:
-        excuse = AttendanceExcuse(
-            family_id=auth.family_id,
-            attendance_record_id=record.id,
-            reason=normalized_reason,
-            document_path=uploaded_path,
-        )
-        db.add(excuse)
-    else:
-        excuse.reason = normalized_reason
-        if uploaded_path is not None:
-            excuse.document_path = uploaded_path
-
-    await db.flush()
-    await log_event(
-        db,
-        action=AuditAction.attendance_edit,
-        actor=auth,
-        family_id=auth.family_id,
-        target_type='attendance_excuse',
-        target_id=excuse.id,
-        before=before,
-        after=_excuse_snapshot(excuse),
-        request=request,
-    )
-    await db.commit()
-    invalidate_compliance_cache(family_id=auth.family_id, student_id=record.student_id)
-    if uploaded_path is not None and old_document_path and old_document_path != uploaded_path:
-        _remove_document(old_document_path)
-    await db.refresh(excuse)
-    return excuse
-
-
-@router.post('/excuses/{excuse_id}/approve', response_model=AttendanceExcuseRead)
-async def approve_excuse(
-    excuse_id: int,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='approve attendance excuses')),
-) -> AttendanceExcuse:
-    excuse = await _get_excuse_or_404(db, excuse_id, auth.family_id)
-    before = {
-        'excuse': _excuse_snapshot(excuse),
-        'attendance_status': excuse.attendance_record.status.value,
-    }
-    excuse.approved_by_user_id = auth.user_id
-    excuse.approved_at = datetime.now(UTC)
-    excuse.attendance_record.status = AttendanceStatus.excused
-    await db.flush()
-    await log_event(
-        db,
-        action=AuditAction.attendance_edit,
-        actor=auth,
-        family_id=auth.family_id,
-        target_type='attendance_excuse',
-        target_id=excuse.id,
-        before=before,
-        after={
-            'excuse': _excuse_snapshot(excuse),
-            'attendance_status': excuse.attendance_record.status.value,
-        },
-        request=request,
-    )
-    await db.commit()
-    invalidate_compliance_cache(family_id=auth.family_id, student_id=excuse.attendance_record.student_id)
-    await db.refresh(excuse)
-    return excuse
 
 
 @router.get('/summary', response_model=AttendanceSummaryResponse)
@@ -558,25 +394,47 @@ async def get_attendance_summary(
         for (start_date, end_date, label), bucket_records in sorted(grouped.items(), key=lambda item: item[0][0])
         if bucket_records
     ]
-    present = sum(bucket.present for bucket in buckets)
-    absent = sum(bucket.absent for bucket in buckets)
-    tardy = sum(bucket.tardy for bucket in buckets)
-    excused = sum(bucket.excused for bucket in buckets)
     total_records = sum(bucket.total_records for bucket in buckets)
-    total_hours = sum((bucket.total_hours for bucket in buckets), Decimal('0')).quantize(Decimal('0.01'))
+    instructional_days = sum(bucket.instructional_days for bucket in buckets)
+    non_instructional_days = sum(bucket.non_instructional_days for bucket in buckets)
+    recorded_hours = [bucket.total_hours for bucket in buckets if bucket.total_hours is not None]
+    total_hours = sum(recorded_hours, Decimal('0')).quantize(Decimal('0.01')) if recorded_hours else None
+    state_code = await get_family_state_code(db, family_id=auth.family_id)
+    state_profile = get_state_requirement_profile(state_code)
+    state_profile_progress = None
+    if (
+        state_profile is not None
+        and school_year is not None
+        and (state_profile.required_days is not None or state_profile.required_hours is not None or state_profile.show_hours_ui)
+    ):
+        state_profile_progress = AttendanceStateProfileProgress(
+            required_days=state_profile.required_days,
+            days_remaining=(
+                max(state_profile.required_days - instructional_days, 0)
+                if state_profile.required_days is not None
+                else None
+            ),
+            required_hours=state_profile.required_hours,
+            hours_remaining=(
+                max(Decimal(state_profile.required_hours) - (total_hours or Decimal('0')), Decimal('0')).quantize(
+                    Decimal('0.01')
+                )
+                if state_profile.required_hours is not None
+                else None
+            ),
+        )
 
     return AttendanceSummaryResponse(
         student_id=student_id,
         school_year_id=school_year.id if school_year is not None else school_year_id,
         period=period,  # type: ignore[arg-type]
         total_records=total_records,
-        present=present,
-        absent=absent,
-        tardy=tardy,
-        excused=excused,
-        attendance_rate=_attendance_rate(present=present, tardy=tardy, excused=excused, total_records=total_records),
+        instructional_days=instructional_days,
+        non_instructional_days=non_instructional_days,
+        attendance_rate=_attendance_rate(instructional_days=instructional_days, total_records=total_records),
         total_hours=total_hours,
         buckets=buckets,
+        state_profile_progress=state_profile_progress,
     )
 
 
@@ -599,7 +457,7 @@ async def get_instructional_hours(
         AttendanceRecord.date <= school_year.end_date,
     )
     records = list((await db.execute(stmt)).scalars().all())
-    total_hours = _sum_hours(records)
+    total_hours = _sum_hours(records) or Decimal('0')
     recorded_days = len(records)
     average = float(total_hours / recorded_days) if recorded_days else 0.0
     return AttendanceHoursResponse(

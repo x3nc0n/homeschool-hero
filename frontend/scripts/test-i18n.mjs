@@ -56,6 +56,18 @@ test('supports language switching, interpolation, and pluralization', async () =
   assert.equal(i18n.t('notifications.unreadCount', { count: 2 }), '2 sin leer')
 })
 
+test('translates attendance controls and state names in English and Spanish', async () => {
+  const english = await createInstance('en')
+  const spanish = await createInstance('es')
+
+  assert.equal(english.t('attendance.instructionalDay'), 'Instructional day')
+  assert.equal(spanish.t('attendance.instructionalDay'), 'Día de instrucción')
+  assert.equal(english.t('attendance.profileDisclaimer').includes('not legal advice'), true)
+  assert.equal(spanish.t('attendance.profileDisclaimer').includes('no es asesoría legal'), true)
+  assert.equal(english.t('states.NC'), 'North Carolina')
+  assert.equal(spanish.t('states.NC'), 'Carolina del Norte')
+})
+
 test('falls back to english when a key is missing in spanish', async () => {
   const i18n = await createInstance('es')
   assert.equal(i18n.t('hero.familyTitle', { ns: 'dashboard' }), 'Family dashboard')

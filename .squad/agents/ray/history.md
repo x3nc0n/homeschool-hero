@@ -54,3 +54,10 @@ Egon triaged all 23 open GitHub issues and closed 21:
 - Archived old decisions (before 2026-06-05)
 - Curriculum sources work: PR #240 (merged), PRs #245, #248 (security fixes)
 - Releases: v0.12.0 (Import), v0.13.0 (Enterprise Security), v0.14.0 (Sources+AI), v0.14.1 (Hardening)
+
+## 2026-10-04 Attendance and Security
+- Replaced attendance status/check-in/excuse fields with `is_instructional_day` and nullable hours. Migration maps present/tardy to instructional and absent/excused to non-instructional; it warns before removing stored excuses. State profiles are configuration backed by the existing family state setting.
+- Summary and dashboard/report/export/import/restore contracts now use instructional-day aggregates; legacy attendance CSV/backup status values map during import/restore.
+- Verified CodeQL logging/path-injection findings against existing sanitization and root validation; Trivy's 2026-09-21 built image contained msgpack 1.1.2 and setuptools 70.3.0, neither a direct production requirement or reachable vulnerable API in app code. Image refresh/rescan is still needed.
+- Validation: scoped attendance/dependent/security/migration suites, 79 passed and 1 expected failure; SQLite migration upgrade/downgrade mapping verified.
+- 2026-10-04 — Trivy artifact provenance corrects the preliminary layer inference: msgpack 1.1.2 and setuptools 70.3.0 are vendored by pip 26.2.1, identified through SBOM analysis in the production pip-install layer. Dockerfile now checks dependency consistency and uninstalls build-only pip; Security CI asserts pip absent, imports runtime packages, uploads their inventory, then runs Trivy. Fresh container CI verification remains pending; no release/tag/push performed.

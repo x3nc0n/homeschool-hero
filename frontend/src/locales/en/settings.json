@@ -74,14 +74,6 @@
       "saveSettings": "Save settings",
       "scaleNameDefault": "Scale {{count}}"
     },
-    "states": {
-      "CUSTOM": "Custom / generic",
-      "TX": "Texas",
-      "CA": "California",
-      "VA": "Virginia",
-      "NY": "New York",
-      "FL": "Florida"
-    },
     "ruleTypes": {
       "attendance_days": { "label": "Attendance days", "unit": "days" },
       "attendance_hours": { "label": "Attendance hours", "unit": "hours" },

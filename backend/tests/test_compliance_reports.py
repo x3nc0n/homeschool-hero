@@ -124,7 +124,7 @@ async def test_compliance_report_generation_supports_each_type(authorized_client
         ATTENDANCE['daily'],
         json=attendance_daily_payload(
             '2025-09-15',
-            [attendance_record_payload(student_id, status='present', instructional_hours='5.50')],
+            [attendance_record_payload(student_id, is_instructional_day=True, instructional_hours='5.50')],
         ),
     )
     assert attendance.status_code == 201, attendance.text
@@ -167,6 +167,8 @@ async def test_compliance_report_generation_supports_each_type(authorized_client
     )
     assert attendance_log.status_code == 201, attendance_log.text
     assert attendance_log.json()['data']['daily_records'][0]['date'] == '2025-09-15'
+    assert attendance_log.json()['data']['daily_records'][0]['is_instructional_day'] is True
+    assert 'status' not in attendance_log.json()['data']['daily_records'][0]
 
     portfolio_review = await authorized_client.post(
         COMPLIANCE_REPORTS['generate'],
