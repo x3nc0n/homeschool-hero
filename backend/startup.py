@@ -343,6 +343,7 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
         'upload_dir': upload_dir,
         'ai_provider': ai_provider,
         'ai_local_only': config.ai_local_only,
+        'online_curriculum_enabled': config.online_curriculum_enabled,
         'auth_provider': auth_summary.get('auth_provider', 'local'),
         'auth_auto_provision_mode': auth_summary.get('auth_auto_provision_mode', 'default_family'),
         'scim_enabled': bool(scim_summary.get('scim_enabled', False)),
@@ -358,7 +359,7 @@ def log_validated_config_summary(summary: dict[str, object]) -> None:
     logger.info(
         'Validated runtime config: database_driver=%s database_name=%s upload_dir=%s ai_provider=%s '
         'auth_provider=%s auth_auto_provision_mode=%s scim_enabled=%s smtp_configured=%s backup_configured=%s backup_destination=%s '
-        'migration_mode=%s ai_local_only=%s testing=%s',
+        'migration_mode=%s ai_local_only=%s online_curriculum_enabled=%s testing=%s',
         summary.get('database_driver'),
         summary.get('database_name') or '(default)',
         summary.get('upload_dir'),
@@ -371,6 +372,7 @@ def log_validated_config_summary(summary: dict[str, object]) -> None:
         summary.get('backup_destination'),
         summary.get('migration_mode'),
         summary.get('ai_local_only'),
+        summary.get('online_curriculum_enabled'),
         summary.get('testing'),
     )
 

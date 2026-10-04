@@ -174,7 +174,9 @@ Check bootstrap status:
 curl http://localhost:8000/api/auth/bootstrap
 ```
 
-When `bootstrap_required` is `true`, create the owner account from the web UI at `/`. After the first owner is created, `/api/auth/register` is intentionally disabled for future open registration.
+For a fresh database, the first PostgreSQL migrations create the initial owner from `BOOTSTRAP_OWNER_EMAIL` and the password in `FAMILY_PASSWORD` (or `FAMILY_PASSWORD_HASH`). This is separate from demo-data seeding: with `DEMO_MODE=false`, startup rejects the default `FAMILY_PASSWORD=changeme`. Deliver a unique, strong `FAMILY_PASSWORD` through a Kubernetes Secret; do not place the password in a manifest or expose it in logs.
+
+Keep the ingress private until the owner has signed in. Verify `GET /api/auth/bootstrap`; it should return `{"bootstrap_required": false}` for a freshly migrated database. Sign in through the web UI with `BOOTSTRAP_OWNER_EMAIL` and the configured `FAMILY_PASSWORD`, or use `POST /api/auth/login` with `{"email":"<BOOTSTRAP_OWNER_EMAIL>","password":"<FAMILY_PASSWORD>"}`. The migration-created owner already occupies the one-time registration slot, so `POST /api/auth/register` returns `403` and an arbitrary visitor cannot claim the owner account. The `/setup` form and `POST /api/auth/register` are only for databases that truly have no users; never expose an uninitialized deployment publicly.
 
 ### B. Non-Docker installation
 
@@ -282,6 +284,7 @@ Homeschool Hero reads settings from environment variables through `backend/confi
 | `AI_LOCAL_ONLY` | `false` | Set `true` to require Ollama for grading and curriculum AI import; `OLLAMA_HOST` must be localhost/private, and startup rejects cloud providers and `AI_IMPORT_ENDPOINT`. |
 | `AI_IMPORT_ENABLED` | `false` | Enables curriculum AI import. Under `AI_LOCAL_ONLY=true`, it uses Ollama's OpenAI-compatible `/v1/chat/completions` endpoint. |
 | `AI_IMPORT_ENDPOINT` | unset | Remote curriculum-import endpoint; must be unset under `AI_LOCAL_ONLY=true`. |
+| `ONLINE_CURRICULUM_ENABLED` | `true` | Set `false` to disable OpenStax/OER Commons catalog requests and arbitrary URL-based AI imports; document uploads and static CK-12 remain available. |
 | `OPENAI_API_KEY` | unset | Required when `AI_PROVIDER=openai`. |
 | `CONFIDENCE_THRESHOLD` | `0.8` | Auto-approve threshold. Lower-confidence jobs go to review. |
 | `GRADING_POLL_INTERVAL` | `5` | Background worker poll interval, in seconds. |
@@ -732,6 +735,7 @@ Notes:
 - health stays degraded until the model is actually available
 - low confidence, OCR failure, AI outage, or an open circuit breaker routes work to human review
 - set `AI_LOCAL_ONLY=true` to prevent grading and curriculum import from using cloud AI; local curriculum import requires a model with tool-calling support
+- set `ONLINE_CURRICULUM_ENABLED=false` to disable online catalog searches/downloads and AI URL imports; uploaded documents remain supported
 - OCR uses the app container's local Tesseract installation and does not require a separate AI service
 
 ### OpenAI alternative

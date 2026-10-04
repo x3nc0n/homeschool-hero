@@ -129,8 +129,12 @@ async def test_ai_import_returns_service_unavailable_when_disabled(authorized_cl
 async def test_ai_import_upload_and_confirm_flow(authorized_client, monkeypatch):
     _FakeAIAsyncClient.requests.clear()
     monkeypatch.setattr('backend.config.settings.ai_import_enabled', True, raising=False)
-    monkeypatch.setattr('backend.config.settings.ai_import_endpoint', 'https://api.openai.com/v1/chat/completions', raising=False)
-    monkeypatch.setattr('backend.config.settings.ai_import_api_key', 'test-key', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_local_only', True, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_provider', 'ollama', raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_import_endpoint', None, raising=False)
+    monkeypatch.setattr('backend.config.settings.ollama_host', 'http://192.168.50.135:11434', raising=False)
+    monkeypatch.setattr('backend.config.settings.ollama_model', 'llama3.1:8b', raising=False)
+    monkeypatch.setattr('backend.config.settings.online_curriculum_enabled', False, raising=False)
     monkeypatch.setattr('backend.config.settings.ai_import_retry_attempts', 1, raising=False)
     monkeypatch.setattr('backend.services.curriculum_ai_import.httpx.AsyncClient', _FakeAIAsyncClient)
 
@@ -143,6 +147,7 @@ async def test_ai_import_upload_and_confirm_flow(authorized_client, monkeypatch)
     assert draft_payload['draft']['name'] == 'AI Draft Curriculum'
     assert draft_payload['draft']['source'] == 'ai-import'
     assert draft_payload['source_kind'] == 'file'
+    assert _FakeAIAsyncClient.requests[0]['url'] == 'http://192.168.50.135:11434/v1/chat/completions'
     assert _FakeAIAsyncClient.requests[0]['json']['tools'][0]['function']['name'] == 'create_curriculum_import'
 
     reviewed_draft = draft_payload['draft']
@@ -160,6 +165,38 @@ async def test_ai_import_upload_and_confirm_flow(authorized_client, monkeypatch)
     detail = await authorized_client.get(CURRICULUM['import_detail'].format(curriculum_id=curriculum_id))
     assert detail.status_code == 200, detail.text
     assert detail.json()['subjects'][0]['units'][0]['lessons'][0]['name'] == 'Lesson 1'
+
+
+@pytest.mark.asyncio
+async def test_offline_ai_import_rejects_url_before_fetch(authorized_client, monkeypatch):
+    monkeypatch.setattr('backend.config.settings.online_curriculum_enabled', False, raising=False)
+    monkeypatch.setattr('backend.config.settings.ai_local_only', False, raising=False)
+
+    def fail_if_fetch_attempted():
+        raise AssertionError('offline AI URL import must be rejected before service initialization')
+
+    monkeypatch.setattr(
+        'backend.routers.curriculum.get_ai_curriculum_import_service',
+        fail_if_fetch_attempted,
+    )
+
+    response = await authorized_client.post(
+        CURRICULUM['ai_import'],
+        json={'url': 'https://example.com/curriculum.txt'},
+    )
+
+    assert response.status_code == 503
+    assert response.json()['detail'] == 'Online curriculum URL imports are disabled by deployment policy'
+
+
+@pytest.mark.asyncio
+async def test_ai_import_service_rejects_url_when_online_curriculum_disabled(monkeypatch):
+    from backend.services.curriculum_ai_import import AIImportUnavailable
+
+    monkeypatch.setattr('backend.config.settings.online_curriculum_enabled', False, raising=False)
+
+    with pytest.raises(AIImportUnavailable, match='Online curriculum URL imports are disabled'):
+        await AICurriculumImportService().build_draft_from_url('https://example.com/curriculum.txt')
 
 
 @pytest.mark.asyncio

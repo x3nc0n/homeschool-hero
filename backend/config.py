@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     ai_import_retry_attempts: int = Field(3, alias='AI_IMPORT_RETRY_ATTEMPTS')
     ai_import_retry_backoff_seconds: float = Field(1.0, alias='AI_IMPORT_RETRY_BACKOFF_SECONDS')
     ai_import_max_input_chars: int = Field(50000, alias='AI_IMPORT_MAX_INPUT_CHARS')
+    online_curriculum_enabled: bool = Field(True, alias='ONLINE_CURRICULUM_ENABLED')
     grading_request_timeout_seconds: float = Field(120.0, alias='GRADING_REQUEST_TIMEOUT_SECONDS')
     ocr_request_timeout_seconds: float = Field(120.0, alias='OCR_REQUEST_TIMEOUT_SECONDS')
     grading_retry_attempts: int = Field(3, alias='GRADING_RETRY_ATTEMPTS')

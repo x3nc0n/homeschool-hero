@@ -100,9 +100,12 @@ export function CurriculumSourceBrowser({ onImported, onOpenLibrary }: Curriculu
     setError('')
     try {
       const availableSources = await api.listCurriculumSources()
-      setSources(availableSources)
-      setActiveSourceId((current) => current || availableSources[0]?.source || '')
-      setQuery((current) => current || availableSources[0]?.search_hint || '')
+      const enabledSources = availableSources.filter((source) => source.enabled !== false)
+      setSources(enabledSources)
+      setActiveSourceId((current) =>
+        enabledSources.some((source) => source.source === current) ? current : enabledSources[0]?.source || '',
+      )
+      setQuery((current) => enabledSources.find((source) => source.source === current)?.search_hint || enabledSources[0]?.search_hint || '')
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load curriculum sources right now.')
     } finally {
@@ -173,8 +176,8 @@ export function CurriculumSourceBrowser({ onImported, onOpenLibrary }: Curriculu
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Browse external curriculum sources</CardTitle>
-          <CardDescription>Search trusted providers, preview the metadata, and import a copy into your library.</CardDescription>
+          <CardTitle>Browse curriculum sources</CardTitle>
+          <CardDescription>Search available providers, preview the metadata, and import a copy into your library.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (
@@ -186,7 +189,7 @@ export function CurriculumSourceBrowser({ onImported, onOpenLibrary }: Curriculu
           ) : error ? (
             <ErrorState message={error} onRetry={() => void loadSources()} />
           ) : !sources.length ? (
-            <EmptyState title="No sources available" description="Connect a curriculum source or try again later." />
+            <EmptyState title="No sources available" description="No curriculum sources are enabled for this deployment." />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {sources.map((source) => {

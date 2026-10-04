@@ -200,6 +200,47 @@ async def test_curriculum_source_errors_return_generic_messages(authorized_clien
     assert 'abc123' not in failing_import.text
 
 
+@pytest.mark.asyncio
+async def test_offline_curriculum_sources_are_disabled_before_network_calls(authorized_client, monkeypatch):
+    monkeypatch.setattr('backend.config.settings.online_curriculum_enabled', False, raising=False)
+    monkeypatch.setattr('backend.config.settings.oer_commons_api_token', 'configured-token', raising=False)
+
+    def fail_if_network_attempted(*_args, **_kwargs):
+        raise AssertionError('online curriculum connector must not perform HTTP requests while disabled')
+
+    monkeypatch.setattr('backend.services.curriculum_sources.openstax.httpx.AsyncClient', fail_if_network_attempted)
+    monkeypatch.setattr('backend.services.curriculum_sources.oer_commons.httpx.AsyncClient', fail_if_network_attempted)
+
+    listing = await authorized_client.get(CURRICULUM['sources'])
+    assert listing.status_code == 200, listing.text
+    source_states = {item['source']: item for item in listing.json()}
+    assert source_states['openstax']['enabled'] is False
+    assert source_states['oer-commons']['enabled'] is False
+    assert 'disabled by deployment policy' in source_states['openstax']['detail']
+    assert source_states['ck12']['enabled'] is True
+
+    for source_id in ('openstax', 'oer-commons'):
+        search = await authorized_client.get(
+            CURRICULUM['source_search'].format(source_id=source_id),
+            params={'q': 'math'},
+        )
+        assert search.status_code == 503, search.text
+        assert search.json()['detail'] == 'Online curriculum downloads are disabled by deployment policy.'
+
+        imported = await authorized_client.post(
+            CURRICULUM['source_import'].format(source_id=source_id, item_id='test-id'),
+        )
+        assert imported.status_code == 503, imported.text
+        assert imported.json()['detail'] == 'Online curriculum downloads are disabled by deployment policy.'
+
+    ck12_search = await authorized_client.get(
+        CURRICULUM['source_search'].format(source_id='ck12'),
+        params={'q': 'math'},
+    )
+    assert ck12_search.status_code == 200, ck12_search.text
+    assert ck12_search.json()['items']
+
+
 def test_openstax_connector_converts_detail_payload_to_standard_document():
     connector = OpenStaxSource()
     document = connector.convert_to_standard_format(
@@ -352,4 +393,3 @@ def test_import_document_with_lesson_dates_validates():
     lessons = document.subjects[0].units[0].lessons
     assert lessons[0].metadata.extensions == {'date': '7/6/26'}
     assert lessons[1].metadata.extensions == {'date': '7/13/26'}
-

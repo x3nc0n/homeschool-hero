@@ -31,6 +31,11 @@ class OERCommonsSource(CurriculumSource):
     description = 'OER Commons search connector for open curriculum and lesson collections.'
 
     def availability(self) -> SourceAvailability:
+        if not settings.online_curriculum_enabled:
+            return SourceAvailability(
+                enabled=False,
+                detail='Online curriculum downloads are disabled by deployment policy.',
+            )
         if not (settings.oer_commons_api_token or '').strip():
             return SourceAvailability(
                 enabled=False,

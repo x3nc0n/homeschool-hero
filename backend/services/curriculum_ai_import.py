@@ -93,6 +93,8 @@ class AICurriculumImportService:
         return await self._build_draft(extracted)
 
     async def build_draft_from_url(self, url: str) -> tuple[CurriculumImportDocument, ExtractedSource]:
+        if not settings.online_curriculum_enabled:
+            raise AIImportUnavailable('Online curriculum URL imports are disabled by deployment policy.')
         self._ensure_configured()
         extracted = await self._extract_from_url(url)
         return await self._build_draft(extracted)

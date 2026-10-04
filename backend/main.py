@@ -614,6 +614,9 @@ def create_app() -> FastAPI:
             'capabilities': capabilities,
             'optional_unavailable': disabled,
             'auth': get_auth_providers(),
+            'features': {
+                'online_curriculum_enabled': settings.online_curriculum_enabled,
+            },
         }
 
     @app.get(f'{API_PREFIX}/metrics')

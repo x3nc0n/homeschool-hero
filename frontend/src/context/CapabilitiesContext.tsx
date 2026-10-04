@@ -9,6 +9,7 @@ type CapabilityContextValue = {
   capabilities: CapabilitiesResponse['capabilities']
   optionalUnavailable: CapabilityName[]
   auth: CapabilitiesResponse['auth']
+  onlineCurriculumEnabled: boolean
   refresh: () => Promise<void>
   isEnabled: (name: CapabilityName) => boolean
 }
@@ -71,6 +72,7 @@ export function CapabilitiesProvider({ children }: { children: React.ReactNode }
     Object.keys(defaultCapabilities) as CapabilityName[],
   )
   const [auth, setAuth] = useState<CapabilitiesResponse['auth']>(defaultAuth)
+  const [onlineCurriculumEnabled, setOnlineCurriculumEnabled] = useState(true)
 
   const refresh = async () => {
     setLoading(true)
@@ -80,6 +82,7 @@ export function CapabilitiesProvider({ children }: { children: React.ReactNode }
       setOptionalUnavailable(response.optional_unavailable)
       setStatus(response.status)
       setAuth(response.auth)
+      setOnlineCurriculumEnabled(response.features?.online_curriculum_enabled ?? true)
       setError('')
     } catch (capabilityError) {
       setError(capabilityError instanceof Error ? capabilityError.message : 'Unable to load capability status')
@@ -101,10 +104,11 @@ export function CapabilitiesProvider({ children }: { children: React.ReactNode }
       capabilities,
       optionalUnavailable,
       auth,
+      onlineCurriculumEnabled,
       refresh,
       isEnabled: (name: CapabilityName) => capabilities[name]?.enabled ?? false,
     }),
-    [auth, capabilities, error, loading, optionalUnavailable, status],
+    [auth, capabilities, error, loading, onlineCurriculumEnabled, optionalUnavailable, status],
   )
 
   return <CapabilityContext.Provider value={value}>{children}</CapabilityContext.Provider>
