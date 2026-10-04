@@ -1929,6 +1929,16 @@ export interface CurriculumSourceSearchResult {
   metadata?: Record<string, unknown>
 }
 
+export interface CurriculumSourceSearchResponse {
+  source: string
+  query: string
+  page: number
+  page_size: number
+  total_count: number
+  has_more: boolean
+  items: CurriculumSourceSearchResult[]
+}
+
 export interface CurriculumAiImportDraftResponse {
   draft: CurriculumImportDocument | Record<string, unknown>
   warnings?: string[]

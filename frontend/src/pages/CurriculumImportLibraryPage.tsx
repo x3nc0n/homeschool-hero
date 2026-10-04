@@ -40,8 +40,8 @@ export function CurriculumImportLibraryPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<'library' | 'sources'>('library')
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true)
     setError('')
     try {
       const [curriculaResult, schemaResult] = await Promise.allSettled([api.listImportedCurricula(), api.getCurriculumImportSchema()])
@@ -94,7 +94,7 @@ export function CurriculumImportLibraryPage() {
     setError('')
     try {
       await api.activateImportedCurriculum(curriculumId)
-      await load()
+      await load(false)
     } catch (activationError) {
       setError(activationError instanceof Error ? activationError.message : 'Unable to activate curriculum.')
     } finally {
@@ -108,7 +108,7 @@ export function CurriculumImportLibraryPage() {
     try {
       await api.deleteImportedCurriculum(curriculumId)
       setConfirmDeleteId(null)
-      await load()
+      await load(false)
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete curriculum.')
     } finally {
@@ -168,7 +168,7 @@ export function CurriculumImportLibraryPage() {
 
       {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
 
-      {wizardOpen && canManageCurriculum ? <CurriculumImportWizard schema={schema} onCancel={() => setWizardOpen(false)} onImported={() => void load()} /> : null}
+      {wizardOpen && canManageCurriculum ? <CurriculumImportWizard schema={schema} onCancel={() => setWizardOpen(false)} onImported={() => void load(false)} /> : null}
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'library' | 'sources')} className="space-y-4">
         <TabsList>
@@ -283,7 +283,7 @@ export function CurriculumImportLibraryPage() {
         </TabsContent>
 
         <TabsContent value="sources" className="space-y-4">
-          <CurriculumSourceBrowser onImported={() => void load()} onOpenLibrary={() => setActiveTab('library')} />
+          <CurriculumSourceBrowser onImported={() => void load(false)} onOpenLibrary={() => setActiveTab('library')} />
         </TabsContent>
       </Tabs>
     </div>

@@ -44,7 +44,7 @@ import type {
   CurriculumImportDetail,
   CurriculumImportDocument,
   CurriculumImportSchema,
-  CurriculumSourceSearchResult,
+  CurriculumSourceSearchResponse,
   CurriculumSourceSummary,
   CurriculumImportSummary,
   CurriculumPackage,
@@ -135,6 +135,7 @@ import type {
   PaginatedResponse,
 } from '@/types/api'
 import type { DetailedHealthResponse, ReadinessResponse, SystemStatusResponse } from '@/types/health'
+import { resolveCurriculumActivationPayload } from '@/lib/curriculumActivation'
 import { curriculumImportMockApi } from '@/lib/curriculumImportMock'
 import { getCurrentLanguage } from '@/lib/locale'
 
@@ -784,7 +785,7 @@ export const api = {
 
   listImportedCurricula() {
     return withCurriculumImportFallback(
-      () => request<CurriculumImportSummary[]>('/curriculum/'),
+      () => request<CurriculumImportSummary[]>('/curriculum'),
       () => curriculumImportMockApi.list(),
     )
   },
@@ -805,11 +806,13 @@ export const api = {
 
   activateImportedCurriculum(id: number, payload?: CurriculumImportActivationPayload) {
     return withCurriculumImportFallback(
-      () =>
-        request<CurriculumImportActivationResponse>(`/curriculum/${id}/activate`, {
+      async () => {
+        const activationPayload = await resolveCurriculumActivationPayload(payload, () => api.listSchoolYears())
+        return request<CurriculumImportActivationResponse>(`/curriculum/${id}/activate`, {
           method: 'POST',
-          body: payload ? JSON.stringify(payload) : undefined,
-        }),
+          body: JSON.stringify(activationPayload),
+        })
+      },
       () => curriculumImportMockApi.activate(id, payload),
     )
   },
@@ -837,7 +840,12 @@ export const api = {
 
   searchCurriculumSource(source: string, query: string) {
     return withCurriculumImportFallback(
-      () => request<CurriculumSourceSearchResult[]>(`/curriculum/sources/${encodeURIComponent(source)}/search?q=${encodeURIComponent(query)}`),
+      async () => {
+        const response = await request<CurriculumSourceSearchResponse>(
+          `/curriculum/sources/${encodeURIComponent(source)}/search?q=${encodeURIComponent(query)}`,
+        )
+        return response.items
+      },
       () => curriculumImportMockApi.search(source, query),
     )
   },
