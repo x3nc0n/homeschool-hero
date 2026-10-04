@@ -142,7 +142,28 @@ async def test_curriculum_sources_list_search_and_import(authorized_client, monk
         params={'q': 'demo'},
     )
     assert search.status_code == 200, search.text
-    assert search.json()['items'][0]['item_id'] == 'demo-1'
+    search_payload = search.json()
+    assert search_payload == {
+        'source': 'demo-source',
+        'query': 'demo',
+        'page': 1,
+        'page_size': 10,
+        'total_count': 1,
+        'has_more': False,
+        'items': [
+            {
+                'item_id': 'demo-1',
+                'title': 'Demo Connector Curriculum',
+                'description': 'Connector search result.',
+                'subjects': ['Math'],
+                'grade_levels': ['6'],
+                'url': 'https://example.com/demo-1',
+                'image_url': None,
+                'license_name': 'CC BY',
+                'metadata': {'provider': 'demo'},
+            }
+        ],
+    }
 
     disabled_search = await authorized_client.get(
         CURRICULUM['source_search'].format(source_id='locked-source'),
@@ -352,4 +373,3 @@ def test_import_document_with_lesson_dates_validates():
     lessons = document.subjects[0].units[0].lessons
     assert lessons[0].metadata.extensions == {'date': '7/6/26'}
     assert lessons[1].metadata.extensions == {'date': '7/13/26'}
-

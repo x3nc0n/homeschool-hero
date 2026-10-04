@@ -2,7 +2,6 @@ import { type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState 
 import { CheckCircle2, FileJson, FileText, Sparkles, Upload, WandSparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { useCapabilities } from '@/context/CapabilitiesContext'
 import { api } from '@/lib/api'
 import type { CurriculumAiImportDraftResponse, CurriculumImportDetail, CurriculumImportDocument, CurriculumImportSchema } from '@/types/api'
 import {
@@ -103,7 +102,6 @@ function AnalysisSkeleton() {
 
 export function CurriculumImportWizard({ schema, onCancel, onImported }: CurriculumImportWizardProps) {
   const { isFeatureEnabled } = useAuth()
-  const { capabilities } = useCapabilities()
   const [step, setStep] = useState<(typeof STEPS)[number]>(STEPS[0])
   const [importMode, setImportMode] = useState<'manual' | 'ai'>('manual')
   const [method, setMethod] = useState<'paste' | 'file' | 'url'>('paste')
@@ -135,11 +133,8 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
   }, [schema])
 
   const aiFeatureEnabled = isFeatureEnabled('curriculum_ai_import')
-  const aiConfigured = import.meta.env.DEV || (capabilities.ai_grading.enabled && capabilities.ocr.enabled)
-  const aiAvailable = aiFeatureEnabled && aiConfigured
-  const aiAvailabilityMessage = !aiFeatureEnabled
-    ? 'AI import is coming soon for this family.'
-    : 'AI import is not configured right now. Standard JSON import is still available.'
+  const aiAvailable = aiFeatureEnabled
+  const aiAvailabilityMessage = 'AI import is coming soon for this family.'
 
   useEffect(() => {
     if (!analyzing) {
