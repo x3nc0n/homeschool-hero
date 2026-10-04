@@ -109,6 +109,28 @@ jobs:
         id: build
         run: docker build --pull -t "${SECURITY_IMAGE_NAME}" .
 
+      - name: Verify runtime dependency inventory
+        run: |
+          docker run --rm --entrypoint python "${SECURITY_IMAGE_NAME}" -c '
+          import importlib.util
+          import json
+          from importlib.metadata import distributions
+          assert importlib.util.find_spec("pip") is None, "Build-only pip must not remain in the runtime image"
+          import fastapi, uvicorn, sqlalchemy, alembic
+          print(json.dumps(sorted(
+              [{"name": package.metadata["Name"], "version": package.version} for package in distributions()],
+              key=lambda package: package["name"].lower()
+          ), indent=2))
+          ' > runtime-python-packages.json
+          cat runtime-python-packages.json
+
+      - name: Upload runtime dependency inventory
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-runtime-python-packages
+          path: runtime-python-packages.json
+          if-no-files-found: error
+
       - name: Scan image with Trivy policy gate
         if: steps.build.outcome == 'success'
         id: trivy-policy

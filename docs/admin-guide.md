@@ -515,6 +515,16 @@ Windows wrapper:
 .\scripts\migrate.ps1 upgrade head
 ```
 
+### Attendance model migration
+
+The simplified attendance model records whether each date was an instructional day. The migration retains attendance rows, dates, notes, and instructional-hour values while mapping legacy `present` and `tardy` rows to instructional days and `absent` and `excused` rows to non-instructional days. This conversion does not preserve the prior status distinction.
+
+The migration removes check-in/check-out times and drops the attendance-excuse database records, including each excuse's reason, approval details, and document reference. Instructional hours remain optional. The migration does not delete uploaded excuse documents from disk: those files stay under `UPLOAD_DIR` (named `attendance-excuse-*`), but once their database references are gone the app can no longer list, link, or download them. A migration downgrade recreates an empty excuse table and cannot restore the references.
+
+Before upgrading, advise families to create a **Data → Export data** export and confirm that it contains the excuse documents and details they want to keep (exports created before the upgrade include them), and make sure an ordinary backup of the database and `/data/uploads` is current. Leftover `attendance-excuse-*` files are not removed automatically. Delete them manually, as a retention cleanup, only after the export and backup are verified and an administrator has confirmed the files are no longer needed.
+
+The optional state profile and its progress display are planning defaults only. They are not legal advice, a compliance guarantee, or a substitute for families verifying current requirements for their jurisdiction and homeschool option. See the [attendance requirements research summary](research/attendance-requirements.md) for the sourced research and its limitations.
+
 ### Connecting to PostgreSQL
 
 ```bash

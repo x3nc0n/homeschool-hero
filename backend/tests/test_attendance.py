@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from io import BytesIO
-
 import pytest
 
 from tests.contracts import (
@@ -16,6 +14,31 @@ from tests.contracts import (
     term_payload,
 )
 from tests.helpers import response_id, sync_csrf_header
+
+
+@pytest.mark.asyncio
+async def test_attendance_profiles_keep_grade_dependent_hours_manual(authorized_client):
+    response = await authorized_client.get(ATTENDANCE['state_profiles'])
+    assert response.status_code == 200, response.text
+    profiles = {profile['state_code']: profile for profile in response.json()}
+
+    for state_code, required_days in (
+        ('MT', None),
+        ('NE', None),
+        ('SD', None),
+        ('NM', 180),
+        ('NY', 180),
+        ('PA', 180),
+    ):
+        profile = profiles[state_code]
+        assert profile['required_hours'] is None, state_code
+        assert profile['show_hours_ui'] is True, state_code
+        assert profile['required_days'] == required_days, state_code
+
+    for state_code, required_hours in (('MO', 1000), ('OH', 900), ('WI', 875)):
+        profile = profiles[state_code]
+        assert profile['required_hours'] == required_hours, state_code
+        assert profile['show_hours_ui'] is True, state_code
 
 
 @pytest.mark.asyncio
@@ -41,10 +64,8 @@ async def test_attendance_crud_and_summaries(authorized_client):
             [
                 attendance_record_payload(
                     student_id,
-                    status='tardy',
+                    is_instructional_day=True,
                     instructional_hours='5.50',
-                    check_in_time='09:20:00',
-                    check_out_time='15:00:00',
                     notes='Late after dentist appointment',
                 )
             ],
@@ -52,15 +73,37 @@ async def test_attendance_crud_and_summaries(authorized_client):
     )
     assert daily.status_code == 201, daily.text
     record = daily.json()[0]
-    assert record['status'] == 'tardy'
+    assert record['is_instructional_day'] is True
+    assert 'status' not in record
+    assert 'check_in_time' not in record
     assert record['instructional_hours'] == '5.50'
+
+    legacy_payload = await authorized_client.post(
+        ATTENDANCE['daily'],
+        json={'date': '2025-09-08', 'records': [{'student_id': student_id, 'status': 'absent'}]},
+    )
+    assert legacy_payload.status_code == 422
 
     hours = await authorized_client.post(
         ATTENDANCE['hours'],
         json=attendance_hours_payload(student_id, attendance_date='2025-09-09', instructional_hours='4.25'),
     )
     assert hours.status_code == 200, hours.text
-    assert hours.json()['status'] == 'present'
+    assert hours.json()['is_instructional_day'] is True
+
+    profiles = await authorized_client.get(ATTENDANCE['state_profiles'])
+    assert profiles.status_code == 200, profiles.text
+    assert len(profiles.json()) == 50
+    assert next(profile for profile in profiles.json() if profile['state_code'] == 'MO') == {
+        'state_code': 'MO',
+        'state_name': 'Missouri',
+        'required_days': None,
+        'required_hours': 1000,
+        'show_hours_ui': True,
+    }
+
+    state = await authorized_client.put('/api/compliance/family/state', json={'state_code': 'MO'})
+    assert state.status_code == 200, state.text
 
     listing = await authorized_client.get(f"{ATTENDANCE['collection']}?date_from=2025-09-01&date_to=2025-09-30")
     assert listing.status_code == 200, listing.text
@@ -69,6 +112,16 @@ async def test_attendance_crud_and_summaries(authorized_client):
     day_summary = await authorized_client.get(f"{ATTENDANCE['summary']}?student_id={student_id}&period=day")
     assert day_summary.status_code == 200, day_summary.text
     assert day_summary.json()['total_records'] == 2
+    assert day_summary.json()['instructional_days'] == 2
+    assert day_summary.json()['non_instructional_days'] == 0
+    assert 'tardy' not in day_summary.json()
+    assert 'excused' not in day_summary.json()
+    assert day_summary.json()['state_profile_progress'] == {
+        'required_days': None,
+        'days_remaining': None,
+        'required_hours': 1000,
+        'hours_remaining': '990.25',
+    }
     assert len(day_summary.json()['buckets']) == 2
 
     week_summary = await authorized_client.get(f"{ATTENDANCE['summary']}?student_id={student_id}&period=week")
@@ -92,9 +145,14 @@ async def test_attendance_crud_and_summaries(authorized_client):
     assert hours_total.json()['total_hours'] == '9.75'
     assert hours_total.json()['recorded_days'] == 2
 
+    await authorized_client.put('/api/compliance/family/state', json={'state_code': 'TX'})
+    no_requirements = await authorized_client.get(f"{ATTENDANCE['summary']}?student_id={student_id}&period=year&school_year_id={school_year_id}")
+    assert no_requirements.status_code == 200, no_requirements.text
+    assert no_requirements.json()['state_profile_progress'] is None
+
 
 @pytest.mark.asyncio
-async def test_attendance_excuse_workflow_and_audit_trail(authorized_client):
+async def test_attendance_non_instructional_day_and_audit_trail(authorized_client):
     student = await authorized_client.post('/api/students', json=student_payload('Grace Hopper'))
     assert student.status_code == 201, student.text
     student_id = response_id(student.json())
@@ -103,35 +161,24 @@ async def test_attendance_excuse_workflow_and_audit_trail(authorized_client):
         ATTENDANCE['daily'],
         json=attendance_daily_payload(
             '2025-09-15',
-            [attendance_record_payload(student_id, status='absent', instructional_hours='0.00', notes='Fever')],
+            [attendance_record_payload(student_id, is_instructional_day=False, instructional_hours=None, notes='Fever')],
         ),
     )
     assert attendance.status_code == 201, attendance.text
-    record_id = attendance.json()[0]['id']
-
-    files = {'document': ('doctor-note.pdf', BytesIO(b'%PDF-1.4 fake note').read(), 'application/pdf')}
-    data = {'attendance_record_id': str(record_id), 'reason': 'Doctor note on file'}
-    excuse = await authorized_client.post(ATTENDANCE['excuses'], files=files, data=data)
-    assert excuse.status_code == 201, excuse.text
-    excuse_payload = excuse.json()
-    assert excuse_payload['document_path']
-
-    approved = await authorized_client.post(ATTENDANCE['excuse_approve'].format(excuse_id=excuse_payload['id']))
-    assert approved.status_code == 200, approved.text
-    assert approved.json()['approved_by_user_id'] is not None
-
     refreshed = await authorized_client.get(f"{ATTENDANCE['collection']}?date=2025-09-15&student_id={student_id}")
     assert refreshed.status_code == 200, refreshed.text
-    assert refreshed.json()[0]['status'] == 'excused'
-    assert refreshed.json()[0]['excuse']['reason'] == 'Doctor note on file'
+    assert refreshed.json()[0]['is_instructional_day'] is False
+    assert refreshed.json()[0]['instructional_hours'] is None
+    assert refreshed.json()[0]['notes'] == 'Fever'
+
+    removed_excuse_flow = await authorized_client.post('/api/attendance/excuses', json={})
+    assert removed_excuse_flow.status_code in {404, 405}
 
     audit = await authorized_client.get('/api/audit?action=attendance_edit')
     assert audit.status_code == 200, audit.text
     items = audit.json()['items']
-    assert len(items) >= 3
+    assert len(items) >= 1
     assert any(item['target_entity_type'] == 'attendance_record' for item in items)
-    assert any(item['target_entity_type'] == 'attendance_excuse' for item in items)
-    assert any(item['after_snapshot'] and 'document_path' in str(item['after_snapshot']) for item in items)
 
 
 @pytest.mark.asyncio
@@ -171,7 +218,10 @@ async def test_attendance_family_isolation_and_student_scope(
 
     daily = await authorized_client.post(
         ATTENDANCE['daily'],
-        json=attendance_daily_payload('2025-10-01', [attendance_record_payload(primary_student_id, status='present')]),
+        json=attendance_daily_payload(
+            '2025-10-01',
+            [attendance_record_payload(primary_student_id, is_instructional_day=True)],
+        ),
     )
     assert daily.status_code == 201, daily.text
 

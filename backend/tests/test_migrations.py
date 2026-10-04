@@ -1,4 +1,9 @@
+import importlib.util
 from pathlib import Path
+
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+import sqlalchemy as sa
 
 from backend.startup import inspect_migration_status, lint_migration_scripts, verify_migration_cycle
 
@@ -97,3 +102,91 @@ def test_api_tokens_migration_declares_reversible_downgrade() -> None:
     assert "'api_tokens'" in content
     assert "def downgrade()" in content
     assert "op.drop_table('api_tokens')" in content
+
+
+def test_attendance_migration_preserves_records_and_maps_status_on_sqlite() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / 'migrations'
+        / 'versions'
+        / '20261004_091800_simplify_attendance.py'
+    )
+    spec = importlib.util.spec_from_file_location('attendance_migration', migration_path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = sa.create_engine('sqlite:///:memory:')
+    with engine.begin() as connection:
+        connection.exec_driver_sql('CREATE TABLE families (id INTEGER PRIMARY KEY)')
+        connection.exec_driver_sql('CREATE TABLE students (id INTEGER PRIMARY KEY)')
+        connection.exec_driver_sql('CREATE TABLE users (id INTEGER PRIMARY KEY)')
+        connection.exec_driver_sql(
+            "CREATE TABLE attendance_records ("
+            "id INTEGER PRIMARY KEY, family_id INTEGER NOT NULL, student_id INTEGER NOT NULL, date DATE NOT NULL, "
+            "status VARCHAR(7) NOT NULL DEFAULT 'present', check_in_time TIME, check_out_time TIME, "
+            "instructional_hours NUMERIC(5,2) NOT NULL DEFAULT 0, notes TEXT, "
+            "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+            "FOREIGN KEY(family_id) REFERENCES families(id) ON DELETE CASCADE, "
+            "FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE, "
+            "UNIQUE(family_id, student_id, date))"
+        )
+        connection.exec_driver_sql('CREATE INDEX ix_attendance_records_id ON attendance_records (id)')
+        connection.exec_driver_sql('CREATE INDEX ix_attendance_records_family_id ON attendance_records (family_id)')
+        connection.exec_driver_sql('CREATE INDEX ix_attendance_records_student_id ON attendance_records (student_id)')
+        connection.exec_driver_sql('CREATE INDEX ix_attendance_records_date ON attendance_records (date)')
+        connection.exec_driver_sql('CREATE INDEX ix_attendance_records_status ON attendance_records (status)')
+        connection.exec_driver_sql(
+            "CREATE TABLE attendance_excuses ("
+            "id INTEGER PRIMARY KEY, family_id INTEGER NOT NULL, attendance_record_id INTEGER NOT NULL, "
+            "reason VARCHAR(255) NOT NULL, document_path TEXT, approved_by_user_id INTEGER, approved_at DATETIME, "
+            "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+            "FOREIGN KEY(family_id) REFERENCES families(id) ON DELETE CASCADE, "
+            "FOREIGN KEY(attendance_record_id) REFERENCES attendance_records(id) ON DELETE CASCADE, "
+            "FOREIGN KEY(approved_by_user_id) REFERENCES users(id) ON DELETE SET NULL, "
+            "UNIQUE(attendance_record_id))"
+        )
+        connection.exec_driver_sql('CREATE INDEX ix_attendance_excuses_id ON attendance_excuses (id)')
+        connection.exec_driver_sql('CREATE INDEX ix_attendance_excuses_family_id ON attendance_excuses (family_id)')
+        connection.exec_driver_sql(
+            'CREATE INDEX ix_attendance_excuses_attendance_record_id ON attendance_excuses (attendance_record_id)'
+        )
+        connection.exec_driver_sql(
+            'CREATE INDEX ix_attendance_excuses_approved_by_user_id ON attendance_excuses (approved_by_user_id)'
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO attendance_records (id, family_id, student_id, date, status, instructional_hours) VALUES "
+            "(1, 1, 1, '2026-01-01', 'present', 5), "
+            "(2, 1, 1, '2026-01-02', 'tardy', 4), "
+            "(3, 1, 1, '2026-01-03', 'absent', 0), "
+            "(4, 1, 1, '2026-01-04', 'excused', 0)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO attendance_excuses (id, family_id, attendance_record_id, reason) VALUES (1, 1, 4, 'Doctor visit')"
+        )
+
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+
+        columns = {column['name'] for column in sa.inspect(connection).get_columns('attendance_records')}
+        assert {'is_instructional_day', 'instructional_hours'} <= columns
+        assert not {'status', 'check_in_time', 'check_out_time'} & columns
+        migrated = connection.execute(
+            sa.text('SELECT id, is_instructional_day, instructional_hours FROM attendance_records ORDER BY id')
+        ).all()
+        assert [bool(row.is_instructional_day) for row in migrated] == [True, True, False, False]
+        assert [float(row.instructional_hours) for row in migrated] == [5.0, 4.0, 0.0, 0.0]
+        assert 'attendance_excuses' not in sa.inspect(connection).get_table_names()
+        connection.execute(sa.text('UPDATE attendance_records SET instructional_hours = NULL WHERE id = 4'))
+
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+
+        restored = connection.execute(sa.text('SELECT id, status FROM attendance_records ORDER BY id')).all()
+        assert [row.status for row in restored] == ['present', 'present', 'absent', 'absent']
+        assert connection.execute(
+            sa.text('SELECT instructional_hours FROM attendance_records WHERE id = 4')
+        ).scalar_one() == 0
+        assert sa.inspect(connection).get_table_names().count('attendance_excuses') == 1
+
+    engine.dispose()

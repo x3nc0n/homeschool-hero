@@ -9,7 +9,6 @@ from sqlalchemy import select
 from backend.database import AsyncSessionLocal
 from backend.models import (
     AttendanceRecord,
-    AttendanceStatus,
     ComplianceRule,
     ComplianceRuleType,
     ComplianceState,
@@ -110,7 +109,7 @@ async def _add_attendance_days(*, family_id: int, student_id: int, start_date: d
                 family_id=family_id,
                 student_id=student_id,
                 date=start_date + timedelta(days=index),
-                status=AttendanceStatus.present,
+                is_instructional_day=True,
                 instructional_hours=hours,
             )
             for index in range(total_days)

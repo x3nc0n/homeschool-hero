@@ -339,7 +339,7 @@ async def get_dashboard(
                     student_id=current_student.id,
                     student_name=current_student.name,
                     date=today,
-                    status=record.status.value if record is not None else 'not_recorded',
+                    is_instructional_day=record.is_instructional_day if record is not None else None,
                     instructional_hours=record.instructional_hours if record is not None else None,
                     notes=record.notes if record is not None else None,
                 )
@@ -361,7 +361,7 @@ async def get_dashboard(
         ).scalars().all()
     attendance_summary_by_student: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for record in attendance_summary_records:
-        attendance_summary_by_student[record.student_id][record.status.value] += 1
+        attendance_summary_by_student[record.student_id]['instructional_days' if record.is_instructional_day else 'non_instructional_days'] += 1
         attendance_summary_by_student[record.student_id]['total'] += 1
 
     pacing_by_student: dict[int, list[dict[str, object]]] = defaultdict(list)
@@ -454,9 +454,7 @@ async def get_dashboard(
         )
         attendance_counts = attendance_summary_by_student.get(current_student.id, {})
         total_records = int(attendance_counts.get('total', 0))
-        attended = int(attendance_counts.get('present', 0)) + int(attendance_counts.get('tardy', 0)) + int(
-            attendance_counts.get('excused', 0)
-        )
+        attended = int(attendance_counts.get('instructional_days', 0))
         attendance_rate = round((attended / total_records) * 100, 2) if total_records else None
         student_summaries.append(
             DashboardStudentSummary(

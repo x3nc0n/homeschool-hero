@@ -51,6 +51,25 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Pull and verify published versioned image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          EXPECTED_VERSION: ${{ github.ref_name }}
+          EXPECTED_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+
+          repo_tags="$(docker image inspect "$IMAGE" --format '{{json .RepoTags}}')"
+          echo "$repo_tags" | jq -e --arg image "$IMAGE" 'index($image) != null' >/dev/null
+
+          version="$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          revision="$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          test "$version" = "$EXPECTED_VERSION"
+          test "$revision" = "$EXPECTED_REVISION"
+
+          echo "Pulled $IMAGE with version=$version revision=$revision"
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:

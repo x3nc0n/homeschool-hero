@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from io import BytesIO
-
 import pytest
 from httpx import AsyncClient
 
-from tests.contracts import ATTENDANCE, AUTH, PORTFOLIO, RESOURCES
-from tests.contracts import attendance_daily_payload, attendance_record_payload, student_payload
+from tests.contracts import AUTH, PORTFOLIO, RESOURCES
+from tests.contracts import student_payload
 from tests.helpers import response_id, sync_csrf_header
 
 
@@ -123,26 +121,3 @@ async def test_other_uploaded_file_urls_use_authenticated_endpoint(
     assert resource_url.startswith('/api/files/resources/')
     resource_download = await authorized_client.get(resource_url)
     assert resource_download.status_code == 200, resource_download.text
-
-    attendance_student = await authorized_client.post('/api/students', json=student_payload('Attendance Student'))
-    assert attendance_student.status_code == 201, attendance_student.text
-    attendance_student_id = response_id(attendance_student.json())
-    attendance = await authorized_client.post(
-        ATTENDANCE['daily'],
-        json=attendance_daily_payload(
-            '2025-09-15',
-            [attendance_record_payload(attendance_student_id, status='absent', instructional_hours='0.00', notes='Fever')],
-        ),
-    )
-    assert attendance.status_code == 201, attendance.text
-    record_id = attendance.json()[0]['id']
-    excuse = await authorized_client.post(
-        ATTENDANCE['excuses'],
-        files={'document': ('doctor-note.pdf', BytesIO(b'%PDF-1.4 fake note').read(), 'application/pdf')},
-        data={'attendance_record_id': str(record_id), 'reason': 'Doctor note on file'},
-    )
-    assert excuse.status_code == 201, excuse.text
-    document_url = excuse.json()['document_url']
-    assert document_url and document_url.startswith('/api/files/')
-    document_download = await authorized_client.get(document_url)
-    assert document_download.status_code == 200, document_download.text

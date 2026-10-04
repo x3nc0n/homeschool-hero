@@ -20,7 +20,6 @@ from sqlalchemy.orm import selectinload
 from backend.models import (
     Assignment,
     AttendanceRecord,
-    AttendanceStatus,
     ComplianceReport,
     ComplianceReportStatus,
     ComplianceReportType,
@@ -290,21 +289,17 @@ async def _attendance_records_for_range(
 
 
 def _summarize_attendance(records: Sequence[AttendanceRecord]) -> dict[str, Any]:
-    present = sum(1 for record in records if record.status == AttendanceStatus.present)
-    absent = sum(1 for record in records if record.status == AttendanceStatus.absent)
-    tardy = sum(1 for record in records if record.status == AttendanceStatus.tardy)
-    excused = sum(1 for record in records if record.status == AttendanceStatus.excused)
+    instructional_days = sum(1 for record in records if record.is_instructional_day)
+    non_instructional_days = len(records) - instructional_days
     total_hours = sum((record.instructional_hours or Decimal('0') for record in records), start=Decimal('0')).quantize(
         Decimal('0.01')
     )
     total_records = len(records)
-    attendance_rate = round(((present + tardy + excused) / total_records) * 100, 2) if total_records else 0.0
+    attendance_rate = round((instructional_days / total_records) * 100, 2) if total_records else 0.0
     return {
         'total_records': total_records,
-        'present': present,
-        'absent': absent,
-        'tardy': tardy,
-        'excused': excused,
+        'instructional_days': instructional_days,
+        'non_instructional_days': non_instructional_days,
         'attendance_rate': attendance_rate,
         'total_hours': float(total_hours),
         'recorded_days': total_records,
@@ -603,10 +598,8 @@ async def _build_attendance_log_data(
         'daily_records': [
             {
                 'date': record.date.isoformat(),
-                'status': record.status.value,
-                'instructional_hours': float(record.instructional_hours or 0),
-                'check_in_time': record.check_in_time.isoformat() if record.check_in_time else None,
-                'check_out_time': record.check_out_time.isoformat() if record.check_out_time else None,
+                'is_instructional_day': record.is_instructional_day,
+                'instructional_hours': float(record.instructional_hours) if record.instructional_hours is not None else None,
                 'notes': record.notes,
             }
             for record in records
@@ -978,14 +971,13 @@ def build_compliance_report_pdf(report: ComplianceReport) -> bytes:
                 body,
             )
         )
-        rows = [['Date', 'Status', 'Hours', 'Check in/out', 'Notes']]
+        rows = [['Date', 'Instructional day', 'Hours', 'Notes']]
         for record in data.get('daily_records', []):
             rows.append(
                 [
                     record.get('date', '—'),
-                    str(record.get('status', '—')).replace('_', ' ').title(),
-                    f"{float(record.get('instructional_hours', 0)):.2f}",
-                    ' / '.join(filter(None, [record.get('check_in_time') or '', record.get('check_out_time') or ''])) or '—',
+                    'Yes' if record.get('is_instructional_day') else 'No',
+                    f"{float(record.get('instructional_hours') or 0):.2f}",
                     record.get('notes') or '—',
                 ]
             )
@@ -993,7 +985,7 @@ def build_compliance_report_pdf(report: ComplianceReport) -> bytes:
             [
                 Spacer(1, 0.12 * inch),
                 Paragraph('Daily attendance records', subtitle),
-                _table(rows, widths=[1.0 * inch, 1.1 * inch, 0.6 * inch, 1.2 * inch, 2.2 * inch], header_color=colors.HexColor('#1d4ed8')),
+                _table(rows, widths=[1.0 * inch, 1.4 * inch, 0.8 * inch, 2.9 * inch], header_color=colors.HexColor('#1d4ed8')),
             ]
         )
     elif report.report_type == ComplianceReportType.portfolio_review:

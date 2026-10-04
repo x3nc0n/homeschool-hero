@@ -204,7 +204,7 @@ async def test_dashboard_aggregates_family_widgets(authorized_client):
             [
                 attendance_record_payload(
                     student_one_id,
-                    status='present',
+                    is_instructional_day=True,
                     instructional_hours='5.50',
                     notes='On time',
                 )
@@ -267,9 +267,9 @@ async def test_dashboard_aggregates_family_widgets(authorized_client):
     assert payload['today_schedule'][0]['student_id'] == student_one_id
     assert [item['title'] for item in payload['upcoming_assignments']] == ['Fractions Check']
     assert payload['recent_grades'][0]['assignment_title'] == 'Completed Quiz'
-    assert {item['student_id']: item['status'] for item in payload['attendance_today']} == {
-        student_one_id: 'present',
-        student_two_id: 'not_recorded',
+    assert {item['student_id']: item['is_instructional_day'] for item in payload['attendance_today']} == {
+        student_one_id: True,
+        student_two_id: None,
     }
     assert payload['pacing_alerts'][0]['student_id'] == student_one_id
     assert payload['compliance_warnings'][0]['student_id'] == student_one_id

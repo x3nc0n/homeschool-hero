@@ -1,8 +1,7 @@
 import type {
   AcceptInvitationPayload,
-  AttendanceExcuse,
-  AttendanceHoursSummary,
   AttendanceRecord,
+  AttendanceStateProfile,
   AttendanceSummary,
   BackupConfig,
   BackupJob,
@@ -628,25 +627,12 @@ export const api = {
     date: string
     records: Array<{
       student_id: number
-      status: string
-      instructional_hours?: string | number
-      check_in_time?: string
-      check_out_time?: string
+      is_instructional_day: boolean
+      instructional_hours?: string | number | null
       notes?: string | null
     }>
   }) {
     return request<AttendanceRecord[]>('/attendance/daily', { method: 'POST', body: JSON.stringify(payload) })
-  },
-
-  logInstructionalHours(payload: {
-    student_id: number
-    date: string
-    instructional_hours: string | number
-    check_in_time?: string | null
-    check_out_time?: string | null
-    notes?: string | null
-  }) {
-    return request<AttendanceRecord>('/attendance/hours', { method: 'POST', body: JSON.stringify(payload) })
   },
 
   getAttendanceSummary(studentId: number, period: 'day' | 'week' | 'term' | 'year', schoolYearId?: number) {
@@ -655,16 +641,8 @@ export const api = {
     return request<AttendanceSummary>(`/attendance/summary?${params.toString()}`)
   },
 
-  getAttendanceHours(studentId: number, schoolYearId: number) {
-    return request<AttendanceHoursSummary>(`/attendance/hours?student_id=${studentId}&school_year_id=${schoolYearId}`)
-  },
-
-  createAttendanceExcuse(formData: FormData) {
-    return request<AttendanceExcuse>('/attendance/excuses', { method: 'POST', body: formData })
-  },
-
-  approveAttendanceExcuse(excuseId: number) {
-    return request<AttendanceExcuse>(`/attendance/excuses/${excuseId}/approve`, { method: 'POST' })
+  listAttendanceStateProfiles() {
+    return request<AttendanceStateProfile[]>('/attendance/state-profiles')
   },
 
   listSchoolYears() {

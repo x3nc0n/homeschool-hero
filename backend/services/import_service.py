@@ -24,7 +24,6 @@ from backend.models import (
     AssignmentTarget,
     AssignmentTargetStatus,
     AttendanceRecord,
-    AttendanceStatus,
     AuditAction,
     CurriculumLesson,
     CurriculumPackage,
@@ -77,9 +76,7 @@ CSV_HEADERS: dict[ImportEntityType, list[str]] = {
     ImportEntityType.attendance: [
         'student_name',
         'date',
-        'status',
-        'check_in_time',
-        'check_out_time',
+        'is_instructional_day',
         'instructional_hours',
         'notes',
     ],
@@ -117,9 +114,7 @@ CSV_EXAMPLES: dict[ImportEntityType, dict[str, str]] = {
     ImportEntityType.attendance: {
         'student_name': 'Ada Lovelace',
         'date': '2026-05-14',
-        'status': 'present',
-        'check_in_time': '09:00',
-        'check_out_time': '13:00',
+        'is_instructional_day': 'true',
         'instructional_hours': '4.00',
         'notes': 'Science lab day.',
     },
@@ -186,8 +181,10 @@ def _decode_csv_rows(file_path: str, entity_type: ImportEntityType) -> tuple[lis
     if reader.fieldnames is None:
         return [], [_make_error(message='CSV file must include a header row.', suggestion='Download a template and use its headers.')]
     fieldnames = [(field or '').strip() for field in reader.fieldnames]
-    required_headers = CSV_HEADERS[entity_type]
+    required_headers = ['student_name', 'date'] if entity_type == ImportEntityType.attendance else CSV_HEADERS[entity_type]
     missing = [header for header in required_headers if header not in fieldnames]
+    if entity_type == ImportEntityType.attendance and not {'is_instructional_day', 'status'}.intersection(fieldnames):
+        missing.append('is_instructional_day (or legacy status)')
     if missing:
         return [], [
             _make_error(
@@ -230,16 +227,6 @@ def _parse_optional_date(value: str, *, row: int, field: str, errors: list[dict[
         return date.fromisoformat(value)
     except ValueError:
         errors.append(_make_error(row=row, field=field, message=f'{field} must be an ISO date (YYYY-MM-DD).', suggestion='Use the format YYYY-MM-DD.'))
-        return None
-
-
-def _parse_optional_time(value: str, *, row: int, field: str, errors: list[dict[str, Any]]) -> time | None:
-    if not value:
-        return None
-    try:
-        return time.fromisoformat(value)
-    except ValueError:
-        errors.append(_make_error(row=row, field=field, message=f'{field} must be a valid time.', suggestion='Use 24-hour time like 09:00.'))
         return None
 
 
@@ -589,21 +576,38 @@ async def _validate_attendance_csv(db: AsyncSession, family_id: int, rows: list[
             errors.append(_make_error(row=index, field='student_name', message='Student not found for this family.', suggestion='Import the student first or fix the name.'))
             continue
         record_date = _parse_optional_date(row.get('date', ''), row=index, field='date', errors=errors)
-        try:
-            status_value = AttendanceStatus((row.get('status') or AttendanceStatus.present.value).strip() or AttendanceStatus.present.value)
-        except ValueError:
-            errors.append(_make_error(row=index, field='status', message='status is invalid.', suggestion='Use present, absent, tardy, or excused.'))
-            status_value = AttendanceStatus.present
-        check_in_time = _parse_optional_time(row.get('check_in_time', ''), row=index, field='check_in_time', errors=errors)
-        check_out_time = _parse_optional_time(row.get('check_out_time', ''), row=index, field='check_out_time', errors=errors)
-        instructional_hours = _parse_decimal(row.get('instructional_hours', '') or '0', row=index, field='instructional_hours', errors=errors)
+        day_value = row.get('is_instructional_day', '').strip().lower()
+        if day_value:
+            if day_value not in {'true', 'false', '1', '0', 'yes', 'no'}:
+                errors.append(
+                    _make_error(
+                        row=index,
+                        field='is_instructional_day',
+                        message='is_instructional_day must be true or false.',
+                        suggestion='Use true or false.',
+                    )
+                )
+            is_instructional_day = day_value in {'true', '1', 'yes'}
+        else:
+            legacy_status = row.get('status', 'present').strip().lower() or 'present'
+            if legacy_status not in {'present', 'absent', 'tardy', 'excused'}:
+                errors.append(
+                    _make_error(
+                        row=index,
+                        field='status',
+                        message='Legacy status is invalid.',
+                        suggestion='Use present, absent, tardy, or excused.',
+                    )
+                )
+                legacy_status = 'present'
+            is_instructional_day = legacy_status in {'present', 'tardy'}
+        hours_value = row.get('instructional_hours', '').strip()
+        instructional_hours = _parse_decimal(hours_value, row=index, field='instructional_hours', errors=errors) if hours_value else None
         try:
             notes = normalize_optional_text(row.get('notes', ''), field_name='Attendance notes', max_length=1000)
         except ValueError as exc:
             errors.append(_make_error(row=index, field='notes', message=str(exc), suggestion='Remove unsupported characters or shorten the text.'))
             continue
-        if check_in_time and check_out_time and check_out_time < check_in_time:
-            errors.append(_make_error(row=index, field='check_out_time', message='check_out_time must be on or after check_in_time.', suggestion='Adjust the times so checkout is later than checkin.'))
         if instructional_hours is not None and instructional_hours < 0:
             errors.append(_make_error(row=index, field='instructional_hours', message='instructional_hours must be zero or greater.', suggestion='Use a positive number of hours.'))
         if record_date is not None:
@@ -619,10 +623,8 @@ async def _validate_attendance_csv(db: AsyncSession, family_id: int, rows: list[
             {
                 'student_id': student.id,
                 'date': record_date,
-                'status': status_value,
-                'check_in_time': check_in_time,
-                'check_out_time': check_out_time,
-                'instructional_hours': instructional_hours or Decimal('0'),
+                'is_instructional_day': is_instructional_day,
+                'instructional_hours': instructional_hours,
                 'notes': notes,
             }
         )
@@ -930,9 +932,7 @@ async def _apply_attendance(db: AsyncSession, job: ImportJob, rows: list[dict[st
                 family_id=job.family_id,
                 student_id=row['student_id'],
                 date=row['date'],
-                status=row['status'],
-                check_in_time=row['check_in_time'],
-                check_out_time=row['check_out_time'],
+                is_instructional_day=row['is_instructional_day'],
                 instructional_hours=row['instructional_hours'],
                 notes=row['notes'],
             )

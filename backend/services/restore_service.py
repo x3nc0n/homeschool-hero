@@ -28,9 +28,7 @@ from backend.models import (
     AssignmentStatus,
     AssignmentTarget,
     AssignmentTargetStatus,
-    AttendanceExcuse,
     AttendanceRecord,
-    AttendanceStatus,
     BackupDestination,
     BackupJob,
     BackupJobStatus,
@@ -809,17 +807,13 @@ async def _ensure_attendance(
     family_id: int,
     attendance_payload: list[dict[str, Any]],
     students: dict[str, Student],
-    archive: ZipFile,
     overwrite_existing: bool,
 ) -> dict[str, int]:
-    names = set(archive.namelist())
     existing = {
         (record.student_id, record.date.isoformat()): record
         for record in (await db.execute(select(AttendanceRecord).where(AttendanceRecord.family_id == family_id))).scalars()
     }
     counts = {'created': 0, 'updated': 0, 'skipped': 0}
-    upload_dir = Path(settings.upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
     for payload in attendance_payload:
         student = students.get(str(payload.get('student_name') or '').strip().lower())
         date_value = str(payload.get('date') or '')
@@ -827,18 +821,27 @@ async def _ensure_attendance(
             continue
         key = (student.id, date_value)
         record = existing.get(key)
-        check_in = payload.get('check_in_time')
-        check_out = payload.get('check_out_time')
-        excuse_payload = payload.get('excuse') if isinstance(payload.get('excuse'), dict) else None
+        if 'is_instructional_day' in payload:
+            raw_instructional_day = payload['is_instructional_day']
+            is_instructional_day = (
+                raw_instructional_day.strip().lower() in {'true', '1', 'yes'}
+                if isinstance(raw_instructional_day, str)
+                else bool(raw_instructional_day)
+            )
+        else:
+            is_instructional_day = str(payload.get('status') or 'present').lower() in {'present', 'tardy'}
+        instructional_hours = (
+            Decimal(str(payload['instructional_hours']))
+            if payload.get('instructional_hours') is not None
+            else None
+        )
         if record is None:
             record = AttendanceRecord(
                 family_id=family_id,
                 student_id=student.id,
                 date=date.fromisoformat(date_value),
-                status=AttendanceStatus(str(payload.get('status') or AttendanceStatus.present.value)),
-                check_in_time=time.fromisoformat(check_in) if check_in else None,
-                check_out_time=time.fromisoformat(check_out) if check_out else None,
-                instructional_hours=_safe_decimal(payload.get('instructional_hours')),
+                is_instructional_day=is_instructional_day,
+                instructional_hours=instructional_hours,
                 notes=payload.get('notes'),
             )
             db.add(record)
@@ -846,32 +849,12 @@ async def _ensure_attendance(
             counts['created'] += 1
             existing[key] = record
         elif overwrite_existing:
-            record.status = AttendanceStatus(str(payload.get('status') or record.status.value))
-            record.check_in_time = time.fromisoformat(check_in) if check_in else None
-            record.check_out_time = time.fromisoformat(check_out) if check_out else None
-            record.instructional_hours = _safe_decimal(payload.get('instructional_hours'))
+            record.is_instructional_day = is_instructional_day
+            record.instructional_hours = instructional_hours
             record.notes = payload.get('notes')
             counts['updated'] += 1
         else:
             counts['skipped'] += 1
-        if excuse_payload:
-            if record.excuse is None:
-                record.excuse = AttendanceExcuse(
-                    family_id=family_id,
-                    reason=str(excuse_payload.get('reason') or 'Restored excuse'),
-                    document_path=None,
-                    approved_by_user_id=excuse_payload.get('approved_by_user_id'),
-                    approved_at=_coerce_datetime(excuse_payload.get('approved_at')),
-                )
-            document_path = excuse_payload.get('document_path')
-            if document_path:
-                member = str(Path('attachments') / Path(str(document_path).replace('\\', '/'))).replace('\\', '/')
-                if member in names:
-                    relative = Path(str(document_path).replace('\\', '/'))
-                    destination = upload_dir / relative
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    destination.write_bytes(archive.read(member))
-                    record.excuse.document_path = str(relative).replace('\\', '/')
     return counts
 
 
@@ -963,7 +946,6 @@ async def selective_restore(
                 family_id=family_id,
                 attendance_payload=list(package.get('attendance') or []),
                 students=students,
-                archive=archive,
                 overwrite_existing=overwrite_existing,
             )
 

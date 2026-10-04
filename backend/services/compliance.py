@@ -11,7 +11,6 @@ from sqlalchemy.orm import selectinload
 
 from backend.models import (
     AttendanceRecord,
-    AttendanceStatus,
     ComplianceRule,
     ComplianceRuleType,
     ComplianceState,
@@ -242,7 +241,7 @@ async def _attendance_progress(
     start_date, end_date, _, _ = _build_date_range(school_year)
     rows = (
         await db.execute(
-            select(AttendanceRecord.status, AttendanceRecord.instructional_hours).where(
+            select(AttendanceRecord.is_instructional_day, AttendanceRecord.instructional_hours).where(
                 AttendanceRecord.family_id == family_id,
                 AttendanceRecord.student_id == student_id,
                 AttendanceRecord.date >= start_date,
@@ -250,7 +249,7 @@ async def _attendance_progress(
             )
         )
     ).all()
-    attendance_days = Decimal(sum(1 for status, _ in rows if status != AttendanceStatus.absent)).quantize(Decimal('0.01'))
+    attendance_days = Decimal(sum(1 for is_instructional_day, _ in rows if is_instructional_day)).quantize(Decimal('0.01'))
     attendance_hours = sum((_decimal(hours) for _, hours in rows), start=Decimal('0.00')).quantize(Decimal('0.01'))
     return attendance_days, attendance_hours
 

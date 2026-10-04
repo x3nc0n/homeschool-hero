@@ -170,7 +170,7 @@ async def test_compliance_student_status_cache_invalidates_after_attendance_chan
         ATTENDANCE['daily'],
         json={
             'date': date(2026, 9, 1).isoformat(),
-            'records': [{'student_id': student_id, 'status': 'present', 'instructional_hours': '5.00'}],
+            'records': [{'student_id': student_id, 'is_instructional_day': True, 'instructional_hours': '5.00'}],
         },
     )
     assert attendance.status_code == 201, attendance.text

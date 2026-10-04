@@ -532,41 +532,27 @@ This page is your best day-to-day grading summary.
 
 Go to **Academics → Attendance**.
 
-Homeschool Hero supports both daily attendance and instructional-hour tracking.
+Attendance uses a simple instructional-day record for each student and date.
 
 ### Daily attendance
 
-For each student, you can record:
+1. Choose the date.
+2. For each student, select **Instructional day** if instruction took place; leave it cleared for a non-instructional day.
+3. Add an optional note if useful, then select **Save day**.
 
-- Present
-- Absent
-- Tardy
-- Excused
+The calendar uses **green** for an instructional day, **gray** for a recorded non-instructional day, and **blank** for a date with no record. Previously saved attendance remains in the calendar and history.
 
-You can also add:
+### Optional hours and school-year progress
 
-- Instructional hours
-- Check-in / check-out times
-- Notes
+Instructional hours appear only when the family’s selected state profile includes an hours minimum. Enter the instructional hours for each student on the same daily entry form. Check-in/check-out times and tardy, absent, and excused categories are not part of the simplified homeschool attendance workflow.
 
-### Logging instructional hours
+When the selected state profile includes required days or hours, the attendance page shows progress for the currently selected school year. If the profile has no applicable minimum, no progress bar is shown. A zero minimum is presented as no minimum rather than as a percentage.
 
-Use the hours section when your state or program prefers hour-based records.
+State profiles are optional planning defaults, not legal advice or a compliance guarantee. Requirements can vary by jurisdiction and homeschool option and can change. Verify current requirements independently; see the [attendance requirements research summary](research/attendance-requirements.md) for its sources and limitations.
 
-### Excuses and documentation
+### Records and migration
 
-You can create excuses with:
-
-- A reason
-- An optional uploaded document
-
-Excuses can then be approved.
-
-### Attendance calendar
-
-The monthly view helps you spot patterns quickly and review the status of each recorded day.
-
-On mobile, swipe gestures can speed up attendance entry.
+The attendance simplification keeps attendance records, dates, notes, and instructional-hour values, but converts old status categories into instructional/non-instructional days. The migration removes check-in/check-out times and the separate excuse records (reasons, approvals, and links to uploaded documents). Uploaded excuse documents are not deleted from the server, but after the upgrade they no longer appear in the app and cannot be opened or downloaded from it. Before upgrading, use **Data → Export data** to export family data; an export made before the upgrade includes the excuse documents and details. Confirm that your export includes the material you intend to keep. Any cleanup of the leftover files is handled by your administrator after backups are verified.
 
 ## 11. Compliance and State Reporting
 

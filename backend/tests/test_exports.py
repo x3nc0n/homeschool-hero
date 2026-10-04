@@ -135,7 +135,14 @@ async def _seed_family_export_data(client: AsyncClient) -> dict[str, int]:
         ATTENDANCE['daily'],
         json=attendance_daily_payload(
             '2025-09-15',
-            [attendance_record_payload(student_id, status='present', instructional_hours='5.25', notes='Full school day')],
+            [
+                attendance_record_payload(
+                    student_id,
+                    is_instructional_day=True,
+                    instructional_hours='5.25',
+                    notes='Full school day',
+                )
+            ],
         ),
     )
     assert attendance.status_code == 201, attendance.text
@@ -222,7 +229,8 @@ async def test_full_family_json_export_includes_portable_entities(authorized_cli
     assert payload['assignments'][0]['id'] == seeded['assignment_id']
     assert payload['submissions'][0]['id'] == seeded['submission_id']
     assert payload['grades'][0]['letter_grade'] == 'A'
-    assert payload['attendance'][0]['status'] == 'present'
+    assert payload['attendance'][0]['is_instructional_day'] is True
+    assert 'status' not in payload['attendance'][0]
     assert payload['report_cards'][0]['student_id'] == seeded['student_id']
     assert payload['transcripts'][0]['student_id'] == seeded['student_id']
     assert payload['portfolio_entries'][0]['id'] == seeded['portfolio_id']
