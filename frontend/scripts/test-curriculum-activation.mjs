@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { MISSING_ACTIVE_SCHOOL_YEAR_MESSAGE, resolveCurriculumActivationPayload } from '../src/lib/curriculumActivation.ts'
+import ts from 'typescript'
+
+const source = readFileSync(new URL('../src/lib/curriculumActivation.ts', import.meta.url), 'utf8')
+const { outputText } = ts.transpileModule(source, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+})
+const { MISSING_ACTIVE_SCHOOL_YEAR_MESSAGE, resolveCurriculumActivationPayload } = await import(
+  `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`
+)
 
 const years = [
   { id: 3, is_active: false },
