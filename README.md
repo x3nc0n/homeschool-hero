@@ -233,6 +233,13 @@ See `docs/development.md` for the full development workflow.
 | `ENABLE_METRICS_ENDPOINT` | No | Enables authenticated `/api/metrics`. |
 | `LOG_LEVEL` | No | Root backend log level. |
 | `LOG_JSON` | No | Force JSON logging on or off. |
+| `SIEM_SYSLOG_ENABLED` | No | Also export security events as CEF over syslog (default `false`). |
+| `SIEM_SYSLOG_HOST` | When export enabled | Syslog/CEF collector hostname or IP. |
+| `SIEM_SYSLOG_PORT` | No | Collector port (default `514`). |
+| `SIEM_SYSLOG_PROTOCOL` | No | `udp` (default) or `tcp`. |
+| `SIEM_SYSLOG_FACILITY` | No | Syslog facility (default `local4`). |
+| `SIEM_SYSLOG_MAX_MESSAGE_BYTES` | No | Per-message size bound (default `2048`). |
+| `SIEM_SYSLOG_TIMEOUT_SECONDS` | No | TCP connect/send timeout (default `5`). |
 | `MIGRATION_MODE` | No | `apply` or `warn` during startup migration preflight. |
 | `SMTP_HOST` | No | SMTP relay host. |
 | `SMTP_PORT` | No | SMTP relay port. |

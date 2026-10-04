@@ -8,11 +8,11 @@ from backend.schemas.assignments import (
 )
 from backend.schemas.attendance import (
     AttendanceDailyUpsert,
-    AttendanceExcuseCreate,
-    AttendanceExcuseRead,
     AttendanceHoursLog,
     AttendanceHoursResponse,
     AttendanceRecordRead,
+    AttendanceStateProfileProgress,
+    AttendanceStateProfileRead,
     AttendanceSummaryBucket,
     AttendanceSummaryResponse,
 )
@@ -97,11 +97,11 @@ __all__ = [
     "AssignmentTargetRead",
     "AssignmentUpdate",
     "AttendanceDailyUpsert",
-    "AttendanceExcuseCreate",
-    "AttendanceExcuseRead",
     "AttendanceHoursLog",
     "AttendanceHoursResponse",
     "AttendanceRecordRead",
+    "AttendanceStateProfileProgress",
+    "AttendanceStateProfileRead",
     "AttendanceSummaryBucket",
     "AttendanceSummaryResponse",
     "BackupConfigRead",

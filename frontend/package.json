@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:i18n": "node --test scripts/test-i18n.mjs"
+    "test": "npm run test:i18n && npm run test:curriculum-activation",
+    "test:i18n": "node --test scripts/test-i18n.mjs",
+    "test:curriculum-activation": "node --test scripts/test-curriculum-activation.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",

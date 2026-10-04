@@ -1,8 +1,7 @@
 import type {
   AcceptInvitationPayload,
-  AttendanceExcuse,
-  AttendanceHoursSummary,
   AttendanceRecord,
+  AttendanceStateProfile,
   AttendanceSummary,
   BackupConfig,
   BackupJob,
@@ -45,7 +44,7 @@ import type {
   CurriculumImportDetail,
   CurriculumImportDocument,
   CurriculumImportSchema,
-  CurriculumSourceSearchResult,
+  CurriculumSourceSearchResponse,
   CurriculumSourceSummary,
   CurriculumImportSummary,
   CurriculumPackage,
@@ -136,6 +135,7 @@ import type {
   PaginatedResponse,
 } from '@/types/api'
 import type { DetailedHealthResponse, ReadinessResponse, SystemStatusResponse } from '@/types/health'
+import { resolveCurriculumActivationPayload } from '@/lib/curriculumActivation'
 import { curriculumImportMockApi } from '@/lib/curriculumImportMock'
 import { getCurrentLanguage } from '@/lib/locale'
 
@@ -628,25 +628,12 @@ export const api = {
     date: string
     records: Array<{
       student_id: number
-      status: string
-      instructional_hours?: string | number
-      check_in_time?: string
-      check_out_time?: string
+      is_instructional_day: boolean
+      instructional_hours?: string | number | null
       notes?: string | null
     }>
   }) {
     return request<AttendanceRecord[]>('/attendance/daily', { method: 'POST', body: JSON.stringify(payload) })
-  },
-
-  logInstructionalHours(payload: {
-    student_id: number
-    date: string
-    instructional_hours: string | number
-    check_in_time?: string | null
-    check_out_time?: string | null
-    notes?: string | null
-  }) {
-    return request<AttendanceRecord>('/attendance/hours', { method: 'POST', body: JSON.stringify(payload) })
   },
 
   getAttendanceSummary(studentId: number, period: 'day' | 'week' | 'term' | 'year', schoolYearId?: number) {
@@ -655,16 +642,8 @@ export const api = {
     return request<AttendanceSummary>(`/attendance/summary?${params.toString()}`)
   },
 
-  getAttendanceHours(studentId: number, schoolYearId: number) {
-    return request<AttendanceHoursSummary>(`/attendance/hours?student_id=${studentId}&school_year_id=${schoolYearId}`)
-  },
-
-  createAttendanceExcuse(formData: FormData) {
-    return request<AttendanceExcuse>('/attendance/excuses', { method: 'POST', body: formData })
-  },
-
-  approveAttendanceExcuse(excuseId: number) {
-    return request<AttendanceExcuse>(`/attendance/excuses/${excuseId}/approve`, { method: 'POST' })
+  listAttendanceStateProfiles() {
+    return request<AttendanceStateProfile[]>('/attendance/state-profiles')
   },
 
   listSchoolYears() {
@@ -806,7 +785,7 @@ export const api = {
 
   listImportedCurricula() {
     return withCurriculumImportFallback(
-      () => request<CurriculumImportSummary[]>('/curriculum/'),
+      () => request<CurriculumImportSummary[]>('/curriculum'),
       () => curriculumImportMockApi.list(),
     )
   },
@@ -827,11 +806,13 @@ export const api = {
 
   activateImportedCurriculum(id: number, payload?: CurriculumImportActivationPayload) {
     return withCurriculumImportFallback(
-      () =>
-        request<CurriculumImportActivationResponse>(`/curriculum/${id}/activate`, {
+      async () => {
+        const activationPayload = await resolveCurriculumActivationPayload(payload, () => api.listSchoolYears())
+        return request<CurriculumImportActivationResponse>(`/curriculum/${id}/activate`, {
           method: 'POST',
-          body: payload ? JSON.stringify(payload) : undefined,
-        }),
+          body: JSON.stringify(activationPayload),
+        })
+      },
       () => curriculumImportMockApi.activate(id, payload),
     )
   },
@@ -859,7 +840,12 @@ export const api = {
 
   searchCurriculumSource(source: string, query: string) {
     return withCurriculumImportFallback(
-      () => request<CurriculumSourceSearchResult[]>(`/curriculum/sources/${encodeURIComponent(source)}/search?q=${encodeURIComponent(query)}`),
+      async () => {
+        const response = await request<CurriculumSourceSearchResponse>(
+          `/curriculum/sources/${encodeURIComponent(source)}/search?q=${encodeURIComponent(query)}`,
+        )
+        return response.items
+      },
       () => curriculumImportMockApi.search(source, query),
     )
   },

@@ -29,7 +29,9 @@ RUN apt-get update \
 
 COPY requirements-prod.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements-prod.txt
+    pip install --no-cache-dir -r requirements-prod.txt && \
+    python -m pip check && \
+    python -m pip uninstall --yes pip
 
 RUN groupadd --system --gid 10001 appuser \
     && useradd --system --uid 10001 --gid 10001 --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser

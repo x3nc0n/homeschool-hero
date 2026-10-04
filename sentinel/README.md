@@ -62,6 +62,8 @@ Enable these Sentinel data connectors for full coverage:
 | **Syslog** | 7 | [Docs](https://learn.microsoft.com/en-us/azure/sentinel/connect-syslog) |
 | **GitHub (Audit Log)** | 8 | [Docs](https://learn.microsoft.com/en-us/azure/sentinel/data-connectors/github) |
 
+> **Application security events:** the backend always writes security events as JSON to stdout (`ContainerAppConsoleLogs`). To also land them in the `CommonSecurityLog` table through the CEF connector, set `SIEM_SYSLOG_ENABLED=true` and point `SIEM_SYSLOG_HOST` at your CEF collector; see [SIEM security event export](../docs/admin-guide.md#siem-security-event-export-cef-over-syslog).
+
 > **Tip:** If you use **nginx custom logs** instead of Application Insights, update the KQL queries to reference your custom log table (e.g., `NginxAccessLog_CL`) instead of `AppRequests`.
 
 ---

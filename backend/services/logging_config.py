@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backend.config import Settings, settings
+from backend.services.siem_export import build_siem_syslog_handler, report_startup_error
 
 _DEFAULT_CONTEXT = {
     'correlation_id': None,
@@ -171,6 +172,12 @@ def configure_logging(config: Settings = settings) -> None:
         existing.setFormatter(handler.formatter)
     if not root_logger.handlers:
         root_logger.addHandler(handler)
+
+    siem_handler = build_siem_syslog_handler(config)
+    if siem_handler is not None:
+        siem_handler.addFilter(RequestContextFilter())
+        root_logger.addHandler(siem_handler)
+        report_startup_error(siem_handler)
     _configured = True
 
 

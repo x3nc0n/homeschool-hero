@@ -8,11 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import AttendanceExcuse, PortfolioEntry, Resource, Submission
+from backend.models import PortfolioEntry, Resource, Submission
 from backend.security import AuthSession, get_auth_session
 from backend.services.authorization import Capability, ensure_student_scope, has_capability
 from backend.services.storage import resolve_stored_upload_path
@@ -145,40 +144,6 @@ async def _resolve_resource_file(
     return None
 
 
-async def _resolve_attendance_document(
-    db: AsyncSession,
-    *,
-    auth: AuthSession,
-    requested_relative_path: Path,
-    requested_absolute_path: Path,
-) -> AuthorizedFile | None:
-    parts = requested_relative_path.parts
-    if len(parts) != 1 or not parts[0].startswith('attendance-excuse-'):
-        return None
-    if not has_capability(auth, Capability.read_students):
-        raise _forbidden('view attendance documents', auth)
-
-    excuses = (
-        await db.execute(
-            select(AttendanceExcuse)
-            .options(selectinload(AttendanceExcuse.attendance_record))
-            .where(AttendanceExcuse.family_id == auth.family_id, AttendanceExcuse.document_path.is_not(None))
-        )
-    ).scalars()
-    for excuse in excuses:
-        if not _stored_path_matches(excuse.document_path, requested_relative_path):
-            continue
-        if excuse.attendance_record is None:
-            return None
-        ensure_student_scope(auth, excuse.attendance_record.student_id, action='view attendance records')
-        return AuthorizedFile(
-            absolute_path=requested_absolute_path,
-            media_type=mimetypes.guess_type(requested_absolute_path.name)[0],
-            filename=requested_absolute_path.name,
-        )
-    return None
-
-
 async def _resolve_authorized_file(
     db: AsyncSession,
     *,
@@ -194,7 +159,6 @@ async def _resolve_authorized_file(
         _resolve_submission_file,
         _resolve_portfolio_attachment,
         _resolve_resource_file,
-        _resolve_attendance_document,
     ):
         authorized = await resolver(
             db,

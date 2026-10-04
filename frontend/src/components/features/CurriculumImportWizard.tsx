@@ -103,7 +103,7 @@ function AnalysisSkeleton() {
 
 export function CurriculumImportWizard({ schema, onCancel, onImported }: CurriculumImportWizardProps) {
   const { isFeatureEnabled } = useAuth()
-  const { capabilities, onlineCurriculumEnabled } = useCapabilities()
+  const { onlineCurriculumEnabled } = useCapabilities()
   const [step, setStep] = useState<(typeof STEPS)[number]>(STEPS[0])
   const [importMode, setImportMode] = useState<'manual' | 'ai'>('manual')
   const [method, setMethod] = useState<'paste' | 'file' | 'url'>('paste')
@@ -135,11 +135,8 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
   }, [schema])
 
   const aiFeatureEnabled = isFeatureEnabled('curriculum_ai_import')
-  const aiConfigured = import.meta.env.DEV || (capabilities.ai_grading.enabled && capabilities.ocr.enabled)
-  const aiAvailable = aiFeatureEnabled && aiConfigured
-  const aiAvailabilityMessage = !aiFeatureEnabled
-    ? 'AI import is coming soon for this family.'
-    : 'AI import is not configured right now. Standard JSON import is still available.'
+  const aiAvailable = aiFeatureEnabled
+  const aiAvailabilityMessage = 'AI import is coming soon for this family.'
 
   useEffect(() => {
     if (!onlineCurriculumEnabled) {
@@ -461,21 +458,23 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                             </div>
                           ) : null}
                         </TabsContent>
-                        {onlineCurriculumEnabled ? <TabsContent value="url" className="space-y-3">
-                          <div className="space-y-2">
-                            <Label htmlFor="curriculum-ai-url">Curriculum page or shared document URL</Label>
-                            <Input
-                              id="curriculum-ai-url"
-                              type="url"
-                              value={aiUrl}
-                              onChange={(event) => setAiUrl(event.target.value)}
-                              placeholder="https://example.com/curriculum-outline"
-                            />
-                          </div>
-                          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                            Paste a public curriculum page, syllabus, or outline. AI will draft the structure and let you edit it before import.
-                          </div>
-                        </TabsContent> : (
+                        {onlineCurriculumEnabled ? (
+                          <TabsContent value="url" className="space-y-3">
+                            <div className="space-y-2">
+                              <Label htmlFor="curriculum-ai-url">Curriculum page or shared document URL</Label>
+                              <Input
+                                id="curriculum-ai-url"
+                                type="url"
+                                value={aiUrl}
+                                onChange={(event) => setAiUrl(event.target.value)}
+                                placeholder="https://example.com/curriculum-outline"
+                              />
+                            </div>
+                            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                              Paste a public curriculum page, syllabus, or outline. AI will draft the structure and let you edit it before import.
+                            </div>
+                          </TabsContent>
+                        ) : (
                           <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                             Online curriculum downloads are disabled. Upload a local document to create an AI-assisted draft.
                           </div>

@@ -25,7 +25,6 @@ export type FontSizePreference = 'small' | 'medium' | 'large'
 export type DensityPreference = 'compact' | 'comfortable'
 export type SidebarPositionPreference = 'left' | 'right' | 'collapsed'
 export type ScheduleOverrideType = 'cancel' | 'reschedule' | 'add'
-export type AttendanceStatus = 'present' | 'absent' | 'tardy' | 'excused'
 export type ComplianceRuleType =
   | 'attendance_hours'
   | 'attendance_days'
@@ -1468,33 +1467,32 @@ export interface NotificationPreference {
   email_enabled: boolean
 }
 
-export interface AttendanceExcuse {
-  id: number
-  family_id: number
-  attendance_record_id: number
-  reason: string
-  document_path?: string | null
-  document_url?: string | null
-  approved_by_user_id?: number | null
-  approved_at?: string | null
-  created_at?: string
-  updated_at?: string
-}
-
 export interface AttendanceRecord {
   id: number
   family_id: number
   student_id: number
   date: string
-  status: AttendanceStatus
-  check_in_time?: string | null
-  check_out_time?: string | null
-  instructional_hours: string
+  is_instructional_day: boolean
+  instructional_hours?: string | null
   notes?: string | null
   student?: Student | null
-  excuse?: AttendanceExcuse | null
   created_at?: string
   updated_at?: string
+}
+
+export interface AttendanceStateProfileProgress {
+  required_days: number | null
+  days_remaining: number | null
+  required_hours: number | null
+  hours_remaining: string | null
+}
+
+export interface AttendanceStateProfile {
+  state_code: string
+  state_name: string
+  required_days: number | null
+  required_hours: number | null
+  show_hours_ui: boolean
 }
 
 export interface AttendanceSummaryBucket {
@@ -1502,12 +1500,10 @@ export interface AttendanceSummaryBucket {
   start_date: string
   end_date: string
   total_records: number
-  present: number
-  absent: number
-  tardy: number
-  excused: number
+  instructional_days: number
+  non_instructional_days: number
   attendance_rate: number
-  total_hours: string
+  total_hours: string | null
 }
 
 export interface AttendanceSummary {
@@ -1515,21 +1511,12 @@ export interface AttendanceSummary {
   school_year_id?: number | null
   period: 'day' | 'week' | 'term' | 'year'
   total_records: number
-  present: number
-  absent: number
-  tardy: number
-  excused: number
+  instructional_days: number
+  non_instructional_days: number
   attendance_rate: number
-  total_hours: string
+  total_hours: string | null
   buckets: AttendanceSummaryBucket[]
-}
-
-export interface AttendanceHoursSummary {
-  student_id: number
-  school_year_id: number
-  total_hours: string
-  recorded_days: number
-  average_hours_per_day: number
+  state_profile_progress: AttendanceStateProfileProgress | null
 }
 
 export interface ComplianceRule {
@@ -1944,6 +1931,16 @@ export interface CurriculumSourceSearchResult {
   grade_level?: string | null
   grade_levels?: string[]
   metadata?: Record<string, unknown>
+}
+
+export interface CurriculumSourceSearchResponse {
+  source: string
+  query: string
+  page: number
+  page_size: number
+  total_count: number
+  has_more: boolean
+  items: CurriculumSourceSearchResult[]
 }
 
 export interface CurriculumAiImportDraftResponse {

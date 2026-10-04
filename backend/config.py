@@ -1,6 +1,8 @@
 import json
+import logging.handlers
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -113,6 +115,13 @@ class Settings(BaseSettings):
     enable_metrics_endpoint: bool = Field(False, alias='ENABLE_METRICS_ENDPOINT')
     log_level: str = Field('INFO', alias='LOG_LEVEL')
     log_json: bool | None = Field(default=None, alias='LOG_JSON')
+    siem_syslog_enabled: bool = Field(False, alias='SIEM_SYSLOG_ENABLED')
+    siem_syslog_host: str | None = Field(default=None, alias='SIEM_SYSLOG_HOST')
+    siem_syslog_port: int = Field(514, ge=1, le=65535, alias='SIEM_SYSLOG_PORT')
+    siem_syslog_protocol: Literal['udp', 'tcp'] = Field('udp', alias='SIEM_SYSLOG_PROTOCOL')
+    siem_syslog_facility: str = Field('local4', alias='SIEM_SYSLOG_FACILITY')
+    siem_syslog_max_message_bytes: int = Field(2048, ge=480, le=65000, alias='SIEM_SYSLOG_MAX_MESSAGE_BYTES')
+    siem_syslog_timeout_seconds: float = Field(5.0, gt=0, le=60, alias='SIEM_SYSLOG_TIMEOUT_SECONDS')
     upload_allowed_mime_types_raw: str = Field(
         'application/pdf,image/jpeg,image/png,image/heic,image/heif,image/tiff,image/webp',
         alias='UPLOAD_ALLOWED_MIME_TYPES',
@@ -150,6 +159,38 @@ class Settings(BaseSettings):
     )
     demo_mode: bool = Field(False, alias='DEMO_MODE')
     testing: bool = Field(False, alias='TESTING')
+
+    @field_validator('siem_syslog_protocol', 'siem_syslog_facility', mode='before')
+    @classmethod
+    def _normalize_siem_syslog_choice(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator('siem_syslog_facility')
+    @classmethod
+    def _validate_siem_syslog_facility(cls, value: str) -> str:
+        if value not in logging.handlers.SysLogHandler.facility_names:
+            allowed = ', '.join(sorted(logging.handlers.SysLogHandler.facility_names))
+            raise ValueError(f'SIEM_SYSLOG_FACILITY must be one of: {allowed}.')
+        return value
+
+    @field_validator('siem_syslog_host', mode='before')
+    @classmethod
+    def _normalize_siem_syslog_host(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
+            if len(value) > 253 or any(ch.isspace() or ord(ch) < 0x20 or ch in '/@' for ch in value):
+                raise ValueError(
+                    'SIEM_SYSLOG_HOST must be a hostname or IP address without scheme, credentials, or path.'
+                )
+        return value
+
+    @model_validator(mode='after')
+    def _validate_siem_syslog(self) -> 'Settings':
+        if self.siem_syslog_enabled and not self.siem_syslog_host:
+            raise ValueError('SIEM_SYSLOG_HOST is required when SIEM_SYSLOG_ENABLED=true.')
+        return self
 
     @property
     def upload_allowed_mime_types(self) -> set[str]:

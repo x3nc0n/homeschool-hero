@@ -182,6 +182,7 @@ async def test_assignment_grade_and_attendance_imports_succeed(authorized_client
     assert attendance_response.status_code == 200, attendance_response.text
     records = attendance_response.json()
     assert len(records) == 1
+    assert records[0]['is_instructional_day'] is True
     assert records[0]['instructional_hours'] == '4.00'
 
 

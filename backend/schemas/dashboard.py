@@ -56,7 +56,7 @@ class DashboardAttendanceItem(BaseModel):
     student_id: int
     student_name: str
     date: date
-    status: str
+    is_instructional_day: bool | None = None
     instructional_hours: Decimal | None = None
     notes: str | None = None
 
