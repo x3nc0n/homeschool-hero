@@ -1356,7 +1356,7 @@ export interface DashboardAttendanceItem {
   student_id: number
   student_name: string
   date: string
-  status: string
+  is_instructional_day: boolean | null
   instructional_hours?: string | null
   notes?: string | null
 }

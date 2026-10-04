@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - x3nc0n-danny-preparing-local-ai-hosting
+      - x3nc0n-fix-attendance-dashboard-crash
 
 permissions:
   contents: read

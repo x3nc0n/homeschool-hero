@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useDashboard } from '@/hooks/useDashboard'
 import type { DashboardStudentSummary } from '@/types/api'
+import { AttendanceDayBadge } from '@/components/features/AttendanceDayBadge'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { LoadingState } from '@/components/common/LoadingState'
@@ -272,7 +273,7 @@ export function DashboardPage() {
                           <p className="font-medium">{item.student_name}</p>
                           <p className="text-sm text-muted-foreground">{item.instructional_hours ? `${item.instructional_hours} hours` : 'No hours logged'}</p>
                         </div>
-                        <Badge variant={badgeVariant(item.status)}>{item.status.replace('_', ' ')}</Badge>
+                        <AttendanceDayBadge isInstructionalDay={item.is_instructional_day} />
                       </div>
                     ))}
                   </div>
