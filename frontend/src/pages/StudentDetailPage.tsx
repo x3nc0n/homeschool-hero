@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useDashboard } from '@/hooks/useDashboard'
 import { api } from '@/lib/api'
 import type { DashboardStudentSummary, Student } from '@/types/api'
+import { AttendanceDayBadge } from '@/components/features/AttendanceDayBadge'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { LoadingState } from '@/components/common/LoadingState'
@@ -244,7 +245,7 @@ export function StudentDetailPage() {
                   <div className="rounded-lg border p-3">
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-medium">{attendance.student_name}</p>
-                      <Badge variant={badgeVariant(attendance.status)}>{attendance.status.replace('_', ' ')}</Badge>
+                      <AttendanceDayBadge isInstructionalDay={attendance.is_instructional_day} />
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {attendance.instructional_hours ? `${attendance.instructional_hours} hours logged` : 'No hours logged yet'}

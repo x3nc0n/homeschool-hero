@@ -412,6 +412,7 @@
       "previous": "Previous month",
       "next": "Next month",
       "noRecord": "No record",
+      "notRecorded": "Not recorded",
       "instructional": "Instructional day",
       "nonInstructional": "Non-instructional day",
       "hours": "{{hours}} hrs"

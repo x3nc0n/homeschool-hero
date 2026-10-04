@@ -62,6 +62,12 @@ test('translates attendance controls and state names in English and Spanish', as
 
   assert.equal(english.t('attendance.instructionalDay'), 'Instructional day')
   assert.equal(spanish.t('attendance.instructionalDay'), 'Día de instrucción')
+  assert.equal(english.t('attendance.calendar.instructional'), 'Instructional day')
+  assert.equal(spanish.t('attendance.calendar.instructional'), 'Día de instrucción')
+  assert.equal(english.t('attendance.calendar.nonInstructional'), 'Non-instructional day')
+  assert.equal(spanish.t('attendance.calendar.nonInstructional'), 'Día sin instrucción')
+  assert.equal(english.t('attendance.calendar.notRecorded'), 'Not recorded')
+  assert.equal(spanish.t('attendance.calendar.notRecorded'), 'Sin registrar')
   assert.equal(english.t('attendance.profileDisclaimer').includes('not legal advice'), true)
   assert.equal(spanish.t('attendance.profileDisclaimer').includes('no es asesoría legal'), true)
   assert.equal(english.t('states.NC'), 'North Carolina')
