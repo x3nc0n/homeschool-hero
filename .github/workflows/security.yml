@@ -35,7 +35,7 @@ jobs:
             setup: node
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
         if: matrix.setup == 'python'
@@ -103,7 +103,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Build Docker image
         id: build
