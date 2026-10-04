@@ -44,7 +44,7 @@ jobs:
         env:
           APP_ENV: test
           TESTING: '1'
-          DATABASE_URL: postgresql://homeschool:changeme@127.0.0.1:5432/homeschool_hero_ci
+          DATABASE_URL: postgresql+asyncpg://homeschool:changeme@127.0.0.1:5432/homeschool_hero_ci
         run: bash scripts/migrate.sh verify
 
   publish:
