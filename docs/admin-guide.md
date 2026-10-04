@@ -643,12 +643,55 @@ Microsoft Entra ID example:
 
 ```env
 AUTH_PROVIDER=oidc
+AUTH_BREAKGLASS_LOCAL=false
 OIDC_CLIENT_ID=<entra-client-id>
 OIDC_CLIENT_SECRET=<entra-client-secret>
 OIDC_DISCOVERY_URL=https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration
-AUTH_AUTO_PROVISION_MODE=default_family
-AUTH_DEFAULT_FAMILY_NAME=SSO Users
+AUTH_AUTO_PROVISION_MODE=reject
+BOOTSTRAP_OWNER_EMAIL=<owner-email-from-validated-id-token>
+JWT_ENABLED=false
 ```
+
+Register a single-tenant Web application with redirect URI
+`https://<public-app-host>/api/auth/oidc/callback`. The sign-in flow requests
+`openid email profile`; it uses the tenant discovery document, token endpoint,
+and JWKS over HTTPS. The app reads claims from the validated ID token and does
+not call Microsoft Graph userinfo or fetch groups-overage URLs. Allow the
+discovery/token/JWKS destinations through the deployment's egress policy;
+local-only AI and offline curriculum settings remain independent.
+
+On a fresh database, set the owner email before migrations run. The first
+validated OIDC identity matching that email links to the migration-created
+owner and preserves its family membership. Claim preference is `email`, then
+`preferred_username`, then `upn`/`unique_name`; ensure the configured owner email
+matches the claim the tenant actually issues. Entra directory administrator
+privileges do not grant Homeschool Hero ownership. With `reject`, identities
+without an existing membership or invitation cannot join a default family.
+The default `default_family` mode remains available for deployments that
+intentionally want automatic least-privilege membership.
+
+Keep `DEMO_MODE=false` and supply a strong secret `FAMILY_PASSWORD` for the
+migration-created account; production startup still rejects its default even
+when `AUTH_BREAKGLASS_LOCAL=false` disables password login. Keep ingress private
+until `/api/auth/bootstrap` reports `bootstrap_required=false`, verify the
+owner's OIDC login and membership, and confirm local login is disabled. Bootstrap
+settings do not rename an owner in an already migrated database.
+
+The callback URL is derived from the inbound request scheme and host. Behind a
+TLS-terminating ingress, enable `TRUST_PROXY_HEADERS=true` and configure Uvicorn
+`FORWARDED_ALLOW_IPS` for only the actual trusted ingress sources so the callback
+uses HTTPS. Do not trust arbitrary public clients' forwarded headers. Set
+`SESSION_COOKIE_SECURE=true`; OIDC state uses a secure, SameSite=Lax cookie.
+`JWT_ENABLED=false` disables the separate bearer-token API feature, not OIDC's
+ID-token signature validation.
+
+For default-deny egress, the existing Authlib HTTPX clients and discovery
+verification client honor `HTTPS_PROXY`. Route them through a CONNECT proxy
+allowlisting only the tenant discovery/token/JWKS host on port 443. Set
+`NO_PROXY` for local service destinations. Under `AI_LOCAL_ONLY=true`, Ollama
+clients explicitly disable environment proxies, so AI requests still go
+directly to the private Ollama endpoint. Do not broaden the proxy allowlist to
+online curriculum services.
 
 Entra bearer-token API access:
 

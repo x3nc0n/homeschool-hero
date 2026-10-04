@@ -459,6 +459,46 @@ async def test_oidc_callback_matches_existing_user(async_client, monkeypatch, cr
 
 
 @pytest.mark.asyncio
+async def test_oidc_reject_mode_links_existing_owner_from_preferred_username(async_client, monkeypatch, create_family_user):
+    owner = await create_family_user(
+        family_name='Private OIDC Family',
+        email='owner@example.com',
+        password='strongpass456',
+        display_name='Owner',
+        is_owner=True,
+    )
+    _set_auth_settings(
+        monkeypatch,
+        auth_provider='oidc',
+        auth_breakglass_local=False,
+        auth_auto_provision_mode='reject',
+    )
+    monkeypatch.setattr(
+        'backend.services.auth_oidc.create_oauth_client',
+        lambda: _FakeOAuth({'sub': 'tenant-owner-subject', 'preferred_username': 'OWNER@example.com', 'name': 'Owner'}),
+    )
+    monkeypatch.setattr('backend.services.auth_oidc._ensure_oidc_enabled', lambda: None)
+
+    bootstrap = await async_client.get(AUTH['bootstrap'])
+    assert bootstrap.json()['bootstrap_required'] is False
+    register = await async_client.post(AUTH['register'], json=bootstrap_payload())
+    assert register.status_code == 403
+    login = await async_client.post(
+        AUTH['login'], json={'email': 'owner@example.com', 'password': 'strongpass456'},
+    )
+    assert login.status_code == 403
+
+    response = await async_client.get(f"{AUTH['oidc_callback']}?code=test-code&state=test-state")
+    assert response.headers['location'] == '/'
+    session = await async_client.get(AUTH['me'])
+    assert session.status_code == 200, session.text
+    assert session.json()['user']['id'] == owner['user_id']
+    assert session.json()['user']['auth_provider'] == 'oidc'
+    assert session.json()['membership']['is_owner'] is True
+    assert session.json()['family']['id'] == owner['family_id']
+
+
+@pytest.mark.asyncio
 async def test_oidc_callback_auto_accepts_invitation(authorized_client, secondary_client, monkeypatch):
     _set_auth_settings(
         monkeypatch,
