@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from backend.config import Settings, settings
+from backend.local_ai import validate_local_ollama_host
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ _PLACEHOLDER_SECRETS = {'dev-secret-change-me', 'super-secret-change-me', 'chang
 _VALID_MIGRATION_MODES = {'apply', 'warn'}
 _VALID_AUTH_PROVIDERS = {'local', 'oidc', 'saml'}
 _VALID_AUTO_PROVISION_MODES = {'default_family', 'reject'}
+_VALID_AI_PROVIDERS = {'ollama', 'openai', 'azure', 'azure_openai', 'azure-openai', 'foundry'}
 _MIGRATION_FILENAME_RE = re.compile(r'^\d{8}_\d{6}_[a-z0-9_]+\.py$')
 _ENTRA_ISSUER_PREFIX = 'https://login.microsoftonline.com/'
 
@@ -127,6 +129,28 @@ def _validate_migration_mode(config: Settings) -> str:
             f"Received '{getattr(config, 'migration_mode', os.getenv('MIGRATION_MODE', 'apply'))}'."
         )
     return mode
+
+
+def _validate_ai_config(config: Settings) -> str:
+    provider = (config.ai_provider or '').strip().lower()
+    if provider not in _VALID_AI_PROVIDERS:
+        raise StartupValidationError(
+            f"AI_PROVIDER must be one of {', '.join(sorted(_VALID_AI_PROVIDERS))}; got '{config.ai_provider}'."
+        )
+    if config.ai_local_only and provider != 'ollama':
+        raise StartupValidationError("AI_LOCAL_ONLY=true requires AI_PROVIDER=ollama.")
+    if config.ai_local_only and (config.ai_import_endpoint or '').strip():
+        raise StartupValidationError(
+            'AI_IMPORT_ENDPOINT must be unset when AI_LOCAL_ONLY=true; curriculum import uses OLLAMA_HOST.'
+        )
+    if provider == 'ollama' and not (config.ollama_host or '').strip():
+        raise StartupValidationError('OLLAMA_HOST is required when AI_PROVIDER=ollama.')
+    if config.ai_local_only:
+        try:
+            validate_local_ollama_host(config.ollama_host)
+        except ValueError as exc:
+            raise StartupValidationError(str(exc)) from exc
+    return provider
 
 
 def _validate_upload_dir(config: Settings) -> str:
@@ -276,6 +300,12 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
         errors.append(str(exc))
 
     try:
+        ai_provider = _validate_ai_config(config)
+    except StartupValidationError as exc:
+        errors.append(str(exc))
+        ai_provider = config.ai_provider.strip().lower() or 'ollama'
+
+    try:
         upload_dir = _validate_upload_dir(config)
     except StartupValidationError as exc:
         errors.append(str(exc))
@@ -311,7 +341,9 @@ def validate_runtime_config(config: Settings = settings) -> dict[str, object]:
         'database_driver': database_summary.get('driver', 'unknown'),
         'database_name': database_summary.get('database', ''),
         'upload_dir': upload_dir,
-        'ai_provider': config.ai_provider.strip().lower() or 'ollama',
+        'ai_provider': ai_provider,
+        'ai_local_only': config.ai_local_only,
+        'online_curriculum_enabled': config.online_curriculum_enabled,
         'auth_provider': auth_summary.get('auth_provider', 'local'),
         'auth_auto_provision_mode': auth_summary.get('auth_auto_provision_mode', 'default_family'),
         'scim_enabled': bool(scim_summary.get('scim_enabled', False)),
@@ -327,7 +359,7 @@ def log_validated_config_summary(summary: dict[str, object]) -> None:
     logger.info(
         'Validated runtime config: database_driver=%s database_name=%s upload_dir=%s ai_provider=%s '
         'auth_provider=%s auth_auto_provision_mode=%s scim_enabled=%s smtp_configured=%s backup_configured=%s backup_destination=%s '
-        'migration_mode=%s testing=%s',
+        'migration_mode=%s ai_local_only=%s online_curriculum_enabled=%s testing=%s',
         summary.get('database_driver'),
         summary.get('database_name') or '(default)',
         summary.get('upload_dir'),
@@ -339,6 +371,8 @@ def log_validated_config_summary(summary: dict[str, object]) -> None:
         summary.get('backup_configured'),
         summary.get('backup_destination'),
         summary.get('migration_mode'),
+        summary.get('ai_local_only'),
+        summary.get('online_curriculum_enabled'),
         summary.get('testing'),
     )
 

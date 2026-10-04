@@ -12,6 +12,7 @@ import httpx
 import pytesseract
 
 from backend.config import Settings, settings
+from backend.local_ai import validate_local_ollama_host
 from backend.services.backup_service import get_backup_configuration, validate_backup_configuration
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,15 @@ def _check_azure_openai_grading(config: Settings, provider: str) -> dict[str, An
 def check_ai_grading(config: Settings = settings) -> dict[str, Any]:
     provider = config.ai_provider.strip().lower() or 'ollama'
 
+    if config.ai_local_only and provider != 'ollama':
+        return _status(
+            'ai_grading',
+            enabled=False,
+            configured=False,
+            reason='AI_LOCAL_ONLY=true requires AI_PROVIDER=ollama.',
+            details={'provider': provider},
+        )
+
     if provider in _AZURE_PROVIDER_ALIASES:
         return _check_azure_openai_grading(config, provider)
 
@@ -183,6 +193,18 @@ def check_ai_grading(config: Settings = settings) -> dict[str, Any]:
             details={'provider': provider},
         )
 
+    if config.ai_local_only:
+        try:
+            validate_local_ollama_host(config.ollama_host)
+        except ValueError as exc:
+            return _status(
+                'ai_grading',
+                enabled=False,
+                configured=False,
+                reason=str(exc),
+                details={'provider': provider},
+            )
+
     if not config.ollama_host.strip() or not config.ollama_model.strip():
         return _status(
             'ai_grading',
@@ -193,7 +215,7 @@ def check_ai_grading(config: Settings = settings) -> dict[str, Any]:
         )
 
     try:
-        with httpx.Client(timeout=5.0) as client:
+        with httpx.Client(timeout=5.0, trust_env=not config.ai_local_only) as client:
             response = client.get(f"{config.ollama_host.rstrip('/')}/api/tags")
             response.raise_for_status()
         body = response.json()

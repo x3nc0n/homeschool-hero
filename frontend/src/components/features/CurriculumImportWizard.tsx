@@ -2,6 +2,7 @@ import { type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState 
 import { CheckCircle2, FileJson, FileText, Sparkles, Upload, WandSparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { useCapabilities } from '@/context/CapabilitiesContext'
 import { api } from '@/lib/api'
 import type { CurriculumAiImportDraftResponse, CurriculumImportDetail, CurriculumImportDocument, CurriculumImportSchema } from '@/types/api'
 import {
@@ -102,6 +103,7 @@ function AnalysisSkeleton() {
 
 export function CurriculumImportWizard({ schema, onCancel, onImported }: CurriculumImportWizardProps) {
   const { isFeatureEnabled } = useAuth()
+  const { onlineCurriculumEnabled } = useCapabilities()
   const [step, setStep] = useState<(typeof STEPS)[number]>(STEPS[0])
   const [importMode, setImportMode] = useState<'manual' | 'ai'>('manual')
   const [method, setMethod] = useState<'paste' | 'file' | 'url'>('paste')
@@ -135,6 +137,12 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
   const aiFeatureEnabled = isFeatureEnabled('curriculum_ai_import')
   const aiAvailable = aiFeatureEnabled
   const aiAvailabilityMessage = 'AI import is coming soon for this family.'
+
+  useEffect(() => {
+    if (!onlineCurriculumEnabled) {
+      setAiInputMethod('file')
+    }
+  }, [onlineCurriculumEnabled])
 
   useEffect(() => {
     if (!analyzing) {
@@ -402,7 +410,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                       <Tabs value={aiInputMethod} onValueChange={(value) => setAiInputMethod(value as 'file' | 'url')}>
                         <TabsList>
                           <TabsTrigger value="file">Upload file</TabsTrigger>
-                          <TabsTrigger value="url">Paste URL</TabsTrigger>
+                          {onlineCurriculumEnabled ? <TabsTrigger value="url">Paste URL</TabsTrigger> : null}
                         </TabsList>
                         <TabsContent value="file" className="space-y-3">
                           <div
@@ -450,21 +458,27 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                             </div>
                           ) : null}
                         </TabsContent>
-                        <TabsContent value="url" className="space-y-3">
-                          <div className="space-y-2">
-                            <Label htmlFor="curriculum-ai-url">Curriculum page or shared document URL</Label>
-                            <Input
-                              id="curriculum-ai-url"
-                              type="url"
-                              value={aiUrl}
-                              onChange={(event) => setAiUrl(event.target.value)}
-                              placeholder="https://example.com/curriculum-outline"
-                            />
-                          </div>
+                        {onlineCurriculumEnabled ? (
+                          <TabsContent value="url" className="space-y-3">
+                            <div className="space-y-2">
+                              <Label htmlFor="curriculum-ai-url">Curriculum page or shared document URL</Label>
+                              <Input
+                                id="curriculum-ai-url"
+                                type="url"
+                                value={aiUrl}
+                                onChange={(event) => setAiUrl(event.target.value)}
+                                placeholder="https://example.com/curriculum-outline"
+                              />
+                            </div>
+                            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                              Paste a public curriculum page, syllabus, or outline. AI will draft the structure and let you edit it before import.
+                            </div>
+                          </TabsContent>
+                        ) : (
                           <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                            Paste a public curriculum page, syllabus, or outline. AI will draft the structure and let you edit it before import.
+                            Online curriculum downloads are disabled. Upload a local document to create an AI-assisted draft.
                           </div>
-                        </TabsContent>
+                        )}
                       </Tabs>
 
                       {analyzing ? (

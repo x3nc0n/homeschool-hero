@@ -265,3 +265,31 @@ def test_check_ai_grading_azure_openai_unconfigured(tmp_path: Path) -> None:
     assert result['enabled'] is False
     assert result['configured'] is False
     assert 'AZURE_OPENAI_ENDPOINT' in result['reason']
+
+
+def test_local_only_ai_capability_rejects_public_ollama_host_without_connecting(monkeypatch, tmp_path: Path) -> None:
+    from backend.services import capabilities as capabilities_module
+
+    config = Settings().model_copy(
+        update={
+            'database_url': f"sqlite+aiosqlite:///{(tmp_path / 'app.db').resolve().as_posix()}",
+            'secret_key': 'required-test-secret',
+            'upload_dir': str(tmp_path / 'uploads'),
+            'ai_provider': 'ollama',
+            'ai_local_only': True,
+            'ollama_host': 'http://8.8.8.8:11434',
+            'ollama_model': 'llama3.1:8b',
+            'testing': True,
+        }
+    )
+
+    def fail_if_connected(*_args, **_kwargs):
+        raise AssertionError('local-only capability check must not connect to a public Ollama host')
+
+    monkeypatch.setattr(capabilities_module.httpx, 'Client', fail_if_connected)
+
+    result = capabilities_module.check_ai_grading(config)
+
+    assert result['enabled'] is False
+    assert result['configured'] is False
+    assert 'OLLAMA_HOST must resolve only to localhost or a private network' in result['reason']

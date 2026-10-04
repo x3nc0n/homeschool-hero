@@ -211,9 +211,13 @@ See `docs/development.md` for the full development workflow.
 | `FAMILY_PASSWORD` | Yes* | Legacy password source for single-family upgrades. |
 | `FAMILY_PASSWORD_HASH` | No | Legacy bcrypt hash source for upgrades. |
 | `INVITATION_BASE_URL` | No | External base URL for invitation links. |
-| `AI_PROVIDER` | No | `ollama` or `openai`. |
+| `AI_PROVIDER` | No | `ollama`, `openai`, or an Azure OpenAI alias (`azure_openai`, `azure`, `azure-openai`, `foundry`). |
 | `OLLAMA_HOST` | No | Ollama base URL. |
 | `OLLAMA_MODEL` | No | Ollama model name. |
+| `AI_LOCAL_ONLY` | No | When `true`, require `AI_PROVIDER=ollama`, restrict `OLLAMA_HOST` to localhost/private addresses, route curriculum AI import through Ollama, and reject configured remote AI import endpoints. |
+| `AI_IMPORT_ENABLED` | No | Enables AI-assisted curriculum import. With `AI_LOCAL_ONLY=true`, the Ollama model must support tool calling. |
+| `AI_IMPORT_ENDPOINT` | No | Remote-compatible endpoint for curriculum import; must be unset when `AI_LOCAL_ONLY=true`. |
+| `ONLINE_CURRICULUM_ENABLED` | No | `true` by default. Set `false` to disable OpenStax/OER Commons downloads and AI imports from URLs while retaining uploads and the static CK-12 catalog. |
 | `OPENAI_API_KEY` | No | Required when `AI_PROVIDER=openai`. |
 | `GRADING_REQUEST_TIMEOUT_SECONDS` | No | Timeout for AI grading requests. |
 | `OCR_REQUEST_TIMEOUT_SECONDS` | No | Timeout for OCR requests. |
@@ -273,6 +277,8 @@ See `docs/development.md` for the full development workflow.
 ## Operational notes
 
 - Startup waits for PostgreSQL, validates migration state, and applies migrations when `MIGRATION_MODE=apply`
+- Set `AI_LOCAL_ONLY=true` and `AI_PROVIDER=ollama` to prevent grading or curriculum import from using cloud AI providers; curriculum import uses Ollama's OpenAI-compatible `/v1/chat/completions` endpoint and needs a tool-calling-capable model.
+- Set `ONLINE_CURRICULUM_ENABLED=false` for offline deployments; uploaded documents and CK-12's built-in catalog remain available, while OpenStax/OER Commons connectors and URL-based AI import are disabled.
 - `/health` stays green for optional service outages and reports degraded capabilities instead
 - `/api/metrics` is available only when `ENABLE_METRICS_ENDPOINT=true`
 - Scheduled backups include database dumps, uploads, and DM-02 full export bundles; use the UI at `/settings/backups` for trigger/history/status visibility

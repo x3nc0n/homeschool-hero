@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx
 
+from backend.config import settings
 from backend.schemas.curriculum import (
     CurriculumImportDocument,
     CurriculumImportLessonPayload,
@@ -17,6 +18,7 @@ from backend.services.curriculum_sources.base import (
     CurriculumSourceError,
     CurriculumSourceItem,
     CurriculumSourceSearchPage,
+    SourceAvailability,
 )
 from backend.services.curriculum_sources.utils import coerce_dict, paginate_items, strip_html, unique_strings
 
@@ -30,7 +32,16 @@ class OpenStaxSource(CurriculumSource):
     display_name = 'OpenStax'
     description = 'Free OpenStax textbooks with structured metadata and download links.'
 
+    def availability(self) -> SourceAvailability:
+        if not settings.online_curriculum_enabled:
+            return SourceAvailability(
+                enabled=False,
+                detail='Online curriculum downloads are disabled by deployment policy.',
+            )
+        return SourceAvailability(enabled=True)
+
     async def search(self, query: str, *, page: int = 1, page_size: int = 10) -> CurriculumSourceSearchPage:
+        self.require_availability()
         catalog = await self._fetch_catalog()
         normalized_query = query.strip().casefold()
         matches: list[CurriculumSourceItem] = []
@@ -56,6 +67,7 @@ class OpenStaxSource(CurriculumSource):
         )
 
     async def fetch(self, item_id: str) -> dict[str, Any]:
+        self.require_availability()
         url = OPENSTAX_DETAIL_URL_TEMPLATE.format(item_id=item_id)
         try:
             async with httpx.AsyncClient(timeout=OPENSTAX_TIMEOUT_SECONDS, follow_redirects=True) as client:

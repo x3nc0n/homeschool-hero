@@ -122,6 +122,9 @@ export interface CapabilitiesResponse {
   status: 'ok' | 'degraded'
   capabilities: Record<CapabilityName, CapabilityStatus>
   optional_unavailable: CapabilityName[]
+  features?: {
+    online_curriculum_enabled?: boolean
+  }
   auth: {
     current_provider: AuthProvider
     available_providers: AuthProvider[]
@@ -1914,6 +1917,7 @@ export interface CurriculumSourceSummary {
   grade_levels?: string[]
   subjects?: string[]
   enabled?: boolean
+  detail?: string | null
   metadata?: Record<string, unknown>
 }
 

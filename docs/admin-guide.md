@@ -174,7 +174,9 @@ Check bootstrap status:
 curl http://localhost:8000/api/auth/bootstrap
 ```
 
-When `bootstrap_required` is `true`, create the owner account from the web UI at `/`. After the first owner is created, `/api/auth/register` is intentionally disabled for future open registration.
+For a fresh database, the first PostgreSQL migrations create the initial owner from `BOOTSTRAP_OWNER_EMAIL` and the password in `FAMILY_PASSWORD` (or `FAMILY_PASSWORD_HASH`). This is separate from demo-data seeding: with `DEMO_MODE=false`, startup rejects the default `FAMILY_PASSWORD=changeme`. Deliver a unique, strong `FAMILY_PASSWORD` through a Kubernetes Secret; do not place the password in a manifest or expose it in logs.
+
+Keep the ingress private until the owner has signed in. Verify `GET /api/auth/bootstrap`; it should return `{"bootstrap_required": false}` for a freshly migrated database. Sign in through the web UI with `BOOTSTRAP_OWNER_EMAIL` and the configured `FAMILY_PASSWORD`, or use `POST /api/auth/login` with `{"email":"<BOOTSTRAP_OWNER_EMAIL>","password":"<FAMILY_PASSWORD>"}`. The migration-created owner already occupies the one-time registration slot, so `POST /api/auth/register` returns `403` and an arbitrary visitor cannot claim the owner account. The `/setup` form and `POST /api/auth/register` are only for databases that truly have no users; never expose an uninitialized deployment publicly.
 
 ### B. Non-Docker installation
 
@@ -276,9 +278,13 @@ Homeschool Hero reads settings from environment variables through `backend/confi
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `AI_PROVIDER` | `ollama` | `ollama` or `openai`. |
+| `AI_PROVIDER` | `ollama` | `ollama`, `openai`, or an Azure OpenAI alias. |
 | `OLLAMA_HOST` | `http://ollama:11434` | Ollama API base URL. |
 | `OLLAMA_MODEL` | `llama3.2` | Model name; Compose preloads this model. |
+| `AI_LOCAL_ONLY` | `false` | Set `true` to require Ollama for grading and curriculum AI import; `OLLAMA_HOST` must be localhost/private, and startup rejects cloud providers and `AI_IMPORT_ENDPOINT`. |
+| `AI_IMPORT_ENABLED` | `false` | Enables curriculum AI import. Under `AI_LOCAL_ONLY=true`, it uses Ollama's OpenAI-compatible `/v1/chat/completions` endpoint. |
+| `AI_IMPORT_ENDPOINT` | unset | Remote curriculum-import endpoint; must be unset under `AI_LOCAL_ONLY=true`. |
+| `ONLINE_CURRICULUM_ENABLED` | `true` | Set `false` to disable OpenStax/OER Commons catalog requests and arbitrary URL-based AI imports; document uploads and static CK-12 remain available. |
 | `OPENAI_API_KEY` | unset | Required when `AI_PROVIDER=openai`. |
 | `CONFIDENCE_THRESHOLD` | `0.8` | Auto-approve threshold. Lower-confidence jobs go to review. |
 | `GRADING_POLL_INTERVAL` | `5` | Background worker poll interval, in seconds. |
@@ -654,12 +660,55 @@ Microsoft Entra ID example:
 
 ```env
 AUTH_PROVIDER=oidc
+AUTH_BREAKGLASS_LOCAL=false
 OIDC_CLIENT_ID=<entra-client-id>
 OIDC_CLIENT_SECRET=<entra-client-secret>
 OIDC_DISCOVERY_URL=https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration
-AUTH_AUTO_PROVISION_MODE=default_family
-AUTH_DEFAULT_FAMILY_NAME=SSO Users
+AUTH_AUTO_PROVISION_MODE=reject
+BOOTSTRAP_OWNER_EMAIL=<owner-email-from-validated-id-token>
+JWT_ENABLED=false
 ```
+
+Register a single-tenant Web application with redirect URI
+`https://<public-app-host>/api/auth/oidc/callback`. The sign-in flow requests
+`openid email profile`; it uses the tenant discovery document, token endpoint,
+and JWKS over HTTPS. The app reads claims from the validated ID token and does
+not call Microsoft Graph userinfo or fetch groups-overage URLs. Allow the
+discovery/token/JWKS destinations through the deployment's egress policy;
+local-only AI and offline curriculum settings remain independent.
+
+On a fresh database, set the owner email before migrations run. The first
+validated OIDC identity matching that email links to the migration-created
+owner and preserves its family membership. Claim preference is `email`, then
+`preferred_username`, then `upn`/`unique_name`; ensure the configured owner email
+matches the claim the tenant actually issues. Entra directory administrator
+privileges do not grant Homeschool Hero ownership. With `reject`, identities
+without an existing membership or invitation cannot join a default family.
+The default `default_family` mode remains available for deployments that
+intentionally want automatic least-privilege membership.
+
+Keep `DEMO_MODE=false` and supply a strong secret `FAMILY_PASSWORD` for the
+migration-created account; production startup still rejects its default even
+when `AUTH_BREAKGLASS_LOCAL=false` disables password login. Keep ingress private
+until `/api/auth/bootstrap` reports `bootstrap_required=false`, verify the
+owner's OIDC login and membership, and confirm local login is disabled. Bootstrap
+settings do not rename an owner in an already migrated database.
+
+The callback URL is derived from the inbound request scheme and host. Behind a
+TLS-terminating ingress, enable `TRUST_PROXY_HEADERS=true` and configure Uvicorn
+`FORWARDED_ALLOW_IPS` for only the actual trusted ingress sources so the callback
+uses HTTPS. Do not trust arbitrary public clients' forwarded headers. Set
+`SESSION_COOKIE_SECURE=true`; OIDC state uses a secure, SameSite=Lax cookie.
+`JWT_ENABLED=false` disables the separate bearer-token API feature, not OIDC's
+ID-token signature validation.
+
+For default-deny egress, the existing Authlib HTTPX clients and discovery
+verification client honor `HTTPS_PROXY`. Route them through a CONNECT proxy
+allowlisting only the tenant discovery/token/JWKS host on port 443. Set
+`NO_PROXY` for local service destinations. Under `AI_LOCAL_ONLY=true`, Ollama
+clients explicitly disable environment proxies, so AI requests still go
+directly to the private Ollama endpoint. Do not broaden the proxy allowlist to
+online curriculum services.
 
 Entra bearer-token API access:
 
@@ -745,6 +794,9 @@ Notes:
 - the `ollama` container preloads `OLLAMA_MODEL` through `scripts/ollama-entrypoint.sh`
 - health stays degraded until the model is actually available
 - low confidence, OCR failure, AI outage, or an open circuit breaker routes work to human review
+- set `AI_LOCAL_ONLY=true` to prevent grading and curriculum import from using cloud AI; local curriculum import requires a model with tool-calling support
+- set `ONLINE_CURRICULUM_ENABLED=false` to disable online catalog searches/downloads and AI URL imports; uploaded documents remain supported
+- OCR uses the app container's local Tesseract installation and does not require a separate AI service
 
 ### OpenAI alternative
 

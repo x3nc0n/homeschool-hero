@@ -502,6 +502,12 @@ async def draft_curriculum_from_ai_import(
 ) -> CurriculumAIImportRead:
     del auth
     upload, url = await _parse_ai_import_request(request)
+    if url and not settings.online_curriculum_enabled:
+        return _service_unavailable_response(
+            request,
+            detail='Online curriculum URL imports are disabled by deployment policy',
+            code='online_curriculum_disabled',
+        )
     service = get_ai_curriculum_import_service()
     try:
         if upload is not None:

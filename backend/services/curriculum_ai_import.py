@@ -19,6 +19,7 @@ from docx import Document as DocxDocument
 from pypdf import PdfReader
 
 from backend.config import settings
+from backend.local_ai import validate_local_ollama_host
 from backend.schemas.curriculum import CurriculumImportDocument
 from backend.services import ai_grader
 
@@ -92,6 +93,8 @@ class AICurriculumImportService:
         return await self._build_draft(extracted)
 
     async def build_draft_from_url(self, url: str) -> tuple[CurriculumImportDocument, ExtractedSource]:
+        if not settings.online_curriculum_enabled:
+            raise AIImportUnavailable('Online curriculum URL imports are disabled by deployment policy.')
         self._ensure_configured()
         extracted = await self._extract_from_url(url)
         return await self._build_draft(extracted)
@@ -99,6 +102,20 @@ class AICurriculumImportService:
     def _ensure_configured(self) -> None:
         if not settings.ai_import_enabled:
             raise AIImportUnavailable('AI curriculum import is disabled. Set AI_IMPORT_ENABLED=true to enable it.')
+        if settings.ai_local_only:
+            if settings.ai_provider.strip().lower() != 'ollama':
+                raise AIImportUnavailable('AI_LOCAL_ONLY=true requires AI_PROVIDER=ollama.')
+            if (settings.ai_import_endpoint or '').strip():
+                raise AIImportUnavailable(
+                    'AI_IMPORT_ENDPOINT must be unset when AI_LOCAL_ONLY=true; curriculum import uses OLLAMA_HOST.'
+                )
+            if not settings.ollama_host.strip() or not settings.ollama_model.strip():
+                raise AIImportUnavailable('OLLAMA_HOST and OLLAMA_MODEL must be configured for local AI import.')
+            try:
+                validate_local_ollama_host(settings.ollama_host)
+            except ValueError as exc:
+                raise AIImportUnavailable(str(exc)) from exc
+            return
         endpoint = (settings.ai_import_endpoint or '').strip()
         if not endpoint:
             raise AIImportUnavailable('AI curriculum import is not configured. Set AI_IMPORT_ENDPOINT.')
@@ -328,25 +345,35 @@ class AICurriculumImportService:
         return draft
 
     async def _call_ai_parser(self, extracted: ExtractedSource) -> dict[str, Any]:
-        endpoint = settings.ai_import_endpoint.strip()
-        _, parsed_endpoint = self._parse_http_url(
-            endpoint,
-            error_message='AI import endpoint must be a valid http or https URL',
-        )
-        if self._is_azure_openai_endpoint(parsed_endpoint):
-            request_url = self._azure_chat_completions_url(endpoint, parsed_endpoint)
-            request_params: dict[str, str] | None = {'api-version': settings.ai_import_api_version}
+        if settings.ai_local_only:
+            request_url = f'{settings.ollama_host.rstrip("/")}/v1/chat/completions'
+            request_params: dict[str, str] | None = None
+            headers = {'Content-Type': 'application/json'}
+            payload = self._build_request_payload(extracted, model=settings.ollama_model)
         else:
-            request_url = endpoint
-            request_params = None
-        headers = self._build_headers(endpoint)
-        payload = self._build_request_payload(extracted)
+            endpoint = settings.ai_import_endpoint.strip()
+            _, parsed_endpoint = self._parse_http_url(
+                endpoint,
+                error_message='AI import endpoint must be a valid http or https URL',
+            )
+            if self._is_azure_openai_endpoint(parsed_endpoint):
+                request_url = self._azure_chat_completions_url(endpoint, parsed_endpoint)
+                request_params = {'api-version': settings.ai_import_api_version}
+            else:
+                request_url = endpoint
+                request_params = None
+            headers = self._build_headers(endpoint)
+            payload = self._build_request_payload(extracted)
         timeout = httpx.Timeout(settings.ai_import_request_timeout_seconds)
         backoff = max(settings.ai_import_retry_backoff_seconds, 0.0)
         last_error: Exception | None = None
         for attempt in range(1, max(settings.ai_import_retry_attempts, 1) + 1):
             try:
-                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                async with httpx.AsyncClient(
+                    timeout=timeout,
+                    follow_redirects=True,
+                    trust_env=not settings.ai_local_only,
+                ) as client:
                     response = await client.post(request_url, headers=headers, params=request_params, json=payload)
                 response.raise_for_status()
                 body = response.json()
@@ -376,7 +403,7 @@ class AICurriculumImportService:
             'Content-Type': 'application/json',
         }
 
-    def _build_request_payload(self, extracted: ExtractedSource) -> dict[str, Any]:
+    def _build_request_payload(self, extracted: ExtractedSource, *, model: str | None = None) -> dict[str, Any]:
         prompt = (
             f'Source type: {extracted.source_kind}\n'
             f'Source name: {extracted.source_name}\n'
@@ -403,13 +430,16 @@ class AICurriculumImportService:
             ],
             'tool_choice': {'type': 'function', 'function': {'name': AI_IMPORT_TOOL_NAME}},
         }
-        endpoint = settings.ai_import_endpoint.strip()
-        _, parsed_endpoint = self._parse_http_url(
-            endpoint,
-            error_message='AI import endpoint must be a valid http or https URL',
-        )
-        if not self._is_azure_openai_endpoint(parsed_endpoint):
-            payload['model'] = settings.ai_import_model
+        if model is not None:
+            payload['model'] = model
+        elif not settings.ai_local_only:
+            endpoint = settings.ai_import_endpoint.strip()
+            _, parsed_endpoint = self._parse_http_url(
+                endpoint,
+                error_message='AI import endpoint must be a valid http or https URL',
+            )
+            if not self._is_azure_openai_endpoint(parsed_endpoint):
+                payload['model'] = settings.ai_import_model
         return payload
 
     def _is_azure_openai_endpoint(self, parsed_endpoint: Any) -> bool:
@@ -449,7 +479,7 @@ class AICurriculumImportService:
                 if function.get('name') != AI_IMPORT_TOOL_NAME:
                     continue
                 arguments = function.get('arguments') or '{}'
-                parsed = json.loads(arguments)
+                parsed = arguments if isinstance(arguments, dict) else json.loads(arguments)
                 if isinstance(parsed, dict):
                     return parsed
         content = message.get('content') if isinstance(message, dict) else None

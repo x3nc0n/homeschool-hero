@@ -113,6 +113,54 @@ def test_openai_model_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
     assert call['json'].get('model') == 'gpt-4o'
 
 
+def test_local_only_grading_rejects_cloud_provider_without_calling_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ai_grader.settings, 'ai_local_only', True)
+    monkeypatch.setattr(ai_grader.settings, 'ai_provider', 'openai')
+    monkeypatch.setattr(
+        ai_grader,
+        '_call_openai',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('cloud provider must not be called')),
+    )
+
+    result = ai_grader.grade_submission_text('Fractions', None, '1) 3/4')
+
+    assert result['unavailable'] is True
+    assert 'AI_LOCAL_ONLY=true requires AI_PROVIDER=ollama' in result['error_message']
+
+
+def test_local_only_grading_rejects_public_ollama_host_without_calling_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ai_grader.settings, 'ai_local_only', True)
+    monkeypatch.setattr(ai_grader.settings, 'ai_provider', 'ollama')
+    monkeypatch.setattr(ai_grader.settings, 'ollama_host', 'http://8.8.8.8:11434')
+    monkeypatch.setattr(
+        ai_grader,
+        '_call_ollama',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('public endpoint must not be called')),
+    )
+
+    result = ai_grader.grade_submission_text('Fractions', None, '1) 3/4')
+
+    assert result['unavailable'] is True
+    assert 'OLLAMA_HOST must resolve only to localhost or a private network' in result['error_message']
+
+
+def test_unknown_grading_provider_does_not_fall_through_to_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ai_grader.settings, 'ai_local_only', False)
+    monkeypatch.setattr(ai_grader.settings, 'ai_provider', 'typo')
+    monkeypatch.setattr(
+        ai_grader,
+        '_call_ollama',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('unknown provider must not call Ollama')),
+    )
+
+    result = ai_grader.grade_submission_text('Fractions', None, '1) 3/4')
+
+    assert result['unavailable'] is True
+    assert "Unsupported AI provider 'typo'" in result['error_message']
+
+
 class _FakeCredential:
     """Records constructor kwargs and returns a canned access token."""
 
@@ -157,4 +205,3 @@ def test_managed_identity_omits_client_id_when_unset(monkeypatch: pytest.MonkeyP
 
     assert token == 'fake-mi-token'
     assert _FakeCredential.instances == [{}]
-

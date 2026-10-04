@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     legacy_family_password_hash: str | None = Field(default=None, alias='FAMILY_PASSWORD_HASH')
 
     ai_provider: str = Field('ollama', alias='AI_PROVIDER')
+    ai_local_only: bool = Field(False, alias='AI_LOCAL_ONLY')
     ollama_host: str = Field('http://ollama:11434', alias='OLLAMA_HOST')
     ollama_model: str = Field('llama3.2', alias='OLLAMA_MODEL')
     openai_api_key: str | None = Field(default=None, alias='OPENAI_API_KEY')
@@ -97,6 +98,7 @@ class Settings(BaseSettings):
     ai_import_retry_attempts: int = Field(3, alias='AI_IMPORT_RETRY_ATTEMPTS')
     ai_import_retry_backoff_seconds: float = Field(1.0, alias='AI_IMPORT_RETRY_BACKOFF_SECONDS')
     ai_import_max_input_chars: int = Field(50000, alias='AI_IMPORT_MAX_INPUT_CHARS')
+    online_curriculum_enabled: bool = Field(True, alias='ONLINE_CURRICULUM_ENABLED')
     grading_request_timeout_seconds: float = Field(120.0, alias='GRADING_REQUEST_TIMEOUT_SECONDS')
     ocr_request_timeout_seconds: float = Field(120.0, alias='OCR_REQUEST_TIMEOUT_SECONDS')
     grading_retry_attempts: int = Field(3, alias='GRADING_RETRY_ATTEMPTS')
