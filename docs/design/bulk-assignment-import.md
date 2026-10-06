@@ -1,7 +1,7 @@
 # Bulk assignment import design
 
 **Date:** 2026-10-06T10:13:08-05:00  
-**Status:** Design only  
+**Status:** Implemented (including XLSX and JSON/CSV/TSV support)
 **Owner:** Egon  
 
 ## Existing system findings
@@ -34,25 +34,46 @@ Minimum supported formats:
 | --- | --- | --- |
 | `.txt` | `text/plain` | UTF-8 / UTF-8 BOM / Latin-1 decode, same as curriculum import |
 | `.md` | `text/markdown`, `text/plain` | Decode as text; strip nothing, because headings/lists help the parser |
+| `.json` | `application/json`, `text/json`, `text/plain` | Strict UTF-8/BOM decoding and JSON syntax validation; original schema keys/formatting retained |
+| `.csv` | `text/csv`, `application/csv`, `text/plain`, `application/vnd.ms-excel` | Strict UTF-8/BOM decoding; comma-delimited parser validates quoted multiline cells; original source retained |
+| `.tsv` | `text/tab-separated-values`, `text/tsv`, `text/plain` | Same as CSV with tab delimiters; headers, rows, and spacing retained |
 | `.docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | Existing `python-docx`; extract paragraph text, optionally table cells in Ray's implementation |
 | `.pdf` | `application/pdf` | Trivial because `pypdf` is already present; support it now, with warning that scanned image PDFs may extract no text |
+| `.xlsx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `openpyxl` read-only extraction; all worksheets, sheet names/states, row numbers, cell coordinates, ISO dates, and merged header ranges |
 
-No new dependency is required for the baseline. If DOCX table extraction from `python-docx` is insufficient, Ray may extend with the same library before considering new deps.
+XLSX uses `openpyxl==3.1.5` and `defusedxml==0.7.1`, declared consistently in development, production, and backend test manifests. Docker installs the production manifest, so no additional OS packages or Dockerfile step is needed. Legacy `.xls`, macro-enabled `.xlsm`, `.xlsb`, `.ods`, and password-protected workbooks are not supported. XLSX requires a `.xlsx` filename; canonical Excel MIME, missing MIME, `application/octet-stream`, and `application/zip` are accepted only after workbook validation. Other conflicting MIME types are rejected.
+
+All formats require a supported filename extension and a compatible MIME when supplied. Missing MIME and `application/octet-stream` are allowed for every supported extension, but never override content validation. MIME is normalized case-insensitively with parameters removed. `application/vnd.ms-excel` is permitted for `.csv` browser exports, not legacy `.xls` or `.tsv`. The picker and drag/drop use this same per-extension allowlist; binary formats still use their real parsers. Unsupported suffixes are rejected even with an allowed MIME.
+
+JSON/CSV/TSV use the existing AI extraction → validated draft → family-scoped resolution → review/confirm flow. `ParsedAssignmentDocument` exports are accepted as JSON source, **not** directly converted to database rows. Its permissive/defaulted Pydantic model is an AI output contract, not an unambiguous versioned file-import contract; automatic recognition could silently ignore fields or mistake generic JSON for an empty assignment document. A deterministic import would need a separately strict/versioned contract. AI remains configured/required, and uploaded JSON never bypasses candidate validation or confirmation.
+
+Structured text is decoded strictly as UTF-8 with optional BOM. The existing TXT/MD Latin-1 fallback cannot reliably distinguish binary data or Windows encodings, so it is not reused for JSON/CSV/TSV; other encodings produce an explicit re-export-as-UTF-8 error. JSON syntax is validated (including rejecting NaN/Infinity) without rewriting schema keys or values. CSV uses commas; TSV uses tabs; standard double-quote escaping and quoted multiline cells are supported. Ragged rows are retained for AI interpretation, not shifted or discarded. Formula-like cells remain untrusted text, never evaluated. No new dependency is needed (stdlib `json`/`csv`).
 
 Limits:
 
 - File bytes: default 10 MiB for assignment import (`BULK_ASSIGNMENT_IMPORT_MAX_BYTES`, capped at `UPLOAD_MAX_BYTES` if lower).
 - Extracted text sent to AI: reuse `AI_IMPORT_MAX_INPUT_CHARS` initially, default 50,000 chars.
+- JSON/CSV/TSV source text: at most `min(AI_IMPORT_MAX_INPUT_CHARS, 200000)` characters; reject excess rather than truncate. JSON nesting is limited to 64 levels; CSV/TSV to 10,000 logical rows and 512 columns per row (stdlib CSV field-size limits also apply). Empty/whitespace-only input, invalid UTF-8, binary/control characters other than tab/CR/LF, malformed JSON, or malformed quoted tables return 400 before AI invocation. Delimiters, line breaks, and leading/trailing spacing are preserved after BOM removal.
 - Draft items: default 200 assignments per import session.
 - Reject empty documents, unsupported extensions/MIME, and unreadable text.
+- XLSX ZIP preflight: at most 256 entries, 8 MiB expanded per entry, 20 MiB total expanded, 200:1 maximum compression ratio; only stored/deflated ZIP entries. Duplicate/encrypted entries are rejected.
+- XML is entity/DTD-safe, with at most 400,000 elements across the archive and 64 nesting levels before loading workbook shared strings/styles.
+- XLSX grid: at most 20 worksheets, 5,000 rows and 100 columns per sheet, 20,000 total rows, 100,000 stored **and scanned** cells, and 1,000 merged ranges. Actual coordinates and merged extents are checked; exaggerated dimension metadata is ignored.
+- XLSX extracted text: at most `min(AI_IMPORT_MAX_INPUT_CHARS, 200000)` characters. Unlike document text, oversized spreadsheet text is **rejected**, not truncated, to avoid losing date/header context. Malformed, empty, unsupported, encrypted, or oversized workbooks return a user-facing HTTP 400 before AI invocation.
+
+### Spreadsheet fidelity and formulas
+
+Each worksheet (including hidden sheets) is emitted with its name/state, followed by merged range references and nonempty rows. Cells retain their original coordinates; values are JSON-quoted so multiline assignments remain associated with the same cell. Empty cells are omitted without shifting the remaining coordinates. Dates/times use ISO values based on workbook date formats and epoch. Merged headers retain their anchor value plus the full range, without expanding the grid.
+
+Formulas are **never executed**, and external workbook links are not fetched. Saved/cached results are included with a staleness marker and warning. A missing cached result is emitted as `[formula; cached value unavailable; do not infer a value]` with a warning instructing the user to recalculate/save or paste values. Formula expressions themselves are not sent to AI. A formula-only workbook with missing cached results therefore remains explicit rather than being misclassified as empty. AI instructions associate weekday cells with their date headers and require review/clarification rather than invented dates.
 
 ## Flow
 
 1. **Upload**
    - UI route: add an "Import assignments" entry point on Assignments.
-   - User selects `.txt`, `.md`, `.docx`, or `.pdf`. Native input uses `sr-only` + ref-click.
+   - User selects `.txt`, `.md`, `.json`, `.csv`, `.tsv`, `.docx`, `.pdf`, or `.xlsx`. Native input uses `sr-only` + ref-click; picker and drag/drop share the same validation.
 2. **Extract text**
-   - Backend validates auth, size, MIME/extension, reads bytes, extracts text, normalizes whitespace, truncates with a warning if needed.
+   - Backend validates auth, size, MIME/extension, reads at most the upload limit plus one byte, and extracts text. TXT/MD/DOCX/PDF retain existing normalization/truncation behavior; XLSX and JSON/CSV/TSV preserve structure and reject excess text.
 3. **LLM parse**
    - Backend calls the existing AI import provider path with a new assignment-specific service and structured-output tool schema.
    - The LLM returns candidate assignment rows with source snippets and confidence, but not trusted database IDs.
@@ -333,7 +354,7 @@ If `AI_IMPORT_ENABLED=false` or provider config is invalid:
 
 - Backend tests:
   - AI disabled returns 503.
-  - TXT/MD/DOCX/PDF extraction behavior.
+  - TXT/MD/DOCX/PDF/XLSX/JSON/CSV/TSV extraction behavior, including worksheet grids, ISO dates, merged headers, formula cached/missing results, per-extension MIME acceptance, UTF-8 BOM, schema/header/delimiter/row fidelity, multiline quoted cells, malformed JSON/tables/encoding rejection, and bounded ZIP/XML/grid/text/table/nesting rejection.
   - prompt-injection text cannot set IDs/ownership.
   - ambiguous subjects/students produce questions.
   - clarification patch makes rows ready.

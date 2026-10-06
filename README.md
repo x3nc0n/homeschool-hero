@@ -54,6 +54,29 @@ The default demo stack starts:
 
 Swagger UI automatically uses the current session cookie and forwards the CSRF cookie as `X-CSRF-Token` for same-origin mutating requests.
 
+## Bulk assignment upload
+
+On **Assignments**, choose **Import assignments** to draft assignments from a TXT,
+Markdown, JSON (`.json`), CSV (`.csv`), TSV (`.tsv`), Word (`.docx`), PDF, or Excel (`.xlsx`) planning file up to 10 MiB. AI
+import must be configured; review and edit the draft before confirming creation.
+
+JSON/CSV/TSV must be UTF-8 (including UTF-8 BOM exports). JSON schema keys and
+CSV/TSV headers, delimiters, rows, and quoted multiline cells are preserved for AI.
+Malformed JSON, broken quoted cells, unsupported encodings, and oversized structured
+text are rejected rather than silently repaired/truncated. Even `ParsedAssignmentDocument`
+JSON exports use AI extraction, not a direct JSON-to-database import.
+
+Excel import reads all worksheets, including hidden sheets, and preserves sheet
+names, cell/row positions, date headers, and merged headers for weekly grids.
+Legacy `.xls` and password-protected workbooks are unsupported. Formulas are never
+run: saved results may be stale, and missing saved results produce a warning.
+Recalculate and save in Excel/LibreOffice, or paste formula results as values.
+Split large workbooks: limits include 20 sheets, 5,000 rows and 100 columns per
+sheet, 20,000 total rows, and 100,000 stored/scanned cells. Oversized extracted
+spreadsheet text is rejected, not silently truncated. See the
+[bulk assignment import design](docs/design/bulk-assignment-import.md) for all
+archive/text limits and API behavior.
+
 ## Compose profiles
 
 ```bash

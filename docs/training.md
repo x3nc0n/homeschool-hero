@@ -147,6 +147,28 @@ are tracked.
 
 Navigate to **Assignments** under Schoolwork.
 
+To upload a weekly plan, choose **Import assignments** and select a `.txt`, `.md`,
+`.json`, `.csv`, `.tsv`, `.docx`, `.pdf`, or `.xlsx` file (up to 10 MiB). Excel imports keep all worksheets,
+date headers, merged headers, and weekday grid positions. Use real date cells
+where possible; review the inferred due dates, subjects, and students before
+confirming. Hidden sheets are included. `.xls` and password-protected Excel files
+are not supported. Formulas are not calculated: recalculate/save first or paste
+results as values, and check any missing/stale-result warnings. If a workbook
+exceeds the [import limits](design/bulk-assignment-import.md#supported-inputs),
+split it into smaller files. AI import requires administrator configuration;
+no assignments are created until you confirm the preview.
+
+JSON/CSV/TSV exports must be saved as UTF-8 (UTF-8 BOM is supported); re-export
+legacy Windows-1252/Latin-1 or UTF-16 files as UTF-8 if you see an encoding error.
+JSON must be valid, with no trailing commas or nonstandard NaN/Infinity values.
+CSV uses commas and TSV uses tabs; quote multiline cells and escape embedded
+quotes by doubling them. Column headers, delimiters, rows, and JSON schema keys
+are retained for AI interpretation. Oversized structured text is rejected rather
+than cut off: split the file when it exceeds the configured AI input limit
+(default 50,000 characters), 10,000 table rows, or 512 columns. Assignment JSON
+exports (`ParsedAssignmentDocument`) also go through AI draft extraction, not
+deterministic import; carefully review all values before confirming.
+
 The demo seeds **10 assignment blueprints** per subject, creating a realistic
 mix across Q1 and Q2:
 

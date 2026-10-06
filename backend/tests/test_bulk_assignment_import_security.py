@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 import pytest
 from docx import Document as DocxDocument
+from openpyxl import Workbook
 from reportlab.pdfgen import canvas
 from sqlalchemy import text
 
@@ -83,6 +84,16 @@ def _build_pdf_bytes(text: str) -> bytes:
     return buffer.getvalue()
 
 
+def _build_xlsx_bytes(text: str | None = 'XLSX math worksheet for Ada') -> bytes:
+    workbook = Workbook()
+    workbook.active.title = 'Monday'
+    if text is not None:
+        workbook.active['B2'] = text
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
 @pytest.fixture
 def _mock_assignment_ai(monkeypatch):
     _FakeAssignmentAIAsyncClient.requests.clear()
@@ -151,10 +162,31 @@ async def test_bulk_assignment_import_routes_are_mounted(async_client):
             'DOCX math worksheet',
         ),
         ('assignments.pdf', _build_pdf_bytes('PDF math worksheet for Ada'), 'application/pdf', 'PDF math worksheet'),
+        (
+            'assignments.xlsx',
+            _build_xlsx_bytes(),
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Row 2: B2="XLSX math worksheet for Ada"',
+        ),
+        ('assignments.XLSX', _build_xlsx_bytes(), 'application/octet-stream', 'Sheet: "Monday"'),
+        (
+            'assignments.json',
+            b'\xef\xbb\xbf{"schema_version":"1.0","assignments":[{"title":"Math fractions worksheet","student_refs":["Ada"]}]}',
+            'application/json',
+            '"schema_version":"1.0","assignments"',
+        ),
+        (
+            'assignments.csv', b'\xef\xbb\xbfSubject,Title\r\nMath,"Read, then explain\r\nin detail"\r\n',
+            'application/vnd.ms-excel', 'Subject,Title\r\nMath,"Read, then explain\r\nin detail"',
+        ),
+        (
+            'assignments.tsv', b'Subject\tTitle\nMath\tFractions worksheet\n',
+            'application/octet-stream', 'Subject\tTitle\nMath\tFractions worksheet',
+        ),
     ],
-    ids=['txt', 'markdown', 'docx', 'pdf'],
+    ids=['txt', 'markdown', 'docx', 'pdf', 'xlsx', 'xlsx-generic-mime', 'json', 'csv', 'tsv'],
 )
-async def test_upload_extracts_supported_txt_md_docx_and_pdf(
+async def test_upload_extracts_supported_documents(
     authorized_client, _mock_assignment_ai, filename, content, content_type, expected_text
 ):
     await _seed_subject_and_student(authorized_client)
@@ -165,6 +197,66 @@ async def test_upload_extracts_supported_txt_md_docx_and_pdf(
     request_payload = _FakeAssignmentAIAsyncClient.requests[-1]['json']
     assert expected_text in request_payload['messages'][1]['content']
     assert request_payload['tools'][0]['function']['name'] == 'create_assignment_import'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ('filename', 'content', 'content_type', 'error'),
+    [
+        ('plan.json', b'{"assignments": [}', 'application/json', 'Malformed JSON'),
+        ('plan.csv', b'Title\n"unclosed', 'text/csv', 'Malformed CSV/TSV'),
+        ('plan.tsv', b'Title\n\x00binary', 'text/plain', 'binary/control'),
+        ('plan.csv', b'Title\nCaf\xe9', 'application/vnd.ms-excel', 'Unsupported text encoding'),
+        ('plan.json', b'["' + b'x' * 50_000 + b'"]', 'application/octet-stream', 'character limit'),
+        ('plan.csv', b'x' * 50_001, 'text/csv', 'character limit'),
+        ('plan.tsv', b'x' * 50_001, 'text/tab-separated-values', 'character limit'),
+        ('plan.exe', b'{"title":"Math"}', 'application/json', 'Unsupported document type'),
+    ],
+    ids=['broken-json', 'broken-csv', 'binary-tsv', 'csv-latin1', 'json-limit', 'csv-limit', 'tsv-limit', 'unsupported-suffix'],
+)
+async def test_invalid_structured_upload_returns_400_without_ai(
+    authorized_client, _mock_assignment_ai, filename, content, content_type, error,
+):
+    response = await _create_import(authorized_client, filename=filename, content=content, content_type=content_type)
+    assert response.status_code == 400, response.text
+    assert error in response.json()['detail']
+    assert not _FakeAssignmentAIAsyncClient.requests
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ('filename', 'payload', 'mime', 'expected_error'),
+    [
+        ('plan.xlsx', b'broken zip', 'application/zip', 'Unable to read Excel workbook'),
+        ('plan.xlsx', _build_xlsx_bytes(None), 'application/zip', 'empty or contains no readable'),
+        ('plan.xlsx', _build_xlsx_bytes(), 'text/plain', 'MIME type'),
+        ('plan.xls', b'legacy', 'application/vnd.ms-excel', 'Unsupported spreadsheet format'),
+        ('plan.xlsx', b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1encrypted', 'application/zip', 'Password-protected'),
+    ],
+)
+async def test_invalid_spreadsheet_returns_user_facing_400_without_ai(
+    authorized_client, _mock_assignment_ai, filename, payload, mime, expected_error,
+):
+    response = await _create_import(
+        authorized_client, filename=filename, content=payload, content_type=mime,
+    )
+    assert response.status_code == 400, response.text
+    assert expected_error in response.json()['detail']
+    assert not _FakeAssignmentAIAsyncClient.requests
+
+
+@pytest.mark.asyncio
+async def test_excel_formula_warnings_returned_in_draft(authorized_client, _mock_assignment_ai):
+    workbook = Workbook()
+    workbook.active['A1'] = '=1+2'
+    buffer = BytesIO()
+    workbook.save(buffer)
+    response = await _create_import(
+        authorized_client, filename='plan.xlsx', content=buffer.getvalue(), content_type='application/zip',
+    )
+    assert response.status_code == 201, response.text
+    assert any('no cached value' in warning for warning in response.json()['warnings'])
+    assert '[formula; cached value unavailable' in _FakeAssignmentAIAsyncClient.requests[-1]['json']['messages'][1]['content']
 
 
 @pytest.mark.asyncio
