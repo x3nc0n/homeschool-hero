@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-10-06T10:16:18-05:00 — Bulk assignment import frontend aligns to Ray's backend router shape: import sessions return `revision` (not `client_revision`) and item status is `ready | needs_clarification | invalid`; 503 AI-disabled responses use top-level `code: ai_import_unavailable`. Date-only UI inputs should be sent to the import PATCH/defaults contract as midnight UTC datetime strings for `due_date`, while `recurrence_end_date` remains a date.
+
 (See history-archive.md for earlier entries prior to 2026-06-09)
 
 - 2026-07-10T21:01:47Z — **Android sr-only file input gotcha:** Android Chrome / WebView silently ignores `display:none` file `<input>`s (Tailwind `hidden`), so "Choose file" and "Use camera" buttons do nothing on Android when implemented with `<Label htmlFor>` + `<Input className="hidden">`. The fix: render bare `<input>` elements with `className="sr-only"` (visible to the DOM / accessible but visually hidden), attach refs (`fileInputRef`, `cameraInputRef`), and trigger them with `onClick={() => ref.current?.click()}` on plain `<Button>` elements. This pattern is now canonical for all file/camera inputs in this codebase.

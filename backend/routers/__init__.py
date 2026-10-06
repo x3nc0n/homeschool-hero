@@ -4,6 +4,7 @@ from backend.routers.audit import router as audit_router
 from backend.routers.auth import router as auth_router
 from backend.routers.admin import router as admin_router
 from backend.routers.backups import router as backups_router
+from backend.routers.bulk_assignment_import import router as bulk_assignment_import_router
 from backend.routers.calendar import router as calendar_router
 from backend.routers.compliance import router as compliance_router
 from backend.routers.compliance_reports import router as compliance_reports_router
@@ -40,6 +41,7 @@ __all__ = [
     'audit_router',
     'auth_router',
     'backups_router',
+    'bulk_assignment_import_router',
     'calendar_router',
     'compliance_router',
     'compliance_reports_router',

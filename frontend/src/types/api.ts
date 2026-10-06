@@ -439,6 +439,117 @@ export interface AssignmentUpsertPayload {
   targets?: AssignmentTargetInput[]
 }
 
+export type AssignmentImportSessionStatus = 'draft' | 'needs_clarification' | 'ready' | 'confirmed' | 'expired' | 'failed'
+export type AssignmentImportItemStatus = 'ready' | 'needs_clarification' | 'invalid'
+export type AssignmentImportQuestionField =
+  | 'title'
+  | 'subject_id'
+  | 'student_ids'
+  | 'targets'
+  | 'grading_period_id'
+  | 'lesson_plan_id'
+  | 'due_date'
+  | 'category'
+  | 'max_score'
+  | 'weight'
+  | 'recurrence'
+  | 'recurrence_end_date'
+
+export interface AssignmentImportSummary {
+  total: number
+  ready: number
+  needs_clarification: number
+  invalid: number
+}
+
+export interface AssignmentImportChoice {
+  id: number | string
+  label: string
+}
+
+export interface AssignmentImportQuestion {
+  id: string
+  field: AssignmentImportQuestionField | string
+  assignment_indexes: number[]
+  message: string
+  choices: AssignmentImportChoice[]
+  allow_apply_to_all: boolean
+}
+
+export interface AssignmentImportItem {
+  client_item_id: string
+  title?: string | null
+  description?: string | null
+  due_date?: string | null
+  status?: AssignmentImportItemStatus
+  category: AssignmentCategory
+  subject_id?: number | null
+  grading_period_id?: number | null
+  weight: number
+  max_score: number
+  recurrence: AssignmentRecurrence
+  recurrence_end_date?: string | null
+  rubric_description?: string | null
+  lesson_plan_id?: number | null
+  targets: AssignmentTargetInput[]
+  answer_key?: AnswerKeyUpsertPayload | null
+  source_excerpt?: string | null
+  confidence?: number | null
+  validation_errors?: string[]
+  errors?: string[]
+  missing_fields?: string[]
+  ambiguous_fields?: string[]
+  notes?: string[]
+}
+
+export interface AssignmentImportDefaults {
+  subject_id?: number
+  student_ids?: number[]
+  grading_period_id?: number
+  category?: AssignmentCategory
+  max_score?: number
+  weight?: number
+  due_date?: string
+}
+
+export interface AssignmentImportAnswer {
+  question_id: string
+  value: number | string | Array<number | string> | null
+  apply_to_assignment_indexes: number[]
+}
+
+export interface AssignmentImportPatchPayload {
+  answers?: AssignmentImportAnswer[]
+  items?: AssignmentImportItem[]
+}
+
+export interface AssignmentImportSession {
+  id: number
+  status: AssignmentImportSessionStatus
+  source_filename: string
+  warnings: string[]
+  summary: AssignmentImportSummary
+  questions: AssignmentImportQuestion[]
+  items: AssignmentImportItem[]
+  revision: number
+  source_content_type?: string
+  source_size_bytes?: number
+  expires_at?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AssignmentImportConfirmPayload {
+  client_revision?: number
+  item_ids: string[]
+}
+
+export interface AssignmentImportConfirmResponse {
+  created_assignment_ids: number[]
+  skipped_item_ids: string[]
+  assignment_count: number
+}
+
 export interface SubmissionVersion {
   id: number
   assignment_id: number
