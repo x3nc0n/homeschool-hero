@@ -39,7 +39,7 @@ from backend.schemas.bulk_assignment_import import (
     ParsedAssignmentDocument,
 )
 from backend.services.cache import invalidate_gradebook_cache
-from backend.services.curriculum_ai_import import AIImportError, AIImportUnavailable, AICurriculumImportService, ExtractedSource
+from backend.services.curriculum_ai_import import AIImportError, AICurriculumImportService, ExtractedSource
 from backend.validation import sanitize_filename
 
 logger = logging.getLogger(__name__)

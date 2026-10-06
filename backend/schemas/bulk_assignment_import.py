@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.models.assignment import AssignmentCategory, AssignmentRecurrence, AssignmentTargetStatus
 from backend.models.bulk_assignment_import import BulkAssignmentImportStatus
-from backend.schemas.assignments import AnswerKeyQuestion, AssignmentTargetWrite
+from backend.schemas.assignments import AnswerKeyQuestion
 from backend.validation import normalize_optional_text, normalize_text
 
 
