@@ -439,7 +439,8 @@ export interface AssignmentUpsertPayload {
   targets?: AssignmentTargetInput[]
 }
 
-export type AssignmentImportSessionStatus = 'draft' | 'needs_clarification' | 'ready' | 'confirmed' | 'expired' | 'failed'
+export type AssignmentImportSessionStatus = 'draft' | 'processing' | 'needs_clarification' | 'ready' | 'confirmed' | 'expired' | 'failed'
+export type AssignmentImportParseMethod = 'structured_json' | 'ai'
 export type AssignmentImportItemStatus = 'ready' | 'needs_clarification' | 'invalid'
 export type AssignmentImportQuestionField =
   | 'title'
@@ -528,6 +529,8 @@ export interface AssignmentImportSession {
   status: AssignmentImportSessionStatus
   source_filename: string
   warnings: string[]
+  parse_method?: AssignmentImportParseMethod | null
+  error_message?: string | null
   summary: AssignmentImportSummary
   questions: AssignmentImportQuestion[]
   items: AssignmentImportItem[]

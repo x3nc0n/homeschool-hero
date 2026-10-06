@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import JSONResponse
@@ -26,17 +26,15 @@ from backend.services.audit import log_event
 from backend.services.authorization import Capability, require_capabilities
 from backend.services.bulk_assignment_import import (
     BulkAssignmentImportError,
+    bulk_assignment_processing_stale_minutes,
     get_bulk_assignment_import_service,
+    schedule_assignment_import_processing,
 )
 from backend.services.curriculum_ai_import import AIImportError, AIImportUnavailable
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/assignment-import-sessions', tags=['assignment-import-sessions'])
 AI_IMPORT_UNAVAILABLE_DETAIL = 'AI assignment import is unavailable'
-
-
-def _service_unavailable_response(detail: str, code: str) -> JSONResponse:
-    return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={'detail': detail, 'code': code})
 
 
 async def _get_session_or_404(db: AsyncSession, auth: AuthSession, session_id: int) -> BulkAssignmentImportSession:
@@ -60,6 +58,23 @@ async def _get_session_or_404(db: AsyncSession, auth: AuthSession, session_id: i
         session.status = BulkAssignmentImportStatus.expired
         await db.commit()
         raise HTTPException(status_code=status.HTTP_410_GONE, detail='Assignment import session expired')
+    updated_at = session.updated_at
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
+    if (
+        session.status == BulkAssignmentImportStatus.processing
+        and updated_at <= datetime.now(UTC) - timedelta(minutes=bulk_assignment_processing_stale_minutes())
+    ):
+        payload = dict(session.draft_payload or {})
+        payload['error_message'] = 'Assignment import processing did not finish. Please retry the upload.'
+        payload.setdefault('parse_method', 'ai')
+        payload.setdefault('items', [])
+        payload.setdefault('summary', {'total': 0, 'ready': 0, 'needs_clarification': 0, 'invalid': 0})
+        session.draft_payload = payload
+        session.status = BulkAssignmentImportStatus.failed
+        session.revision += 1
+        await db.commit()
+        await db.refresh(session)
     return session
 
 
@@ -85,7 +100,7 @@ def _parse_defaults(raw_defaults: str | None) -> BulkImportDefaults | None:
         'Malformed, empty, mismatched-type, or resource-limit-exceeding workbooks return 400. '
         'JSON/CSV/TSV require UTF-8 (BOM accepted); schema keys, headers, delimiters and rows are preserved. '
         'Malformed JSON/quoted tables and oversized structured text return 400 without AI invocation. '
-        'JSON, including assignment document exports, uses AI extraction rather than direct persistence. '
+        'JSON matching the assignment import document shape is parsed deterministically without AI; other JSON falls back to AI. '
         'No assignments are created until the draft is confirmed.'
     ),
 )
@@ -97,19 +112,35 @@ async def create_assignment_import_session(
 ) -> dict:
     service = get_bulk_assignment_import_service()
     try:
+        parsed_defaults = _parse_defaults(defaults)
         extracted = await service.extract_upload(file)
-        parsed = await service.parse_with_ai(extracted.extracted)
-        session = await service.create_draft_session(
+        await service.validate_defaults(db, family_id=auth.family_id, defaults=parsed_defaults)
+        parsed = service.parse_structured_json(extracted.extracted)
+        if parsed is not None:
+            session = await service.create_draft_session(
+                db,
+                family_id=auth.family_id,
+                user_id=auth.user_id,
+                source=extracted,
+                parsed=parsed,
+                defaults=parsed_defaults,
+                parse_method='structured_json',
+            )
+            return service.read_session_payload(session, include_items=False)
+        service.ensure_ai_configured()
+        session = await service.create_processing_session(
             db,
             family_id=auth.family_id,
             user_id=auth.user_id,
             source=extracted,
-            parsed=parsed,
-            defaults=_parse_defaults(defaults),
         )
+        schedule_assignment_import_processing(session.id, extracted, parsed_defaults)
     except AIImportUnavailable:
         logger.exception('AI assignment import is unavailable.')
-        return _service_unavailable_response(AI_IMPORT_UNAVAILABLE_DETAIL, 'ai_import_unavailable')
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={'detail': AI_IMPORT_UNAVAILABLE_DETAIL, 'code': 'ai_import_unavailable'},
+        )
     except (AIImportError, BulkAssignmentImportError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return service.read_session_payload(session, include_items=False)
@@ -133,7 +164,12 @@ async def patch_assignment_import_session(
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='update assignment import draft')),
 ) -> dict:
     session = await _get_session_or_404(db, auth, session_id)
-    if session.status in {BulkAssignmentImportStatus.confirmed, BulkAssignmentImportStatus.expired}:
+    if session.status in {
+        BulkAssignmentImportStatus.processing,
+        BulkAssignmentImportStatus.failed,
+        BulkAssignmentImportStatus.confirmed,
+        BulkAssignmentImportStatus.expired,
+    }:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Cannot update a {session.status.value} import session')
     draft_payload = dict(session.draft_payload or {})
     items = [BulkAssignmentImportItem.model_validate(item) for item in draft_payload.get('items', [])]
@@ -189,6 +225,8 @@ async def confirm_assignment_import_session(
     session = await _get_session_or_404(db, auth, session_id)
     if session.status == BulkAssignmentImportStatus.confirmed:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Assignment import session already confirmed')
+    if session.status != BulkAssignmentImportStatus.ready:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Cannot confirm a {session.status.value} import session')
     if payload.client_revision is not None and payload.client_revision != session.revision:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Assignment import session revision is stale')
     service = get_bulk_assignment_import_service()

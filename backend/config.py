@@ -101,6 +101,7 @@ class Settings(BaseSettings):
     bulk_assignment_import_max_bytes: int = Field(10 * 1024 * 1024, alias='BULK_ASSIGNMENT_IMPORT_MAX_BYTES')
     bulk_assignment_import_session_ttl_hours: int = Field(24, alias='BULK_ASSIGNMENT_IMPORT_SESSION_TTL_HOURS')
     bulk_assignment_import_max_items: int = Field(200, alias='BULK_ASSIGNMENT_IMPORT_MAX_ITEMS')
+    bulk_assignment_import_processing_stale_minutes: int = Field(30, alias='BULK_ASSIGNMENT_IMPORT_PROCESSING_STALE_MINUTES')
     online_curriculum_enabled: bool = Field(True, alias='ONLINE_CURRICULUM_ENABLED')
     grading_request_timeout_seconds: float = Field(120.0, alias='GRADING_REQUEST_TIMEOUT_SECONDS')
     ocr_request_timeout_seconds: float = Field(120.0, alias='OCR_REQUEST_TIMEOUT_SECONDS')

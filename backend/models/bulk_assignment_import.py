@@ -13,6 +13,7 @@ from backend.models.base import Base, TimestampMixin
 
 class BulkAssignmentImportStatus(str, enum.Enum):
     draft = 'draft'
+    processing = 'processing'
     needs_clarification = 'needs_clarification'
     ready = 'ready'
     confirmed = 'confirmed'

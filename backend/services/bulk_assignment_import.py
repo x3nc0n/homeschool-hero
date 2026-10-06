@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
+from backend.database import AsyncSessionLocal
 from backend.models import (
     AnswerKey,
     Assignment,
@@ -42,6 +43,7 @@ from backend.services.assignment_spreadsheet import XLSX_CONTENT_TYPE, extract_a
 from backend.services.assignment_structured_text import STRUCTURED_TEXT_TYPES, extract_assignment_structured_text
 from backend.services.curriculum_ai_import import (
     AIImportError,
+    AIImportUnavailable,
     AICurriculumImportService,
     ExtractedSource,
     inline_json_schema_refs,
@@ -79,6 +81,8 @@ TEXT_TYPES = {'text/plain', 'text/markdown'}
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 DEFAULT_TTL_HOURS = 24
 DEFAULT_MAX_ITEMS = 200
+DEFAULT_PROCESSING_STALE_MINUTES = 30
+_ASSIGNMENT_IMPORT_TASKS: set[asyncio.Task[object]] = set()
 
 
 @dataclass(slots=True)
@@ -106,6 +110,20 @@ def bulk_assignment_ttl_hours() -> int:
 
 def bulk_assignment_max_items() -> int:
     return int(getattr(settings, 'bulk_assignment_import_max_items', DEFAULT_MAX_ITEMS) or DEFAULT_MAX_ITEMS)
+
+
+def bulk_assignment_processing_stale_minutes() -> int:
+    configured = getattr(
+        settings,
+        'bulk_assignment_import_processing_stale_minutes',
+        DEFAULT_PROCESSING_STALE_MINUTES,
+    )
+    return int(DEFAULT_PROCESSING_STALE_MINUTES if configured is None else configured)
+
+
+def _track_task(task: asyncio.Task[object]) -> None:
+    _ASSIGNMENT_IMPORT_TASKS.add(task)
+    task.add_done_callback(_ASSIGNMENT_IMPORT_TASKS.discard)
 
 
 def _normalize_lookup(value: str | None) -> str:
@@ -205,6 +223,31 @@ class BulkAssignmentImportService:
         if len(document.assignments) > max_items:
             document.assignments = document.assignments[:max_items]
         return document
+
+    def parse_structured_json(self, extracted: ExtractedSource) -> ParsedAssignmentDocument | None:
+        if extracted.content_type != 'application/json':
+            return None
+        try:
+            decoded = json.loads(extracted.text)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(decoded, list):
+            payload: Any = {'schema_version': '1.0', 'assignments': decoded}
+        elif isinstance(decoded, dict):
+            payload = decoded
+        else:
+            return None
+        try:
+            document = ParsedAssignmentDocument.model_validate(payload)
+        except ValidationError:
+            return None
+        max_items = bulk_assignment_max_items()
+        if len(document.assignments) > max_items:
+            document.assignments = document.assignments[:max_items]
+        return document
+
+    def ensure_ai_configured(self) -> None:
+        self._ai._ensure_configured()
 
     async def _call_ai_parser(self, extracted: ExtractedSource) -> dict[str, Any]:
         if settings.ai_local_only:
@@ -568,6 +611,25 @@ class BulkAssignmentImportService:
         await self._ensure_ids(db, LessonPlan, lesson_plan_ids, family_id, 'Lesson plan not found')
         await self._ensure_ids(db, Student, student_ids, family_id, 'Student not found')
 
+    async def validate_defaults(self, db: AsyncSession, *, family_id: int, defaults: BulkImportDefaults | None) -> None:
+        if defaults is None:
+            return
+        await self._ensure_ids(
+            db,
+            Subject,
+            {defaults.subject_id} if defaults.subject_id is not None else set(),
+            family_id,
+            'Subject not found',
+        )
+        await self._ensure_ids(
+            db,
+            GradingPeriod,
+            {defaults.grading_period_id} if defaults.grading_period_id is not None else set(),
+            family_id,
+            'Grading period not found',
+        )
+        await self._ensure_ids(db, Student, set(defaults.student_ids), family_id, 'Student not found')
+
     async def _ensure_ids(self, db: AsyncSession, model: type[Any], ids: set[int], family_id: int, detail: str) -> None:
         if not ids:
             return
@@ -652,6 +714,8 @@ class BulkAssignmentImportService:
             'source_content_type': session.source_content_type,
             'source_size_bytes': session.source_size_bytes,
             'warnings': list(session.warnings or []),
+            'parse_method': payload.get('parse_method'),
+            'error_message': payload.get('error_message'),
             'summary': payload.get('summary') or self._summary([BulkAssignmentImportItem.model_validate(item) for item in items]),
             'questions': list(session.questions or []),
             'items': items if include_items else [],
@@ -670,6 +734,7 @@ class BulkAssignmentImportService:
         source: ExtractedAssignmentSource,
         parsed: ParsedAssignmentDocument,
         defaults: BulkImportDefaults | None,
+        parse_method: str = 'ai',
     ) -> BulkAssignmentImportSession:
         items, questions, summary, status_value = await self.build_session_payload(
             db,
@@ -686,7 +751,12 @@ class BulkAssignmentImportService:
             source_size_bytes=source.size_bytes,
             extracted_text_hash=source.text_hash,
             warnings=list(source.extracted.warnings or []),
-            draft_payload={'schema_version': parsed.schema_version, 'items': items, 'summary': summary},
+            draft_payload={
+                'schema_version': parsed.schema_version,
+                'parse_method': parse_method,
+                'items': items,
+                'summary': summary,
+            },
             questions=questions,
             expires_at=datetime.now(UTC) + timedelta(hours=bulk_assignment_ttl_hours()),
         )
@@ -694,6 +764,81 @@ class BulkAssignmentImportService:
         await db.commit()
         await db.refresh(session)
         return session
+
+    async def create_processing_session(
+        self,
+        db: AsyncSession,
+        *,
+        family_id: int,
+        user_id: int,
+        source: ExtractedAssignmentSource,
+    ) -> BulkAssignmentImportSession:
+        session = BulkAssignmentImportSession(
+            family_id=family_id,
+            created_by_user_id=user_id,
+            status=BulkAssignmentImportStatus.processing,
+            source_filename=source.filename,
+            source_content_type=source.content_type,
+            source_size_bytes=source.size_bytes,
+            extracted_text_hash=source.text_hash,
+            warnings=list(source.extracted.warnings or []),
+            draft_payload={
+                'schema_version': '1.0',
+                'parse_method': 'ai',
+                'summary': {'total': 0, 'ready': 0, 'needs_clarification': 0, 'invalid': 0},
+                'items': [],
+            },
+            questions=[],
+            expires_at=datetime.now(UTC) + timedelta(hours=bulk_assignment_ttl_hours()),
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        return session
+
+    async def complete_processing_session(
+        self,
+        db: AsyncSession,
+        *,
+        session_id: int,
+        source: ExtractedAssignmentSource,
+        defaults: BulkImportDefaults | None,
+    ) -> None:
+        session = await db.get(BulkAssignmentImportSession, session_id)
+        if session is None or session.status != BulkAssignmentImportStatus.processing:
+            return
+        parsed = await self.parse_with_ai(source.extracted)
+        items, questions, summary, status_value = await self.build_session_payload(
+            db,
+            family_id=session.family_id,
+            parsed=parsed,
+            defaults=defaults,
+        )
+        session.status = status_value
+        session.draft_payload = {
+            'schema_version': parsed.schema_version,
+            'parse_method': 'ai',
+            'items': items,
+            'summary': summary,
+        }
+        session.questions = questions
+        session.revision += 1
+        await db.commit()
+
+    async def fail_processing_session(self, db: AsyncSession, *, session_id: int, message: str) -> None:
+        session = await db.get(BulkAssignmentImportSession, session_id)
+        if session is None or session.status != BulkAssignmentImportStatus.processing:
+            return
+        payload = dict(session.draft_payload or {})
+        payload['error_message'] = message
+        payload.setdefault('parse_method', 'ai')
+        payload.setdefault('items', [])
+        payload.setdefault('summary', {'total': 0, 'ready': 0, 'needs_clarification': 0, 'invalid': 0})
+        session.draft_payload = payload
+        session.questions = []
+        session.status = BulkAssignmentImportStatus.failed
+        session.revision += 1
+        await db.commit()
 
 
 _service: BulkAssignmentImportService | None = None
@@ -704,3 +849,36 @@ def get_bulk_assignment_import_service() -> BulkAssignmentImportService:
     if _service is None:
         _service = BulkAssignmentImportService()
     return _service
+
+
+def _user_facing_processing_error(exc: Exception) -> str:
+    if isinstance(exc, AIImportUnavailable):
+        return 'AI assignment import is unavailable. Check AI settings and retry.'
+    if isinstance(exc, AIImportError):
+        return 'AI could not parse this assignment file. Review the file and retry.'
+    if isinstance(exc, HTTPException):
+        return 'Assignment import validation failed. Review the file/defaults and retry.'
+    return 'Assignment import failed. Please retry or use a smaller, clearer file.'
+
+
+async def _run_assignment_import_processing(
+    session_id: int,
+    source: ExtractedAssignmentSource,
+    defaults: BulkImportDefaults | None,
+) -> None:
+    service = get_bulk_assignment_import_service()
+    try:
+        async with AsyncSessionLocal() as db:
+            await service.complete_processing_session(db, session_id=session_id, source=source, defaults=defaults)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('Assignment import session %s failed during background processing.', session_id)
+        async with AsyncSessionLocal() as db:
+            await service.fail_processing_session(db, session_id=session_id, message=_user_facing_processing_error(exc))
+
+
+def schedule_assignment_import_processing(
+    session_id: int,
+    source: ExtractedAssignmentSource,
+    defaults: BulkImportDefaults | None,
+) -> None:
+    _track_task(asyncio.create_task(_run_assignment_import_processing(session_id, source, defaults)))
