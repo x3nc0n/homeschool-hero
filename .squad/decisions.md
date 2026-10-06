@@ -1,111 +1,3 @@
-# Release Decision: v0.15.0 — UI Overhaul (PR #305)
-
-**Date:** 2026-07-10T21:01:47Z  
-**Author:** Coordinator  
-**Status:** COMPLETE
-
-## Summary
-
-PR #305 "UI Overhaul via Impeccable" was merged to main via squash commit (32dbd7c). Version v0.15.0 was tagged and released.
-
-## Decisions
-
-- Merge strategy: squash commit (clean history, single changeset)
-- Release promotion: v0.15.0 tagged on main; GitHub Release created; GHCR image published (ghcr.io/x3nc0n/homeschool-hero:v0.15.0 and :latest)
-- Dependabot PRs: 14 PRs flagged for auto-merge (squash, delete-branch); #267 rebased to start the cascade
-- Skipped for later: #268 (Tailwind 3→4), #288 (action-gh-release), #289 (checkout 6→7) — all have failing tests and need dedicated migrations
-
-## Rationale
-
-- Squash merge keeps main clean while preserving PR history for reference
-- Auto-merge on safe dependabot bumps reduces manual overhead
-- Blocking high-risk migrations (Tailwind, action versions) until they can be properly scoped and tested
-
----
-
-# Decision: Skip Tailwind CSS 3→4 Migration (PR #268)
-
-**Date:** 2026-07-10T21:01:47Z  
-**Author:** Coordinator  
-**Status:** PENDING MIGRATION
-
-## Decision
-
-PR #268 (tailwindcss 3→4) is **flagged but not merged**. The upgrade is a breaking change and introduces test failures that require a dedicated migration effort.
-
-## Rationale
-
-- Tailwind 4 is a major version with breaking changes to config and class names
-- Current PR #268 has failing tests and is not production-ready
-- Scope creep: bundling with v0.15.0 release would delay other dependency bumps
-- Dedicated migration PR will ensure thorough refactoring, testing, and documentation
-
-## Next Steps
-
-- Create a new PR for Tailwind 4 migration targeting post-v0.15.0
-- Coordinate with Venkman on component class name changes
-- Add migration guide to squad decisions for future reference
-
----
-
-# Decision: Android File Input Pattern — sr-only over display:none
-
-**Date:** 2026-07-10T21:01:47Z  
-**Author:** Venkman  
-**Context:** PR #298 reconciliation onto main after PR #305 merge
-
-## Decision
-
-All file/camera <input> elements in the frontend **must** use className="sr-only" (not display:none / Tailwind hidden) and be triggered via ef.current?.click() from a plain <Button onClick>.
-
-The old pattern of <Label htmlFor="..."><Input className="hidden" .../><Button tabIndex={-1}>...</Button></Label> is **deprecated** for file inputs.
-
-## Rationale
-
-Android Chrome and WebView silently ignore display:none file inputs — the OS file/camera picker never opens. sr-only keeps the input reachable in the DOM while remaining visually hidden, making it work on Android without breaking other platforms.
-
-## Scope
-
-rontend/src/components/features/FileUpload.tsx is the reference implementation. Apply this pattern to any future file-input component in the project.
-
-## Related
-
-- PR #296 / PR #298 — original Android upload bug report and fix
-- PR #305 — UI overhaul that introduced step-lock; created the merge conflict
-- Skill: .squad/skills/android-file-input/SKILL.md
-
----
-
-# Decision: PR #298 Reconciliation — Android Fix onto Overhaul
-
-**Date:** 2026-07-10T21:01:47Z  
-**Author:** Venkman  
-**PR:** #298, #305
-
-## Context
-
-PR #298 ("Fix assignment turn-in file upload & camera on Android") was opened against the original FileUpload.tsx, but PR #305 (UI overhaul) merged a refactored FileUpload.tsx first. A merge conflict resulted, requiring reconciliation.
-
-## Decision
-
-**Resolve by combining both changes**: main's step-lock + canvas security logic + #298's Android sr-only inputs + ref.current.click() buttons. The Label/hidden-Input pattern is dropped in favor of sr-only + direct button click handling.
-
-## Rationale
-
-- Both PRs improve FileUpload.tsx: #305 adds step progression logic and security hardening; #298 fixes Android file picker
-- Combining ensures users get both security improvements and platform compatibility
-- sr-only pattern is more robust than hidden for input accessibility across all platforms
-
-## Result
-
-- Force-push to squad/296-android-upload with combined changes
-- Build + lint passed
-- Auto-merge enabled; PR merged into main
-
----
-
-
-
 # Design Decision: Issue #411 — Headless Auth for AI Curriculum Import & Grading Upload
 
 **Author:** Egon (Lead)  
@@ -151,7 +43,7 @@ PR #298 ("Fix assignment turn-in file upload & camera on Android") was opened ag
 **New endpoint:**
 ```
 POST /api/auth/api-tokens
-Authorization: Bearer <session> or Cookie session
+Authorization: ****** or Cookie session
 ```
 
 **Authorization to issue:** Caller must have `manage_security` capability (family owner only) AND the target `family_id` must match the caller's family. This ensures only the family owner can mint tokens for their own family.
@@ -361,7 +253,7 @@ Rationale: This is 100% backend Python work (auth service, JWT signing, DB migra
 
 Branch: `squad/411-headless-api-tokens` (from `dev`)
 
-
+---
 
 # Security Amendment: Issue #411 — API Token Design Gaps
 
@@ -541,3 +433,56 @@ All five design gaps are resolved. This amendment plus the original decision doc
 
 ---
 
+# Design Decision: Bulk Assignment Import Workflow
+
+**Date:** 2026-10-06T10:13:08-05:00  
+**Author:** Egon  
+**Status:** COMPLETE  
+**Outcome:** Design document finalised in docs/design/bulk-assignment-import.md
+
+## Summary
+
+Implemented a safe, preview-first bulk assignment import workflow with backend models, API endpoints, frontend wizard, and comprehensive security testing. Upload `.txt`, `.md`, `.docx`, or `.pdf`; extract text; parse with AI into structured drafts; resolve references; clarify missing fields; preview/edit; and confirm transactional creation.
+
+## Key Implementation Details
+
+- **Backend:** DBsession persistence via `BulkAssignmentImportSession` model; draft rows stored separately; AI extraction reuses existing curriculum import stack.
+- **Frontend:** Embedded Assignments-page wizard with sr-only file input (Android-safe) + drag/drop; upload defaults reduce clarifications; row skipping preserved on confirm.
+- **Security:** All endpoints require `Capability.manage_curriculum`; LLM never supplies trusted IDs; RBAC enforced; 20 security tests passed.
+- **API Deviations:** Create-draft returns metadata (`source_content_type`, `source_size_bytes`, `revision`, `expires_at`, `created_at`, `updated_at`) plus empty items; GET endpoint returns full editable list; AI-unavailable is 503 with specific error code.
+
+---
+
+# Ray Backend Implementation Notes — Bulk Assignment Import
+
+**Date:** 2026-10-06T10:16:18.437-05:00  
+**Author:** Ray  
+**Status:** COMPLETE  
+**Outcome:** 46 tests passed
+
+## Deviations / Contract Clarifications
+
+- Create draft returns the design response plus persisted metadata fields needed by the frontend confirm flow: `source_content_type`, `source_size_bytes`, `revision`, `expires_at`, `created_at`, and `updated_at`.
+- Create draft intentionally returns `items: []`; `GET /api/assignment-import-sessions/{session_id}` returns the full editable item list. This keeps upload responses smaller and matches the design note that create may omit items.
+- AI-unavailable response is `503` with `{"detail":"AI assignment import is unavailable","code":"ai_import_unavailable"}`.
+
+The authoritative design doc API section was updated to reflect these clarifications.
+
+---
+
+# Venkman Frontend Implementation — Bulk Assignment Import
+
+**Date:** 2026-10-06T10:16:18-05:00  
+**Author:** Venkman  
+**Status:** COMPLETE  
+**Outcome:** Build/lint/test pass
+
+## Implementation Decisions
+
+- Implemented the frontend as an embedded Assignments-page wizard instead of adding a new route, keeping assignment creation context in one place.
+- Used Android-safe native file input (`sr-only` + ref-click) for the picker, plus drag/drop for desktop.
+- Added optional upload defaults for subject, students, grading period, and due date so parents can reduce clarification questions without changing the backend contract.
+- Treat row removal as "skip on confirm" by unselecting items, preserving backend draft rows and avoiding an undocumented delete-row patch contract.
+- Display AI-unavailable 503 responses as an admin-configuration message and keep the regular assignment form available.
+
+---

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { FileText, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
 import type {
@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingState } from '@/components/common/LoadingState'
 import { ErrorState } from '@/components/common/ErrorState'
+import { BulkAssignmentImportWizard } from '@/components/features/BulkAssignmentImportWizard'
 
 const assignmentStatuses: AssignmentStatus[] = ['pending', 'complete', 'graded']
 const targetStatuses: AssignmentTargetStatus[] = ['assigned', 'submitted', 'graded', 'excused']
@@ -104,6 +105,7 @@ export function AssignmentsPage() {
   const [form, setForm] = useState<AssignmentForm>(emptyForm())
   const [targets, setTargets] = useState<Record<string, TargetDraft>>({})
   const [answerKeyQuestions, setAnswerKeyQuestions] = useState<AnswerKeyQuestion[]>([])
+  const [showBulkImport, setShowBulkImport] = useState(false)
   const [filters, setFilters] = useState({
     q: searchParams.get('q') || searchParams.get('search') || '',
     category: 'all',
@@ -277,6 +279,35 @@ export function AssignmentsPage() {
 
   return (
     <div className="space-y-4">
+      {canManageCurriculum ? (
+        <>
+          {showBulkImport ? (
+            <BulkAssignmentImportWizard
+              subjects={subjects}
+              students={students}
+              gradingPeriods={gradingPeriods}
+              onClose={() => setShowBulkImport(false)}
+              onImported={() => void load()}
+            />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Bulk import assignments</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Upload a lesson plan or assignment list and let AI draft rows you can clarify, edit, and confirm.
+                </p>
+                <Button type="button" variant="secondary" onClick={() => setShowBulkImport(true)}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Import assignments
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      ) : null}
+
       {canManageCurriculum ? (
         <Card>
           <CardHeader>

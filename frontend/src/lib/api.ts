@@ -17,6 +17,11 @@ import type {
   ApiErrorPayload,
   Assignment,
   AssignmentFilters,
+  AssignmentImportConfirmPayload,
+  AssignmentImportConfirmResponse,
+  AssignmentImportDefaults,
+  AssignmentImportPatchPayload,
+  AssignmentImportSession,
   AssignmentListResponse,
   AnswerKey,
   AnswerKeyUpsertPayload,
@@ -145,11 +150,13 @@ export const AUTH_EXPIRED_EVENT = 'homeschool:auth-expired'
 
 export class ApiError extends Error {
   status: number
+  code?: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
 }
 
@@ -203,7 +210,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`
-    let payload: { detail?: string; message?: string; error?: { code?: string; details?: { maintenance?: unknown } } } | null = null
+    let payload: { detail?: string; message?: string; code?: string; error?: { code?: string; details?: { maintenance?: unknown } } } | null = null
     try {
       payload = await parseResponse<{ detail?: string; message?: string; error?: { code?: string; details?: { maintenance?: unknown } } }>(response)
       message = payload?.detail || payload?.message || message
@@ -224,7 +231,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         }),
       )
     }
-    throw new ApiError(response.status, message)
+    throw new ApiError(response.status, message, payload?.error?.code ?? payload?.code)
   }
 
   return parseResponse<T>(response)
@@ -1043,6 +1050,36 @@ export const api = {
 
   createAssignment(payload: AssignmentUpsertPayload) {
     return request<Assignment>('/assignments', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  createAssignmentImportSession(file: File, defaults?: AssignmentImportDefaults) {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (defaults && Object.keys(defaults).length) {
+      formData.append('defaults', JSON.stringify(defaults))
+    }
+    return request<AssignmentImportSession>('/assignment-import-sessions', {
+      method: 'POST',
+      body: formData,
+    })
+  },
+
+  getAssignmentImportSession(sessionId: number) {
+    return request<AssignmentImportSession>(`/assignment-import-sessions/${sessionId}`)
+  },
+
+  updateAssignmentImportSession(sessionId: number, payload: AssignmentImportPatchPayload) {
+    return request<AssignmentImportSession>(`/assignment-import-sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  confirmAssignmentImportSession(sessionId: number, payload: AssignmentImportConfirmPayload) {
+    return request<AssignmentImportConfirmResponse>(`/assignment-import-sessions/${sessionId}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   },
 
   updateAssignment(id: number, payload: AssignmentUpsertPayload) {

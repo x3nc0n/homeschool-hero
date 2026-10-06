@@ -26,6 +26,7 @@ from backend.routers import (
     audit_router,
     auth_router,
     backups_router,
+    bulk_assignment_import_router,
     compliance_router,
     compliance_reports_router,
     curriculum_router,
@@ -646,6 +647,7 @@ def create_app() -> FastAPI:
     app.include_router(compliance_router, prefix=API_PREFIX)
     app.include_router(compliance_reports_router, prefix=API_PREFIX)
     app.include_router(assignments_router, prefix=API_PREFIX)
+    app.include_router(bulk_assignment_import_router, prefix=API_PREFIX)
     app.include_router(lesson_plans_router, prefix=API_PREFIX)
     app.include_router(submissions_router, prefix=API_PREFIX)
     app.include_router(grades_router, prefix=API_PREFIX)
