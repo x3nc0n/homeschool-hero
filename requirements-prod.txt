@@ -17,6 +17,8 @@ PyJWT==2.14.0
 aiosqlite==0.22.1
 pypdf==6.19.0
 python-docx==1.2.0
+openpyxl==3.1.5
+defusedxml==0.7.1
 pillow==12.3.0
 reportlab==4.5.1
 pytesseract==0.3.13

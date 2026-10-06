@@ -73,9 +73,24 @@ def _parse_defaults(raw_defaults: str | None) -> BulkImportDefaults | None:
     return BulkImportDefaults.model_validate(parsed)
 
 
-@router.post('', response_model=BulkAssignmentImportRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    '',
+    response_model=BulkAssignmentImportRead,
+    status_code=status.HTTP_201_CREATED,
+    summary='Create an AI assignment draft from TXT, Markdown, JSON, CSV, TSV, DOCX, PDF, or XLSX',
+    description=(
+        'Upload a planning document (default 10 MiB maximum). XLSX extraction preserves all worksheet names, '
+        'row/cell coordinates, dates, and merged headers. Formulas are not executed; missing saved results '
+        'are explicitly marked and reported in warnings. Legacy XLS and encrypted workbooks are unsupported. '
+        'Malformed, empty, mismatched-type, or resource-limit-exceeding workbooks return 400. '
+        'JSON/CSV/TSV require UTF-8 (BOM accepted); schema keys, headers, delimiters and rows are preserved. '
+        'Malformed JSON/quoted tables and oversized structured text return 400 without AI invocation. '
+        'JSON, including assignment document exports, uses AI extraction rather than direct persistence. '
+        'No assignments are created until the draft is confirmed.'
+    ),
+)
 async def create_assignment_import_session(
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description='Planning file: .txt, .md, .json, .csv, .tsv, .docx, .pdf, or unencrypted .xlsx (not .xls).'),
     defaults: str | None = Form(default=None),
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='create assignment import draft')),

@@ -1,6 +1,7 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, FileText, Loader2, Sparkles, Trash2, Upload, X } from 'lucide-react'
 import { ApiError, api } from '@/lib/api'
+import { ASSIGNMENT_IMPORT_FILE_TYPES, validateAssignmentImportFile } from '@/lib/assignmentImportFile'
 import type {
   AssignmentCategory,
   AssignmentImportAnswer,
@@ -41,15 +42,6 @@ type ClarificationDraft = {
   applyToAll: boolean
 }
 
-const ACCEPTED_EXTENSIONS = ['.txt', '.md', '.docx', '.pdf']
-const ACCEPTED_MIME_TYPES = [
-  'text/plain',
-  'text/markdown',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/pdf',
-]
-const ACCEPTED_FILE_TYPES = `${ACCEPTED_EXTENSIONS.join(',')},${ACCEPTED_MIME_TYPES.join(',')}`
-const MAX_FILE_BYTES = 10 * 1024 * 1024
 const categories: AssignmentCategory[] = ['homework', 'quiz', 'test', 'project', 'participation', 'extra_credit', 'other']
 const recurrences: AssignmentRecurrence[] = ['none', 'daily', 'weekly']
 
@@ -158,26 +150,17 @@ export function BulkAssignmentImportWizard({
   }, [analyzing])
 
   const selectedFileFeedback = useMemo(() => {
-    if (!file) return 'Choose a TXT, Markdown, Word document, or PDF up to 10 MB.'
+    if (!file) return 'Choose a TXT, Markdown, JSON, CSV, TSV, Word document, PDF, or Excel (.xlsx) workbook up to 10 MB.'
     return `${file.name} • ${formatFileSize(file.size)}`
   }, [file])
 
   const chooseFile = (nextFile: File | undefined) => {
     setError('')
     if (!nextFile) return
-    const lowerName = nextFile.name.toLowerCase()
-    const hasAllowedExtension = ACCEPTED_EXTENSIONS.some((extension) => lowerName.endsWith(extension))
-    const hasAllowedMime = !nextFile.type || ACCEPTED_MIME_TYPES.includes(nextFile.type)
-
-    if (!hasAllowedExtension || !hasAllowedMime) {
+    const validationError = validateAssignmentImportFile(nextFile)
+    if (validationError) {
       setFile(null)
-      setError('Please choose a .txt, .md, .docx, or .pdf file.')
-      return
-    }
-
-    if (nextFile.size > MAX_FILE_BYTES) {
-      setFile(null)
-      setError('That file is larger than 10 MB. Please split the plan or choose a smaller file.')
+      setError(validationError)
       return
     }
 
@@ -442,7 +425,7 @@ export function BulkAssignmentImportWizard({
               <FileText className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
               <p className="text-base font-medium">Drop your assignment plan here</p>
               <p className="mx-auto mt-1 max-w-xl text-sm text-muted-foreground">
-                We accept TXT, Markdown, Word documents, and PDFs. Scanned image-only PDFs may need to be typed or converted first.
+                We accept TXT, Markdown, JSON, CSV, TSV, Word documents, PDFs, and Excel (.xlsx) workbooks, not .xls. Save JSON/CSV/TSV as UTF-8 (BOM supported); headers, rows, and quoted multiline cells are preserved. All formats use AI to draft assignments for review, including assignment JSON exports. All Excel sheets are read; dates and merged headers are preserved. Recalculate and save formulas first. Password-protected workbooks are not supported. Scanned image-only PDFs may need to be typed or converted first.
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 <input
@@ -450,7 +433,7 @@ export function BulkAssignmentImportWizard({
                   id="bulk-assignment-import-file"
                   type="file"
                   className="sr-only"
-                  accept={ACCEPTED_FILE_TYPES}
+                  accept={ASSIGNMENT_IMPORT_FILE_TYPES}
                   onChange={(event) => chooseFile(event.target.files?.[0])}
                 />
                 <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>

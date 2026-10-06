@@ -2,6 +2,10 @@
 
 ## Learnings
 
+- 2026-10-06T17:08:41-05:00 — John Spaid prefers flexible assignment planning uploads: JSON/CSV/TSV now join TXT/MD/DOCX/PDF/XLSX. Backend and picker/drop checks use per-extension MIME compatibility, including generic/empty browser MIME and Excel MIME only for CSV. New structured text is strict UTF-8/BOM with preserved schema/headers/delimiters/quoted multiline rows, bounded characters/nesting/table sizes, and explicit malformed/encoding errors before AI. ParsedAssignmentDocument exports remain AI source rather than a permissive automatic JSON-to-DB path. Prior XLSX work is intact. Combined assignment backend suites: 136 passed; frontend file tests: 7 passed; production build and lint passed (existing chunk-size warning). Long parametrized payload tests need short explicit IDs on Windows to avoid the 32,767-character environment-variable limit.
+
+- 2026-10-06T14:51:39-05:00 — Bulk assignment XLSX extraction uses openpyxl read-only formula/cached-value streams after bounded ZIP/XML preflight. Preserve worksheet names/states, coordinates, ISO dates and merged ranges; bypass curriculum whitespace flattening and reject oversized spreadsheet text instead of truncating date/header context. Formula expressions are never evaluated or sent to AI; missing cached values remain explicit with warnings. All three Python manifests include openpyxl and defusedxml, including Docker's production manifest.
+
 - 2026-10-06T12:02:41-05:00 — Bulk assignment import local Ollama compatibility now handles `assignments` returned as a JSON-encoded array string by decoding only that field, requiring it to decode to a list, logging a sanitized warning, and then running normal ParsedAssignmentDocument validation so malformed strings, wrong decoded types, and invalid entries still fail. Tool schemas for both assignment and curriculum AI import now inline local `$defs`/`$ref` definitions before sending to providers because small local models handle fully inlined parameters more reliably.
 
 (See history-archive.md for earlier entries prior to 2026-06-09)
