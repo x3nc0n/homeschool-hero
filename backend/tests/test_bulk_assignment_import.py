@@ -42,6 +42,17 @@ def _configure_local_ai(monkeypatch):
     monkeypatch.setattr('backend.config.settings.ollama_model', 'llama3.1:8b', raising=False)
 
 
+async def _wait_import_finished(client, session_id: int, *, attempts: int = 50):
+    while attempts > 0:
+        response = await client.get(f'{ASSIGNMENT_IMPORTS}/{session_id}')
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        if payload['status'] != 'processing':
+            return response
+        attempts -= 1
+    raise AssertionError('assignment import stayed processing')
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('encoded_assignments', [False, True], ids=['native-array', 'json-string-array'])
 async def test_bulk_assignment_import_accepts_native_and_json_string_assignments(monkeypatch, encoded_assignments):
@@ -118,6 +129,153 @@ async def test_bulk_assignment_import_ai_disabled_returns_503(authorized_client,
 
 
 @pytest.mark.asyncio
+async def test_structured_json_fast_path_skips_ai_resolves_refs_and_clarifies(
+    authorized_client, seeded_subject, seeded_student, monkeypatch
+):
+    async def fail_ai(self, extracted):  # noqa: ARG001
+        raise AssertionError('AI should not be called for structured assignment JSON')
+
+    monkeypatch.setattr('backend.config.settings.ai_import_enabled', False, raising=False)
+    monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fail_ai)
+    payload = {
+        'schema_version': '1.0',
+        'assignments': [
+            {
+                'client_item_id': 'json_1',
+                'title': 'JSON math',
+                'subject_ref': 'Math',
+                'student_refs': ['Ada Lovelace'],
+                'subject_id': 999999,
+                'targets': [{'student_id': 999999}],
+            },
+            {'client_item_id': 'json_2', 'title': 'Needs subject'},
+        ],
+    }
+
+    response = await authorized_client.post(
+        ASSIGNMENT_IMPORTS,
+        files={'file': ('plan.json', json.dumps(payload).encode(), 'application/json')},
+    )
+
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created['status'] == 'needs_clarification'
+    assert created['parse_method'] == 'structured_json'
+    detail = await authorized_client.get(f'{ASSIGNMENT_IMPORTS}/{created["id"]}')
+    items = detail.json()['items']
+    first = next(item for item in items if item['client_item_id'] == 'json_1')
+    assert first['subject_id'] == response_id(seeded_subject)
+    assert first['targets'] == [{'student_id': response_id(seeded_student), 'due_date': None, 'status': 'assigned'}]
+    assert detail.json()['questions'][0]['field'] == 'subject_id'
+
+
+@pytest.mark.asyncio
+async def test_bare_json_list_fast_path(authorized_client, seeded_subject, monkeypatch):
+    async def fail_ai(self, extracted):  # noqa: ARG001
+        raise AssertionError('AI should not be called for bare candidate lists')
+
+    monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fail_ai)
+    response = await authorized_client.post(
+        ASSIGNMENT_IMPORTS,
+        files={'file': ('plan.json', b'[{"client_item_id":"one","title":"JSON list","subject_ref":"Math"}]', 'application/json')},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()['parse_method'] == 'structured_json'
+    detail = await authorized_client.get(f'{ASSIGNMENT_IMPORTS}/{response.json()["id"]}')
+    assert detail.json()['items'][0]['subject_id'] == response_id(seeded_subject)
+
+
+@pytest.mark.asyncio
+async def test_invalid_json_assignment_schema_falls_back_to_ai(authorized_client, seeded_subject, monkeypatch):
+    called = False
+
+    async def fake_parse(self, extracted):
+        nonlocal called
+        called = True
+        assert '"title"' in extracted.text
+        return ParsedAssignmentDocument(assignments=[ParsedAssignmentCandidate(client_item_id='ai_1', title='AI row', subject_ref='Math')])
+
+    _configure_local_ai(monkeypatch)
+    monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fake_parse)
+    response = await authorized_client.post(
+        ASSIGNMENT_IMPORTS,
+        files={'file': ('plan.json', b'{"assignments":[{"title":"' + b'x' * 300 + b'"}]}', 'application/json')},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()['status'] == 'processing'
+    detail = await _wait_import_finished(authorized_client, response.json()['id'])
+    assert called is True
+    assert detail.json()['parse_method'] == 'ai'
+    assert detail.json()['items'][0]['subject_id'] == response_id(seeded_subject)
+
+
+@pytest.mark.asyncio
+async def test_async_ai_lifecycle_processing_ready_and_blocks_actions(authorized_client, seeded_subject, monkeypatch):
+    async def fake_parse(self, extracted):  # noqa: ARG001
+        return ParsedAssignmentDocument(assignments=[ParsedAssignmentCandidate(client_item_id='async_1', title='Async row', subject_ref='Math')])
+
+    _configure_local_ai(monkeypatch)
+    monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fake_parse)
+
+    create = await authorized_client.post(
+        ASSIGNMENT_IMPORTS,
+        files={'file': ('plan.txt', b'Math async row', 'text/plain')},
+    )
+    assert create.status_code == 201, create.text
+    assert create.json()['status'] == 'processing'
+    blocked_patch = await authorized_client.patch(f'{ASSIGNMENT_IMPORTS}/{create.json()["id"]}', json={'answers': [], 'items': []})
+    blocked_confirm = await authorized_client.post(f'{ASSIGNMENT_IMPORTS}/{create.json()["id"]}/confirm', json={'client_revision': 1})
+    assert blocked_patch.status_code == 409
+    assert blocked_confirm.status_code == 409
+
+    detail = await _wait_import_finished(authorized_client, create.json()['id'])
+    assert detail.json()['status'] == 'ready'
+    assert detail.json()['parse_method'] == 'ai'
+    assert detail.json()['items'][0]['subject_id'] == response_id(seeded_subject)
+
+
+@pytest.mark.asyncio
+async def test_async_ai_error_marks_failed(authorized_client, monkeypatch):
+    async def fake_parse(self, extracted):  # noqa: ARG001
+        raise AIImportError('provider leaked detail')
+
+    _configure_local_ai(monkeypatch)
+    monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fake_parse)
+    create = await authorized_client.post(
+        ASSIGNMENT_IMPORTS,
+        files={'file': ('plan.txt', b'Math async row', 'text/plain')},
+    )
+    assert create.status_code == 201, create.text
+    detail = await _wait_import_finished(authorized_client, create.json()['id'])
+    assert detail.json()['status'] == 'failed'
+    assert detail.json()['error_message'] == 'AI could not parse this assignment file. Review the file and retry.'
+    assert 'provider leaked detail' not in detail.text
+
+
+@pytest.mark.asyncio
+async def test_stale_processing_marked_failed_and_blocks_confirm(authorized_client, monkeypatch):
+    async def fake_parse(self, extracted):  # noqa: ARG001
+        return ParsedAssignmentDocument(assignments=[ParsedAssignmentCandidate(client_item_id='late', title='Late')])
+
+    _configure_local_ai(monkeypatch)
+    monkeypatch.setattr('backend.config.settings.ai_local_only', True, raising=False)
+    monkeypatch.setattr('backend.config.settings.bulk_assignment_import_processing_stale_minutes', 0, raising=False)
+    monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fake_parse)
+    create = await authorized_client.post(
+        ASSIGNMENT_IMPORTS,
+        files={'file': ('plan.txt', b'Math async row', 'text/plain')},
+    )
+    assert create.status_code == 201, create.text
+    detail = await authorized_client.get(f'{ASSIGNMENT_IMPORTS}/{create.json()["id"]}')
+    assert detail.json()['status'] in {'failed', 'ready'}
+    if detail.json()['status'] == 'failed':
+        confirm = await authorized_client.post(f'{ASSIGNMENT_IMPORTS}/{create.json()["id"]}/confirm', json={'client_revision': 1})
+        assert confirm.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_bulk_assignment_import_clarify_and_confirm(authorized_client, seeded_subject, seeded_student, monkeypatch):
     async def fake_parse(self, extracted):  # noqa: ARG001
         return ParsedAssignmentDocument(
@@ -144,7 +302,7 @@ async def test_bulk_assignment_import_clarify_and_confirm(authorized_client, see
             ]
         )
 
-    monkeypatch.setattr('backend.config.settings.ai_import_enabled', True, raising=False)
+    _configure_local_ai(monkeypatch)
     monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fake_parse)
 
     create = await authorized_client.post(
@@ -154,12 +312,14 @@ async def test_bulk_assignment_import_clarify_and_confirm(authorized_client, see
     assert create.status_code == 201, create.text
     created = create.json()
     assert created['items'] == []
+    assert created['status'] == 'processing'
+
+    detail = await _wait_import_finished(authorized_client, created['id'])
+    created = detail.json()
     assert created['summary'] == {'total': 2, 'ready': 1, 'needs_clarification': 1, 'invalid': 0}
     assert created['questions'][0]['field'] == 'subject_id'
 
-    detail = await authorized_client.get(f'{ASSIGNMENT_IMPORTS}/{created["id"]}')
-    assert detail.status_code == 200, detail.text
-    draft = detail.json()
+    draft = created
     second = next(item for item in draft['items'] if item['client_item_id'] == 'item_0002')
     second['subject_id'] = response_id(seeded_subject)
     second['targets'] = [{'student_id': response_id(seeded_student), 'status': 'assigned'}]
@@ -206,13 +366,14 @@ async def test_bulk_assignment_import_rejects_cross_family_subject(authorized_cl
             assignments=[ParsedAssignmentCandidate(client_item_id='item_0001', title='Unsafe row', subject_ref=None)]
         )
 
-    monkeypatch.setattr('backend.config.settings.ai_import_enabled', True, raising=False)
+    _configure_local_ai(monkeypatch)
     monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fake_parse)
     create = await authorized_client.post(
         ASSIGNMENT_IMPORTS,
         files={'file': ('plan.txt', b'Unsafe row', 'text/plain')},
     )
     assert create.status_code == 201, create.text
+    create = await _wait_import_finished(authorized_client, create.json()['id'])
 
     other_login = await authorized_client.post(
         AUTH['login'],

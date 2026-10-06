@@ -45,7 +45,7 @@ XLSX uses `openpyxl==3.1.5` and `defusedxml==0.7.1`, declared consistently in de
 
 All formats require a supported filename extension and a compatible MIME when supplied. Missing MIME and `application/octet-stream` are allowed for every supported extension, but never override content validation. MIME is normalized case-insensitively with parameters removed. `application/vnd.ms-excel` is permitted for `.csv` browser exports, not legacy `.xls` or `.tsv`. The picker and drag/drop use this same per-extension allowlist; binary formats still use their real parsers. Unsupported suffixes are rejected even with an allowed MIME.
 
-JSON/CSV/TSV use the existing AI extraction → validated draft → family-scoped resolution → review/confirm flow. `ParsedAssignmentDocument` exports are accepted as JSON source, **not** directly converted to database rows. Its permissive/defaulted Pydantic model is an AI output contract, not an unambiguous versioned file-import contract; automatic recognition could silently ignore fields or mistake generic JSON for an empty assignment document. A deterministic import would need a separately strict/versioned contract. AI remains configured/required, and uploaded JSON never bypasses candidate validation or confirmation.
+JSON matching the `ParsedAssignmentDocument` shape now uses a deterministic fast-path: either the document object or a bare list of candidate assignments is validated as the structured import contract, marked with `parse_method: "structured_json"`, and sent through the same downstream resolver/validator/clarification/preview/confirm path as AI output. The backend still ignores untrusted IDs in the file unless they are revalidated against the authenticated family, resolves `student_refs`/`subject_refs` from family records, applies the max-item cap, and persists no real assignments before confirm. JSON that is valid JSON but does not match the assignment document schema falls back to the AI path. CSV/TSV remain AI-parsed after deterministic extraction/validation.
 
 Structured text is decoded strictly as UTF-8 with optional BOM. The existing TXT/MD Latin-1 fallback cannot reliably distinguish binary data or Windows encodings, so it is not reused for JSON/CSV/TSV; other encodings produce an explicit re-export-as-UTF-8 error. JSON syntax is validated (including rejecting NaN/Infinity) without rewriting schema keys or values. CSV uses commas; TSV uses tabs; standard double-quote escaping and quoted multiline cells are supported. Ragged rows are retained for AI interpretation, not shifted or discarded. Formula-like cells remain untrusted text, never evaluated. No new dependency is needed (stdlib `json`/`csv`).
 
@@ -74,8 +74,9 @@ Formulas are **never executed**, and external workbook links are not fetched. Sa
    - User selects `.txt`, `.md`, `.json`, `.csv`, `.tsv`, `.docx`, `.pdf`, or `.xlsx`. Native input uses `sr-only` + ref-click; picker and drag/drop share the same validation.
 2. **Extract text**
    - Backend validates auth, size, MIME/extension, reads at most the upload limit plus one byte, and extracts text. TXT/MD/DOCX/PDF retain existing normalization/truncation behavior; XLSX and JSON/CSV/TSV preserve structure and reject excess text.
-3. **LLM parse**
-   - Backend calls the existing AI import provider path with a new assignment-specific service and structured-output tool schema.
+3. **Parse**
+   - For matching assignment JSON, backend skips AI and converts the structured document into an import draft (`parse_method: "structured_json"`).
+   - For all other accepted inputs, backend creates a `processing` draft quickly, then a background task calls the existing AI import provider path with a new assignment-specific service and structured-output tool schema (`parse_method: "ai"`).
    - The LLM returns candidate assignment rows with source snippets and confidence, but not trusted database IDs.
 4. **Resolve against DB**
    - Backend deterministically matches `subject_ref`, `student_refs`, `grading_period_ref`, and `lesson_plan_ref` against family-scoped records.
@@ -112,13 +113,15 @@ Fields:
 - `id`
 - `family_id`
 - `created_by_user_id`
-- `status`: `draft | needs_clarification | ready | confirmed | expired | failed`
+- `status`: `draft | processing | needs_clarification | ready | confirmed | expired | failed`
 - `source_filename`
 - `source_content_type`
 - `source_size_bytes`
 - `extracted_text_hash`
 - `warnings` JSON list
 - `draft_payload` JSON: LLM output plus resolved IDs, validation state, and UI rows
+- `draft_payload.parse_method`: `structured_json` or `ai`
+- `draft_payload.error_message`: sanitized user-facing failure message when `status=failed`
 - `questions` JSON list
 - `expires_at` (default now + 24h)
 - `confirmed_at`
@@ -139,27 +142,20 @@ Multipart form:
 - `file`: required upload
 - optional `defaults`: JSON string with `subject_id`, `student_ids`, `grading_period_id`, `category`, `max_score`, `weight`, `due_date`
 
-Response `201`:
+Response `201` returns quickly. Structured JSON may return `ready`/`needs_clarification` immediately; AI-backed imports return `processing` first and the UI polls `GET` until `ready`, `needs_clarification`, or `failed`:
 
 ```json
 {
   "id": 42,
-  "status": "needs_clarification",
+  "status": "processing",
   "source_filename": "week-1-plan.docx",
   "source_content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "source_size_bytes": 12345,
   "warnings": ["Source text was truncated before AI parsing."],
+  "parse_method": "ai",
+  "error_message": null,
   "summary": { "total": 12, "ready": 7, "needs_clarification": 5, "invalid": 0 },
-  "questions": [
-    {
-      "id": "q_subject_0",
-      "field": "subject_id",
-      "assignment_indexes": [0, 1, 2],
-      "message": "Which subject should be used?",
-      "choices": [{ "id": 3, "label": "Mathematics" }],
-      "allow_apply_to_all": true
-    }
-  ],
+  "questions": [],
   "items": [],
   "revision": 1,
   "expires_at": "2026-10-07T10:13:08Z",
@@ -168,13 +164,14 @@ Response `201`:
 }
 ```
 
-Create omits `items` in the response body (`items: []`) so uploads stay lightweight; use the read endpoint for the full editable row list.
+Create omits `items` in the response body (`items: []`) so uploads stay lightweight; use the read endpoint for the full editable row list after processing completes. Background processing uses its own DB session. If the process restarts while a draft is `processing`, reads mark stale processing drafts as `failed` after `BULK_ASSIGNMENT_IMPORT_PROCESSING_STALE_MINUTES` (default 30) with a retry message.
 
 ### Read draft
 
 `GET /api/assignment-import-sessions/{session_id}`
 
 Returns the full response shape with `items`.
+If status is `processing`, `items` and `questions` are empty and the frontend should continue polling with backoff. If status is `failed`, `error_message` contains a sanitized retryable message.
 
 ### Apply clarifications or row edits
 
@@ -207,6 +204,7 @@ Request:
 ```
 
 Response recalculates `summary`, `questions`, and row validation.
+Requests are rejected while the draft is `processing`, `failed`, `confirmed`, or `expired`.
 
 ### Confirm
 
@@ -232,6 +230,7 @@ Response `201`:
 ```
 
 If any selected item is invalid, return `409` with row errors; do not partially create.
+Confirm requires `status=ready`; `processing`, `needs_clarification`, `failed`, and expired drafts return `409`.
 
 ### Optional delete/expire
 
@@ -306,13 +305,15 @@ Cost controls:
 - Truncate by `AI_IMPORT_MAX_INPUT_CHARS` and show warning.
 - Use `temperature: 0`.
 - Add per-family/session rate limit in the router later if abuse appears.
+- `AI_IMPORT_REQUEST_TIMEOUT_SECONDS` remains configurable. The default stays 60 seconds to preserve curriculum-import behavior; assignment imports now run AI parsing asynchronously, so local Ollama deployments may raise it without hitting Cloudflare's request timeout.
 
 ## Behavior when AI is unavailable
 
-If `AI_IMPORT_ENABLED=false` or provider config is invalid:
+If `AI_IMPORT_ENABLED=false` or provider config is invalid and AI is needed:
 
 - Backend returns `503` with `{"detail":"AI assignment import is unavailable","code":"ai_import_unavailable"}`, matching curriculum import behavior.
 - Frontend disables the upload analyzer and explains that AI import must be enabled by the administrator.
+- Structured JSON imports that match the assignment document contract do not require AI.
 - CSV import remains available via existing `/api/imports`.
 
 ## Security
@@ -338,7 +339,7 @@ If `AI_IMPORT_ENABLED=false` or provider config is invalid:
   - validation and question generation;
   - transactional confirm using existing assignment creation logic patterns.
 - Add router `backend/routers/bulk_assignment_import.py` mounted in `backend/main.py` under `/api/assignment-import-sessions`.
-- Config: `BULK_ASSIGNMENT_IMPORT_MAX_BYTES`, `BULK_ASSIGNMENT_IMPORT_SESSION_TTL_HOURS`, optional `BULK_ASSIGNMENT_IMPORT_MAX_ITEMS`.
+- Config: `BULK_ASSIGNMENT_IMPORT_MAX_BYTES`, `BULK_ASSIGNMENT_IMPORT_SESSION_TTL_HOURS`, optional `BULK_ASSIGNMENT_IMPORT_MAX_ITEMS`, `BULK_ASSIGNMENT_IMPORT_PROCESSING_STALE_MINUTES`.
 - Tests in `backend/tests/test_bulk_assignment_import.py`.
 
 ### Venkman — frontend

@@ -136,6 +136,19 @@ async def _create_import(client, *, filename: str = 'assignments.txt', content: 
     )
 
 
+async def _wait_import_finished(client, response, *, attempts: int = 50):
+    if response.status_code != 201:
+        return response
+    payload = response.json()
+    while payload['status'] == 'processing' and attempts > 0:
+        attempts -= 1
+        response = await client.get(ASSIGNMENT_IMPORT['detail'].format(session_id=payload['id']))
+        assert response.status_code == 200, response.text
+        payload = response.json()
+    assert payload['status'] != 'processing'
+    return response
+
+
 @pytest.mark.asyncio
 async def test_bulk_assignment_import_routes_are_mounted(async_client):
     create = await async_client.post(ASSIGNMENT_IMPORT['collection'])
@@ -194,6 +207,11 @@ async def test_upload_extracts_supported_documents(
     response = await _create_import(authorized_client, filename=filename, content=content, content_type=content_type)
 
     assert response.status_code == 201, response.text
+    finished = await _wait_import_finished(authorized_client, response)
+    if filename.lower().endswith('.json'):
+        assert finished.json()['parse_method'] == 'structured_json'
+        assert not _FakeAssignmentAIAsyncClient.requests
+        return
     request_payload = _FakeAssignmentAIAsyncClient.requests[-1]['json']
     assert expected_text in request_payload['messages'][1]['content']
     assert request_payload['tools'][0]['function']['name'] == 'create_assignment_import'
@@ -256,6 +274,7 @@ async def test_excel_formula_warnings_returned_in_draft(authorized_client, _mock
     )
     assert response.status_code == 201, response.text
     assert any('no cached value' in warning for warning in response.json()['warnings'])
+    await _wait_import_finished(authorized_client, response)
     assert '[formula; cached value unavailable' in _FakeAssignmentAIAsyncClient.requests[-1]['json']['messages'][1]['content']
 
 
@@ -421,7 +440,7 @@ async def test_llm_foreign_ids_are_ignored_and_prompt_injection_stays_untrusted(
     )
 
     assert response.status_code == 201, response.text
-    detail = await authorized_client.get(ASSIGNMENT_IMPORT['detail'].format(session_id=response.json()['id']))
+    detail = await _wait_import_finished(authorized_client, response)
     item = detail.json()['items'][0]
     assert item['subject_id'] == subject_id
     assert item['targets'] == [{'student_id': student_id, 'due_date': None, 'status': 'assigned'}]
@@ -439,6 +458,7 @@ async def test_missing_fields_surface_as_clarifications_and_apply_to_all(authori
     ]
     draft = await _create_import(authorized_client)
     assert draft.status_code == 201, draft.text
+    draft = await _wait_import_finished(authorized_client, draft)
     payload = draft.json()
     subject_question = next(question for question in payload['questions'] if question['field'] == 'subject_id')
     assert subject_question['assignment_indexes'] == [0, 1]
@@ -467,6 +487,7 @@ async def test_nothing_persists_before_confirm_then_confirm_creates_assignments(
     subject_id, student_id = await _seed_subject_and_student(authorized_client)
     draft = await _create_import(authorized_client)
     assert draft.status_code == 201, draft.text
+    draft = await _wait_import_finished(authorized_client, draft)
 
     before = await authorized_client.get(ASSIGNMENTS['collection'])
     assert before.status_code == 200, before.text
@@ -495,6 +516,7 @@ async def test_confirm_rejects_invalid_selection_without_partial_creates(authori
     ]
     draft = await _create_import(authorized_client)
     assert draft.status_code == 201, draft.text
+    draft = await _wait_import_finished(authorized_client, draft)
 
     confirmed = await authorized_client.post(
         ASSIGNMENT_IMPORT['confirm'].format(session_id=draft.json()['id']),
@@ -512,6 +534,7 @@ async def test_foreign_ids_in_row_edits_are_rejected(authorized_client, secondar
     await _seed_subject_and_student(authorized_client)
     draft = await _create_import(authorized_client)
     assert draft.status_code == 201, draft.text
+    draft = await _wait_import_finished(authorized_client, draft)
     session_id = draft.json()['id']
     detail = await authorized_client.get(ASSIGNMENT_IMPORT['detail'].format(session_id=session_id))
     item = detail.json()['items'][0]
@@ -547,6 +570,7 @@ async def test_expired_drafts_return_gone(authorized_client, _mock_assignment_ai
     await _seed_subject_and_student(authorized_client)
     draft = await _create_import(authorized_client)
     assert draft.status_code == 201, draft.text
+    draft = await _wait_import_finished(authorized_client, draft)
     session_id = draft.json()['id']
 
     from backend.database import AsyncSessionLocal

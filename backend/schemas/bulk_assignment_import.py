@@ -131,6 +131,8 @@ class BulkAssignmentImportRead(BaseModel):
     source_content_type: str
     source_size_bytes: int
     warnings: list[str] = Field(default_factory=list)
+    parse_method: Literal['structured_json', 'ai'] | None = None
+    error_message: str | None = None
     summary: BulkAssignmentImportSummary
     questions: list[BulkAssignmentImportQuestion] = Field(default_factory=list)
     items: list[BulkAssignmentImportItem] = Field(default_factory=list)

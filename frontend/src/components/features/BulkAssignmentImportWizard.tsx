@@ -42,6 +42,7 @@ type ClarificationDraft = {
   applyToAll: boolean
 }
 
+const POLL_INTERVALS_MS = [1000, 1500, 2500, 4000, 5000]
 const categories: AssignmentCategory[] = ['homework', 'quiz', 'test', 'project', 'participation', 'extra_credit', 'other']
 const recurrences: AssignmentRecurrence[] = ['none', 'daily', 'weekly']
 
@@ -104,6 +105,16 @@ function getFriendlyApiError(error: unknown) {
     return 'AI assignment import is not configured yet. Ask an administrator to enable AI import, or use the regular assignment form for now.'
   }
   return error instanceof Error ? error.message : 'Unable to analyze this file right now.'
+}
+
+function parseMethodLabel(method?: AssignmentImportSession['parse_method'] | null) {
+  if (method === 'structured_json') return 'Structured JSON'
+  if (method === 'ai') return 'AI'
+  return 'Pending'
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 export function BulkAssignmentImportWizard({
@@ -201,8 +212,19 @@ export function BulkAssignmentImportWizard({
     setError('')
     setAnalyzing(true)
     try {
-      const session = await api.createAssignmentImportSession(file, buildDefaults())
+      let session = await api.createAssignmentImportSession(file, buildDefaults())
       setAnalysisProgress(100)
+      for (let attempt = 0; session.status === 'processing'; attempt += 1) {
+        setSession(session)
+        setAnalysisProgress((current) => Math.min(95, Math.max(current, 35 + attempt * 8)))
+        await sleep(POLL_INTERVALS_MS[Math.min(attempt, POLL_INTERVALS_MS.length - 1)])
+        session = await api.getAssignmentImportSession(session.id)
+      }
+      if (session.status === 'failed') {
+        setSession(session)
+        setError(session.error_message || 'Assignment import failed. Please retry.')
+        return
+      }
       const fullSession = session.items.length ? session : await api.getAssignmentImportSession(session.id)
       setSession(fullSession)
       setAnswers({})
@@ -425,7 +447,7 @@ export function BulkAssignmentImportWizard({
               <FileText className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
               <p className="text-base font-medium">Drop your assignment plan here</p>
               <p className="mx-auto mt-1 max-w-xl text-sm text-muted-foreground">
-                We accept TXT, Markdown, JSON, CSV, TSV, Word documents, PDFs, and Excel (.xlsx) workbooks, not .xls. Save JSON/CSV/TSV as UTF-8 (BOM supported); headers, rows, and quoted multiline cells are preserved. All formats use AI to draft assignments for review, including assignment JSON exports. All Excel sheets are read; dates and merged headers are preserved. Recalculate and save formulas first. Password-protected workbooks are not supported. Scanned image-only PDFs may need to be typed or converted first.
+                We accept TXT, Markdown, JSON, CSV, TSV, Word documents, PDFs, and Excel (.xlsx) workbooks, not .xls. Save JSON/CSV/TSV as UTF-8 (BOM supported); headers, rows, and quoted multiline cells are preserved. Assignment JSON exports import immediately without AI when they match the supported shape; other files are analyzed in the background. All Excel sheets are read; dates and merged headers are preserved. Recalculate and save formulas first. Password-protected workbooks are not supported. Scanned image-only PDFs may need to be typed or converted first.
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 <input
@@ -442,17 +464,26 @@ export function BulkAssignmentImportWizard({
                 </Button>
                 <Button type="button" onClick={() => void analyze()} disabled={!file || analyzing}>
                   {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Analyze with AI
+                  {analyzing ? 'Importing…' : 'Start import'}
                 </Button>
               </div>
               <p className="mt-3 text-sm text-muted-foreground">{selectedFileFeedback}</p>
               {analyzing ? (
                 <div className="mx-auto mt-4 max-w-md space-y-2 text-left">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Uploading, extracting text, and drafting assignments…</span>
+                    <span>{draft?.status === 'processing' ? 'AI is drafting assignments in the background…' : 'Uploading and checking for structured JSON…'}</span>
                     <span>{analysisProgress}%</span>
                   </div>
                   <Progress value={analysisProgress} />
+                </div>
+              ) : null}
+              {draft?.status === 'failed' ? (
+                <div className="mx-auto mt-4 max-w-md rounded-lg border bg-muted/20 px-4 py-3 text-left text-sm">
+                  <p className="font-medium">Import failed</p>
+                  <p className="mt-1 text-muted-foreground">{draft.error_message || 'Please retry the upload.'}</p>
+                  <Button type="button" className="mt-3" variant="outline" onClick={() => void analyze()} disabled={!file || analyzing}>
+                    Retry import
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -856,7 +887,13 @@ export function BulkAssignmentImportWizard({
 
 function SummaryCards({ draft }: { draft: AssignmentImportSession }) {
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <Card size="sm">
+        <CardHeader>
+          <CardDescription>Parsed by</CardDescription>
+          <CardTitle>{parseMethodLabel(draft.parse_method)}</CardTitle>
+        </CardHeader>
+      </Card>
       <Card size="sm">
         <CardHeader>
           <CardDescription>Total rows</CardDescription>
