@@ -39,7 +39,12 @@ from backend.schemas.bulk_assignment_import import (
     ParsedAssignmentDocument,
 )
 from backend.services.cache import invalidate_gradebook_cache
-from backend.services.curriculum_ai_import import AIImportError, AICurriculumImportService, ExtractedSource
+from backend.services.curriculum_ai_import import (
+    AIImportError,
+    AICurriculumImportService,
+    ExtractedSource,
+    inline_json_schema_refs,
+)
 from backend.validation import sanitize_filename
 
 logger = logging.getLogger(__name__)
@@ -179,6 +184,7 @@ class BulkAssignmentImportService:
     async def parse_with_ai(self, extracted: ExtractedSource) -> ParsedAssignmentDocument:
         self._ai._ensure_configured()
         payload = await self._call_ai_parser(extracted)
+        payload = self._normalize_assignment_payload(payload)
         try:
             document = ParsedAssignmentDocument.model_validate(payload)
         except ValidationError as exc:
@@ -248,7 +254,7 @@ class BulkAssignmentImportService:
                     'function': {
                         'name': ASSIGNMENT_IMPORT_TOOL_NAME,
                         'description': 'Return a homeschool assignment import document.',
-                        'parameters': ParsedAssignmentDocument.model_json_schema(),
+                        'parameters': inline_json_schema_refs(ParsedAssignmentDocument.model_json_schema()),
                     },
                 }
             ],
@@ -284,6 +290,21 @@ class BulkAssignmentImportService:
             if isinstance(parsed, dict):
                 return parsed
         raise AIImportError('AI response did not include an assignment tool call')
+
+    def _normalize_assignment_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        assignments = payload.get('assignments') if isinstance(payload, dict) else None
+        if not isinstance(assignments, str):
+            return payload
+        try:
+            decoded = json.loads(assignments)
+        except json.JSONDecodeError as exc:
+            raise AIImportError('AI returned assignments as a JSON string, but it was not valid JSON') from exc
+        if not isinstance(decoded, list):
+            raise AIImportError('AI returned assignments as a JSON string, but it did not decode to a list')
+        logger.warning('AI assignment import returned assignments as a JSON string; decoded before validation')
+        normalized = dict(payload)
+        normalized['assignments'] = decoded
+        return normalized
 
     async def build_session_payload(
         self,

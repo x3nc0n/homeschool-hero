@@ -76,6 +76,16 @@ class _FakeAIAsyncClient:
 json_module = json
 
 
+def _contains_json_schema_ref(value):
+    if isinstance(value, dict):
+        if '$ref' in value or '$defs' in value:
+            return True
+        return any(_contains_json_schema_ref(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_json_schema_ref(item) for item in value)
+    return False
+
+
 class _RedirectingURLAsyncClient:
     def __init__(self, *args, **kwargs):
         pass
@@ -346,6 +356,23 @@ def test_ai_import_service_uses_urlparse_for_endpoint_detection(monkeypatch):
 
     assert headers == {'api-key': 'test-key', 'Content-Type': 'application/json'}
     assert 'model' not in payload
+
+
+def test_ai_import_tool_schema_inlines_refs():
+    service = AICurriculumImportService()
+    payload = service._build_request_payload(
+        ExtractedSource(
+            source_kind='file',
+            source_name='scope.txt',
+            content_type='text/plain',
+            text='Algebra scope and sequence',
+            warnings=[],
+        ),
+        model='llama3.1:8b',
+    )
+    schema = payload['tools'][0]['function']['parameters']
+
+    assert not _contains_json_schema_ref(schema)
 
 
 def test_ai_import_azure_base_url_uses_managed_identity(monkeypatch):

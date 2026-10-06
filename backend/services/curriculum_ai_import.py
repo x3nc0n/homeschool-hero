@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import ipaddress
 import json
 import logging
@@ -42,6 +43,33 @@ AI_IMPORT_SYSTEM_PROMPT = (
     'clear names and descriptions. If the source is high level, create a lightweight unit/lesson outline instead of '
     'fabricating a detailed sequence.'
 )
+
+
+def inline_json_schema_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of a Pydantic JSON schema with local $defs/$ref entries inlined."""
+    schema_copy = deepcopy(schema)
+    definitions = schema_copy.get('$defs')
+    if not isinstance(definitions, dict):
+        return schema_copy
+
+    def _inline(value: Any) -> Any:
+        if isinstance(value, dict):
+            ref = value.get('$ref')
+            if isinstance(ref, str) and ref.startswith('#/$defs/'):
+                definition_name = ref.removeprefix('#/$defs/')
+                definition = definitions.get(definition_name)
+                if isinstance(definition, dict):
+                    merged = deepcopy(definition)
+                    for key, item in value.items():
+                        if key != '$ref':
+                            merged[key] = item
+                    return _inline(merged)
+            return {key: _inline(item) for key, item in value.items() if key != '$defs'}
+        if isinstance(value, list):
+            return [_inline(item) for item in value]
+        return value
+
+    return _inline(schema_copy)
 
 
 class AIImportUnavailable(RuntimeError):
@@ -424,7 +452,7 @@ class AICurriculumImportService:
                     'function': {
                         'name': AI_IMPORT_TOOL_NAME,
                         'description': 'Return a homeschool curriculum import document.',
-                        'parameters': CurriculumImportDocument.model_json_schema(),
+                        'parameters': inline_json_schema_refs(CurriculumImportDocument.model_json_schema()),
                     },
                 }
             ],

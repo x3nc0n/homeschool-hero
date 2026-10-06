@@ -2,6 +2,8 @@
 
 ## Learnings
 
+- 2026-10-06T12:02:41-05:00 — Bulk assignment import local Ollama compatibility now handles `assignments` returned as a JSON-encoded array string by decoding only that field, requiring it to decode to a list, logging a sanitized warning, and then running normal ParsedAssignmentDocument validation so malformed strings, wrong decoded types, and invalid entries still fail. Tool schemas for both assignment and curriculum AI import now inline local `$defs`/`$ref` definitions before sending to providers because small local models handle fully inlined parameters more reliably.
+
 (See history-archive.md for earlier entries prior to 2026-06-09)
 
 - 2026-10-06T10:16:18.437-05:00 — Bulk assignment import backend now uses DB-backed expiring `bulk_assignment_import_sessions` drafts with no stored full source text, only metadata/hash/snippets. Assignment AI import can reuse curriculum AI provider validation and extraction helpers while adding Markdown support, DOCX table extraction, an assignment-specific structured tool schema, and prompt-injection-safe instructions. Draft rows must remain untrusted until deterministic family-scoped resolution/revalidation; confirmation prevalidates every selected row before flushing assignments so invalid rows cannot partially persist.
