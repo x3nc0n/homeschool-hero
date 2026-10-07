@@ -5,12 +5,44 @@ import json
 import pytest
 
 from backend.schemas.bulk_assignment_import import ParsedAssignmentCandidate, ParsedAssignmentDocument
+from backend.services import bulk_assignment_import as bulk_import_service
 from backend.services.bulk_assignment_import import BulkAssignmentImportService
 from backend.services.curriculum_ai_import import AIImportError, ExtractedSource
 from tests.contracts import ASSIGNMENTS, AUTH, SUBJECTS, password_for_test, subject_payload
 from tests.helpers import response_id, sync_csrf_header
 
 ASSIGNMENT_IMPORTS = '/api/assignment-import-sessions'
+ROUTER_SCHEDULER = 'backend.routers.bulk_assignment_import.schedule_assignment_import_processing'
+
+
+class ControlledImportWorker:
+    """Captures router scheduling so tests decide if and when the real worker runs."""
+
+    def __init__(self) -> None:
+        self.pending: dict[int, tuple] = {}
+        self.scheduled_ids: list[int] = []
+
+    def schedule(self, session_id, source, defaults) -> None:
+        self.scheduled_ids.append(session_id)
+        self.pending[session_id] = (session_id, source, defaults)
+
+    async def run(self, session_id: int) -> None:
+        await bulk_import_service._run_assignment_import_processing(*self.pending.pop(session_id))
+
+    def discard_pending(self) -> list[int]:
+        discarded = sorted(self.pending)
+        self.pending.clear()
+        return discarded
+
+
+@pytest.fixture
+def controlled_import_worker(monkeypatch):
+    worker = ControlledImportWorker()
+    tasks_before = set(bulk_import_service._ASSIGNMENT_IMPORT_TASKS)
+    monkeypatch.setattr(ROUTER_SCHEDULER, worker.schedule)
+    yield worker
+    worker.discard_pending()
+    assert set(bulk_import_service._ASSIGNMENT_IMPORT_TASKS) - tasks_before == set()
 
 
 def _contains_json_schema_ref(value):
@@ -212,7 +244,9 @@ async def test_invalid_json_assignment_schema_falls_back_to_ai(authorized_client
 
 
 @pytest.mark.asyncio
-async def test_async_ai_lifecycle_processing_ready_and_blocks_actions(authorized_client, seeded_subject, monkeypatch):
+async def test_async_ai_lifecycle_processing_ready_and_blocks_actions(
+    authorized_client, seeded_subject, controlled_import_worker, monkeypatch
+):
     async def fake_parse(self, extracted):  # noqa: ARG001
         return ParsedAssignmentDocument(assignments=[ParsedAssignmentCandidate(client_item_id='async_1', title='Async row', subject_ref='Math')])
 
@@ -224,15 +258,25 @@ async def test_async_ai_lifecycle_processing_ready_and_blocks_actions(authorized
         files={'file': ('plan.txt', b'Math async row', 'text/plain')},
     )
     assert create.status_code == 201, create.text
+    session_id = create.json()['id']
     assert create.json()['status'] == 'processing'
-    blocked_patch = await authorized_client.patch(f'{ASSIGNMENT_IMPORTS}/{create.json()["id"]}', json={'answers': [], 'items': []})
-    blocked_confirm = await authorized_client.post(f'{ASSIGNMENT_IMPORTS}/{create.json()["id"]}/confirm', json={'client_revision': 1})
-    assert blocked_patch.status_code == 409
-    assert blocked_confirm.status_code == 409
+    assert controlled_import_worker.scheduled_ids == [session_id]
+    blocked_patch = await authorized_client.patch(f'{ASSIGNMENT_IMPORTS}/{session_id}', json={'answers': [], 'items': []})
+    blocked_confirm = await authorized_client.post(
+        f'{ASSIGNMENT_IMPORTS}/{session_id}/confirm', json={'client_revision': create.json()['revision']}
+    )
+    assert blocked_patch.status_code == 409, blocked_patch.text
+    assert blocked_confirm.status_code == 409, blocked_confirm.text
+    still_processing = await authorized_client.get(f'{ASSIGNMENT_IMPORTS}/{session_id}')
+    assert still_processing.json()['status'] == 'processing'
 
-    detail = await _wait_import_finished(authorized_client, create.json()['id'])
+    await controlled_import_worker.run(session_id)
+
+    detail = await authorized_client.get(f'{ASSIGNMENT_IMPORTS}/{session_id}')
+    assert detail.status_code == 200, detail.text
     assert detail.json()['status'] == 'ready'
     assert detail.json()['parse_method'] == 'ai'
+    assert detail.json()['revision'] == create.json()['revision'] + 1
     assert detail.json()['items'][0]['subject_id'] == response_id(seeded_subject)
 
 
@@ -254,25 +298,83 @@ async def test_async_ai_error_marks_failed(authorized_client, monkeypatch):
     assert 'provider leaked detail' not in detail.text
 
 
+async def _assert_no_assignments(client) -> None:
+    assignments = await client.get(ASSIGNMENTS['collection'], params={'page_size': 10})
+    assert assignments.status_code == 200, assignments.text
+    assert assignments.json()['items'] == []
+
+
 @pytest.mark.asyncio
-async def test_stale_processing_marked_failed_and_blocks_confirm(authorized_client, monkeypatch):
-    async def fake_parse(self, extracted):  # noqa: ARG001
-        return ParsedAssignmentDocument(assignments=[ParsedAssignmentCandidate(client_item_id='late', title='Late')])
+async def test_stale_processing_marked_failed_and_blocks_confirm(authorized_client, controlled_import_worker, monkeypatch):
+    async def fail_parse(self, extracted):  # noqa: ARG001
+        raise AssertionError('worker must not run in the stale-processing scenario')
 
     _configure_local_ai(monkeypatch)
-    monkeypatch.setattr('backend.config.settings.ai_local_only', True, raising=False)
     monkeypatch.setattr('backend.config.settings.bulk_assignment_import_processing_stale_minutes', 0, raising=False)
-    monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fake_parse)
+    monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fail_parse)
     create = await authorized_client.post(
         ASSIGNMENT_IMPORTS,
         files={'file': ('plan.txt', b'Math async row', 'text/plain')},
     )
     assert create.status_code == 201, create.text
-    detail = await authorized_client.get(f'{ASSIGNMENT_IMPORTS}/{create.json()["id"]}')
-    assert detail.json()['status'] in {'failed', 'ready'}
-    if detail.json()['status'] == 'failed':
-        confirm = await authorized_client.post(f'{ASSIGNMENT_IMPORTS}/{create.json()["id"]}/confirm', json={'client_revision': 1})
-        assert confirm.status_code == 409
+    session_id = create.json()['id']
+    assert create.json()['status'] == 'processing'
+    assert create.json()['revision'] == 1
+    assert controlled_import_worker.scheduled_ids == [session_id]
+
+    detail = await authorized_client.get(f'{ASSIGNMENT_IMPORTS}/{session_id}')
+
+    assert detail.status_code == 200, detail.text
+    assert detail.json()['status'] == 'failed'
+    assert detail.json()['error_message'] == 'Assignment import processing did not finish. Please retry the upload.'
+    assert detail.json()['revision'] == 2
+    assert detail.json()['items'] == []
+    confirm = await authorized_client.post(
+        f'{ASSIGNMENT_IMPORTS}/{session_id}/confirm', json={'client_revision': detail.json()['revision']}
+    )
+    assert confirm.status_code == 409, confirm.text
+    assert confirm.json()['detail'] == 'Cannot confirm a failed import session'
+    await _assert_no_assignments(authorized_client)
+    assert controlled_import_worker.discard_pending() == [session_id]
+
+
+@pytest.mark.asyncio
+async def test_ai_title_only_candidate_needs_subject_clarification_and_blocks_confirm(
+    authorized_client, seeded_subject, controlled_import_worker, monkeypatch
+):
+    async def fake_parse(self, extracted):  # noqa: ARG001
+        return ParsedAssignmentDocument(assignments=[ParsedAssignmentCandidate(client_item_id='late', title='Late')])
+
+    _configure_local_ai(monkeypatch)
+    monkeypatch.setattr('backend.services.bulk_assignment_import.BulkAssignmentImportService.parse_with_ai', fake_parse)
+    create = await authorized_client.post(
+        ASSIGNMENT_IMPORTS,
+        files={'file': ('plan.txt', b'Late', 'text/plain')},
+    )
+    assert create.status_code == 201, create.text
+    session_id = create.json()['id']
+    assert controlled_import_worker.scheduled_ids == [session_id]
+
+    await controlled_import_worker.run(session_id)
+
+    detail = await authorized_client.get(f'{ASSIGNMENT_IMPORTS}/{session_id}')
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body['status'] == 'needs_clarification'
+    assert body['parse_method'] == 'ai'
+    assert body['error_message'] is None
+    assert body['revision'] == 2
+    assert body['summary'] == {'total': 1, 'ready': 0, 'needs_clarification': 1, 'invalid': 0}
+    assert 'subject_id' in body['items'][0]['missing_fields']
+    subject_question = next(question for question in body['questions'] if question['field'] == 'subject_id')
+    assert subject_question['assignment_indexes'] == [0]
+    assert {'id': response_id(seeded_subject), 'label': 'Math'} in subject_question['choices']
+    confirm = await authorized_client.post(
+        f'{ASSIGNMENT_IMPORTS}/{session_id}/confirm', json={'client_revision': body['revision']}
+    )
+    assert confirm.status_code == 409, confirm.text
+    assert confirm.json()['detail'] == 'Cannot confirm a needs_clarification import session'
+    await _assert_no_assignments(authorized_client)
 
 
 @pytest.mark.asyncio
