@@ -12,6 +12,7 @@ import type {
 type JsonObject = Record<string, unknown>
 
 export type NormalizedCurriculumImportMetadata = {
+  edition?: string
   gradeLevels: string[]
   standardsAlignment: string[]
   prerequisites: string[]
@@ -137,6 +138,7 @@ function firstNumber(values: unknown[]) {
 function readMetadata(source: JsonObject): NormalizedCurriculumImportMetadata {
   const metadata = isRecord(source.metadata) ? source.metadata : {}
   return {
+    edition: typeof metadata.edition === 'string' ? metadata.edition : undefined,
     gradeLevels: dedupeStrings([...normalizeStringArray(source.grade_levels), ...normalizeStringArray(metadata.grade_levels)]),
     standardsAlignment: dedupeStrings([
       ...normalizeStringArray(source.standards_alignment),
@@ -256,6 +258,7 @@ function summarizeCounts(subjects: NormalizedCurriculumImportSubject[]) {
 
 function metadataToPayload(metadata: NormalizedCurriculumImportMetadata): CurriculumImportMetadata {
   return {
+    edition: metadata.edition,
     grade_levels: metadata.gradeLevels,
     standards_alignment: metadata.standardsAlignment,
     prerequisites: metadata.prerequisites,

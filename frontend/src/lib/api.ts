@@ -46,6 +46,9 @@ import type {
   CurriculumImportActivationResponse,
   CurriculumAiImportConfirmPayload,
   CurriculumAiImportDraftResponse,
+  CurriculumAiImportSession,
+  CurriculumDuplicateMatch,
+  CurriculumImportConfirmPayload,
   CurriculumImportDetail,
   CurriculumImportDocument,
   CurriculumImportSchema,
@@ -143,22 +146,12 @@ import type { DetailedHealthResponse, ReadinessResponse, SystemStatusResponse } 
 import { resolveCurriculumActivationPayload } from '@/lib/curriculumActivation'
 import { curriculumImportMockApi } from '@/lib/curriculumImportMock'
 import { getCurrentLanguage } from '@/lib/locale'
+import { ApiError, parseApiError } from '@/lib/apiError'
+export { ApiError } from '@/lib/apiError'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 export const MAINTENANCE_EVENT = 'homeschool:maintenance'
 export const AUTH_EXPIRED_EVENT = 'homeschool:auth-expired'
-
-export class ApiError extends Error {
-  status: number
-  code?: string
-
-  constructor(status: number, message: string, code?: string) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-    this.code = code
-  }
-}
 
 function getCookie(name: string) {
   const value = document.cookie
@@ -213,7 +206,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let payload: { detail?: string; message?: string; code?: string; error?: { code?: string; details?: { maintenance?: unknown } } } | null = null
     try {
       payload = await parseResponse<{ detail?: string; message?: string; error?: { code?: string; details?: { maintenance?: unknown } } }>(response)
-      message = payload?.detail || payload?.message || message
+      message = parseApiError(response.status, payload).message
     } catch {
       // ignore parse issues
     }
@@ -231,7 +224,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         }),
       )
     }
-    throw new ApiError(response.status, message, payload?.error?.code ?? payload?.code)
+    throw parseApiError(response.status, payload)
   }
 
   return parseResponse<T>(response)
@@ -256,6 +249,43 @@ async function withCurriculumImportFallback<T>(operation: () => Promise<T>, fall
 }
 
 export const api = {
+  createCurriculumAiImportSession(payload: FormData | { url: string }) {
+    return withCurriculumImportFallback(
+      () => request<CurriculumAiImportSession>('/curriculum/ai-import-sessions', {
+        method: 'POST', body: payload instanceof FormData ? payload : JSON.stringify(payload),
+      }), () => curriculumImportMockApi.createSession(payload),
+    )
+  },
+  getCurriculumAiImportSession(id: string) {
+    return withCurriculumImportFallback(
+      () => request<CurriculumAiImportSession>(`/curriculum/ai-import-sessions/${encodeURIComponent(id)}`),
+      () => curriculumImportMockApi.getSession(id),
+    )
+  },
+  deleteCurriculumAiImportSession(id: string) {
+    return withCurriculumImportFallback(
+      () => request<void>(`/curriculum/ai-import-sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      () => curriculumImportMockApi.deleteSession(id),
+    )
+  },
+  confirmCurriculumAiImportSession(id: string, payload: CurriculumImportConfirmPayload & { client_revision: number }) {
+    return withCurriculumImportFallback(
+      () => request<CurriculumImportDetail>(`/curriculum/ai-import-sessions/${encodeURIComponent(id)}/confirm`, { method: 'POST', body: JSON.stringify(payload) }),
+      () => curriculumImportMockApi.confirmSession(id, payload),
+    )
+  },
+  checkCurriculumImportDuplicates(draft: CurriculumImportDocument | Record<string, unknown>) {
+    return withCurriculumImportFallback(
+      () => request<{ matches: CurriculumDuplicateMatch[] }>('/curriculum/import/duplicate-check', { method: 'POST', body: JSON.stringify({ draft }) }),
+      () => curriculumImportMockApi.duplicateCheck(draft),
+    )
+  },
+  confirmCurriculumImport(payload: CurriculumImportConfirmPayload) {
+    return withCurriculumImportFallback(
+      () => request<CurriculumImportDetail>('/curriculum/import/confirm', { method: 'POST', body: JSON.stringify(payload) }),
+      () => curriculumImportMockApi.confirmImport(payload),
+    )
+  },
   getBootstrapStatus() {
     return request<BootstrapStatus>('/auth/bootstrap')
   },

@@ -55,10 +55,12 @@ from backend.routers import (
 )
 from backend.routers.scim import SCIM_BASE_PATH, ScimError, build_scim_error_response
 from backend.routers.calendar import router as calendar_router
+from backend.routers.curriculum_ai_import_sessions import router as curriculum_ai_import_sessions_router
 from backend.routers.grading import router as grading_router
 from backend.routers.health import router as health_router
 from backend.routers.imports import router as imports_router
 from backend.services.capabilities import get_auth_providers, get_capability_registry
+from backend.services.curriculum_ai_import_sessions import cancel_all_processing as cancel_curriculum_ai_import_processing
 from backend.services.backup_service import get_backup_scheduler
 from backend.services.grading_worker import create_worker
 from backend.services.health import build_simple_health_payload, get_runtime_started_at, log_startup_health_snapshot
@@ -154,6 +156,7 @@ async def lifespan(app: FastAPI):
     app.state.services_initialized = True
     app.state.startup_health = await log_startup_health_snapshot(app)
     yield
+    await cancel_curriculum_ai_import_processing()
     if worker is not None:
         worker.stop()
     if backup_scheduler is not None:
@@ -648,6 +651,7 @@ def create_app() -> FastAPI:
     app.include_router(compliance_reports_router, prefix=API_PREFIX)
     app.include_router(assignments_router, prefix=API_PREFIX)
     app.include_router(bulk_assignment_import_router, prefix=API_PREFIX)
+    app.include_router(curriculum_ai_import_sessions_router, prefix=API_PREFIX)
     app.include_router(lesson_plans_router, prefix=API_PREFIX)
     app.include_router(submissions_router, prefix=API_PREFIX)
     app.include_router(grades_router, prefix=API_PREFIX)

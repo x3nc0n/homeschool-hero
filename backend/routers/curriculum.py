@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.config import settings
 from backend.database import get_db
-from backend.i18n import build_error_payload
+from backend.i18n import build_error_payload, error_detail
 from backend.models import (
     Assignment,
     AssignmentCategory,
@@ -37,6 +37,9 @@ from backend.schemas.curriculum import (
     CurriculumAIImportConfirmRequest,
     CurriculumAIImportRead,
     CloneCurriculumPackageRequest,
+    CurriculumDuplicateCheckRead,
+    CurriculumDuplicateCheckRequest,
+    CurriculumImportConfirmRequest,
     CurriculumImportActivationRead,
     CurriculumImportActivationRequest,
     CurriculumImportDocument,
@@ -65,7 +68,12 @@ from backend.services.curriculum_ai_import import (
     AIImportUnavailable,
     get_ai_curriculum_import_service,
 )
-from backend.services.curriculum_imports import create_imported_curriculum, imported_curriculum_load_options
+from backend.services.curriculum_duplicates import find_duplicate_matches
+from backend.services.curriculum_imports import (
+    CurriculumImportConflict,
+    create_imported_curriculum,
+    imported_curriculum_load_options,
+)
 from backend.services.curriculum_sources import (
     CurriculumSourceError,
     CurriculumSourceUnavailable,
@@ -231,6 +239,7 @@ async def _create_imported_curriculum_response(
     *,
     auth: AuthSession,
     payload: CurriculumImportDocument,
+    acknowledged_duplicate_ids: list[int] | None = None,
 ) -> ImportedCurriculum:
     try:
         created = await create_imported_curriculum(
@@ -238,10 +247,23 @@ async def _create_imported_curriculum_response(
             family_id=auth.family_id,
             user_id=auth.user_id,
             payload=payload,
+            acknowledged_duplicate_ids=acknowledged_duplicate_ids or (),
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except CurriculumImportConflict as exc:
+        raise curriculum_import_conflict_http_exception(exc) from None
     return await _get_imported_curriculum_or_404(db, created.id, auth.family_id)
+
+
+def curriculum_import_conflict_http_exception(exc: CurriculumImportConflict) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status_code,
+        detail=error_detail(
+            code=exc.code,
+            message_key=exc.message_key,
+            default_message=exc.message,
+            details=exc.details,
+        ),
+    )
 
 
 async def _parse_ai_import_request(request: Request) -> tuple[object | None, str | None]:
@@ -518,7 +540,14 @@ async def draft_curriculum_from_ai_import(
         logger.exception('AI curriculum import is unavailable.')
         return _service_unavailable_response(request, detail=AI_IMPORT_UNAVAILABLE_MESSAGE, code='ai_import_unavailable')
     except AIImportError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_detail(
+                code=exc.code,
+                message_key=f'errors.curriculum.{exc.code}',
+                default_message=exc.message,
+            ),
+        ) from None
     return CurriculumAIImportRead(
         draft=draft,
         source_kind=extracted.source_kind,
@@ -533,7 +562,36 @@ async def confirm_ai_curriculum_import(
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='confirm AI curriculum import')),
 ) -> ImportedCurriculum:
-    return await _create_imported_curriculum_response(db, auth=auth, payload=payload.draft)
+    return await _create_imported_curriculum_response(
+        db,
+        auth=auth,
+        payload=payload.draft,
+        acknowledged_duplicate_ids=payload.acknowledged_duplicate_ids,
+    )
+
+
+@router.post('/curriculum/import/duplicate-check', response_model=CurriculumDuplicateCheckRead)
+async def check_curriculum_import_duplicates(
+    payload: CurriculumDuplicateCheckRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='check curriculum import duplicates')),
+) -> CurriculumDuplicateCheckRead:
+    matches = await find_duplicate_matches(db, family_id=auth.family_id, payload=payload.draft)
+    return CurriculumDuplicateCheckRead(matches=[match.to_dict() for match in matches])
+
+
+@router.post('/curriculum/import/confirm', response_model=CurriculumImportRead, status_code=status.HTTP_201_CREATED)
+async def confirm_curriculum_import(
+    payload: CurriculumImportConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='confirm curriculum import')),
+) -> ImportedCurriculum:
+    return await _create_imported_curriculum_response(
+        db,
+        auth=auth,
+        payload=payload.draft,
+        acknowledged_duplicate_ids=payload.acknowledged_duplicate_ids,
+    )
 
 
 @router.post('/curriculum/import', response_model=CurriculumImportRead, status_code=status.HTTP_201_CREATED)

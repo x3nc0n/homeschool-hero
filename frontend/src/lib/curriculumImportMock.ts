@@ -1,4 +1,7 @@
 import type {
+  CurriculumAiImportSession,
+  CurriculumImportConfirmPayload,
+  CurriculumDuplicateMatch,
   CurriculumImportActivationPayload,
   CurriculumImportActivationResponse,
   CurriculumAiImportConfirmPayload,
@@ -15,6 +18,8 @@ import type {
   CurriculumSourceSummary,
 } from '@/types/api'
 import { buildCurriculumImportExample, normalizeCurriculumImport } from '@/lib/curriculumImport'
+import { ApiError } from '@/lib/apiError'
+import { pythonCasefold } from '@/lib/curriculumCasefold'
 
 const STORAGE_KEY = 'homeschool-hero-curriculum-import-mock-v1'
 
@@ -81,6 +86,7 @@ function nowIso() {
 
 function metadataFromNormalized(metadata: ReturnType<typeof normalizeCurriculumImport>['metadata']): CurriculumImportMetadata {
   return {
+    edition: metadata.edition,
     grade_levels: metadata.gradeLevels,
     standards_alignment: metadata.standardsAlignment,
     prerequisites: metadata.prerequisites,
@@ -211,6 +217,7 @@ function buildSchema(): CurriculumImportSchema {
       standards_alignment: { type: 'array', items: { type: 'string' } },
       prerequisites: { type: 'array', items: { type: 'string' } },
       estimated_hours: { type: 'number' },
+      metadata: { type: 'object', properties: { edition: { type: 'string' } } },
       subjects: { type: 'array', items: { type: 'object' } },
     },
     example: buildCurriculumImportExample(),
@@ -613,7 +620,273 @@ function getConfirmDraft(payload: CurriculumAiImportConfirmPayload) {
   })
 }
 
+const mockSessions = new Map<string, { session: CurriculumAiImportSession; input: FormData | { url: string } }>()
+
+const apostrophes = /['\u2018\u2019\u02bc`\u00b4]/gu
+const gradeNoiseWords = new Set(['grade', 'grades', 'gr', 'level', 'levels', 'year', 'years'])
+const gradeAliases = new Map([
+  ['kindergarten', 'k'], ['kinder', 'k'], ['pre k', 'prek'], ['pk', 'prek'],
+  ['prekindergarten', 'prek'], ['pre kindergarten', 'prek'],
+])
+const genericLessonNames = new Set([
+  'introduction', 'intro', 'overview', 'review', 'unit review', 'chapter review', 'test', 'unit test',
+  'chapter test', 'quiz', 'assessment', 'final exam', 'midterm', 'exam', 'practice', 'conclusion',
+  'wrap up', 'project', 'final project', 'summary', 'vocabulary', 'warm up',
+])
+const genericLessonPattern = /^(lesson|day|week|chapter|session|class|part|section|module|unit|topic|activity|worksheet|quiz|test|exam|review)( ?(\p{Nd}+|[ivxlc]+|[a-z]))?$/u
+
+function normalizedName(value: string) {
+  return pythonCasefold(value.normalize('NFKC')).normalize('NFKC')
+    .replace(apostrophes, '').replace(/\p{P}/gu, ' ').replace(/\s+/gu, ' ')
+    .replaceAll('\u0085', ' ').replaceAll('\u001c', ' ').replaceAll('\u001d', ' ')
+    .replaceAll('\u001e', ' ').replaceAll('\u001f', ' ').replace(/ +/gu, ' ').trim()
+}
+
+function normalizedGrades(values: string[]) {
+  return new Set(values.map((value) => {
+    const text = normalizedName(value)
+    const alias = gradeAliases.get(text)
+    if (alias) return alias
+    const tokens = text.split(' ').filter((token) => !gradeNoiseWords.has(token)).map((token) => {
+      const ordinal = token.match(/^(\p{Nd}+)(st|nd|rd|th)$/u)
+      const normalized = ordinal?.[1] || token
+      return gradeAliases.get(normalized) || normalized
+    })
+    const joined = tokens.join(' ')
+    return gradeAliases.get(joined) || joined
+  }).filter(Boolean))
+}
+
+function normalizedTags(values: string[]) {
+  return new Set(values.map(normalizedName).filter(Boolean))
+}
+
+function isGenericLesson(name: string) {
+  return genericLessonNames.has(name) || genericLessonPattern.test(name)
+}
+
+function editionFromMetadata(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const metadata = value as Record<string, unknown>
+  let edition = metadata.edition
+  if (!edition && metadata.extensions && typeof metadata.extensions === 'object' && !Array.isArray(metadata.extensions)) {
+    edition = (metadata.extensions as Record<string, unknown>).edition
+  }
+  return (typeof edition === 'string' || typeof edition === 'number') && String(edition).trim()
+    ? String(edition).trim()
+    : null
+}
+
+type MockDuplicateUnit = {
+  key: string
+  name: string
+  lessons: Map<string, string>
+}
+
+type MockDuplicateSubject = {
+  key: string
+  name: string
+  grades: Set<string>
+  edition: string | null
+  units: MockDuplicateUnit[]
+}
+
+type MockDuplicateCurriculum = {
+  edition: string | null
+  grades: Set<string>
+  gradeLevels: string[]
+  standards: Set<string>
+  subjects: MockDuplicateSubject[]
+}
+
+function duplicateStructure(document: ReturnType<typeof normalizeCurriculumImport>, raw: unknown, stored = false): MockDuplicateCurriculum {
+  const rawDocument = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const rawMetadata = rawDocument.metadata
+  // Candidate extensions are a metadata object themselves; stored metadata uses
+  // the outer object. Subject extension editions apply only to stored trees.
+  const curriculumEdition = stored
+    ? editionFromMetadata(rawMetadata)
+    : document.metadata.edition || editionFromMetadata(
+      rawMetadata && typeof rawMetadata === 'object' ? (rawMetadata as Record<string, unknown>).extensions : null,
+    )
+  const curriculumGrades = normalizedGrades(document.metadata.gradeLevels)
+  return {
+    edition: curriculumEdition,
+    grades: curriculumGrades,
+    gradeLevels: document.metadata.gradeLevels,
+    standards: normalizedTags(document.metadata.standardsAlignment),
+    subjects: document.subjects.map((subject, index) => {
+      const grades = normalizedGrades(subject.metadata.gradeLevels)
+      const rawSubjects = rawDocument.subjects
+      const rawSubject = Array.isArray(rawSubjects) ? rawSubjects[index] : null
+      return {
+        key: normalizedName(subject.name),
+        name: subject.name,
+        grades: grades.size ? grades : curriculumGrades,
+        edition: stored && rawSubject && typeof rawSubject === 'object'
+          ? editionFromMetadata((rawSubject as Record<string, unknown>).metadata) || curriculumEdition
+          : subject.metadata.edition || curriculumEdition,
+        units: subject.units.map((unit) => ({
+          key: normalizedName(unit.name),
+          name: unit.name,
+          lessons: new Map(unit.lessons.map((lesson) => [normalizedName(lesson.name), lesson.name])),
+        })),
+      }
+    }),
+  }
+}
+
+function setsEqual(left: Set<string>, right: Set<string>) {
+  return left.size === right.size && [...left].every((value) => right.has(value))
+}
+
+function compatibleSubjects(candidate: MockDuplicateSubject, existing: MockDuplicateSubject) {
+  if (candidate.grades.size && existing.grades.size && !setsEqual(candidate.grades, existing.grades)) return false
+  const candidateEdition = normalizedName(candidate.edition || '')
+  const existingEdition = normalizedName(existing.edition || '')
+  return !candidateEdition || !existingEdition || candidateEdition === existingEdition
+}
+
+function compatibleCurricula(candidate: MockDuplicateCurriculum, existing: MockDuplicateCurriculum) {
+  if (!candidate.standards.size || !existing.standards.size) return true
+  return ![...candidate.standards].every((standard) => !existing.standards.has(standard))
+}
+
+function structuralTriples(document: MockDuplicateCurriculum) {
+  return new Set(document.subjects.flatMap((subject) => subject.units.flatMap((unit) =>
+    [...unit.lessons.keys()].map((lesson) => JSON.stringify([subject.key, unit.key, lesson])))))
+}
+
+function dedupeEvidence(values: string[]) {
+  return [...new Set(values)].slice(0, 50)
+}
+
+export function findMockDuplicateMatches(draft: CurriculumImportDocument | Record<string, unknown>, curricula: CurriculumImportDetail[]): CurriculumDuplicateMatch[] {
+  const candidate = duplicateStructure(normalizeCurriculumImport(draft), draft)
+  return curricula.flatMap((existing) => {
+    const rawExisting = existing.payload || existing
+    const previous = duplicateStructure(normalizeCurriculumImport(rawExisting), rawExisting, true)
+    if (!compatibleCurricula(candidate, previous)) return []
+
+    const candidateByKey = new Map<string, MockDuplicateSubject[]>()
+    for (const subject of candidate.subjects) {
+      candidateByKey.set(subject.key, [...(candidateByKey.get(subject.key) || []), subject])
+    }
+    const compatiblePairs = previous.subjects.flatMap((oldSubject) =>
+      (candidateByKey.get(oldSubject.key) || [])
+        .filter((subject) => compatibleSubjects(subject, oldSubject))
+        .map((subject) => [subject, oldSubject] as const))
+    if (!compatiblePairs.length) return []
+
+    const candidateTriples = structuralTriples(candidate)
+    const previousTriples = structuralTriples(previous)
+    const hasSpecificLesson = candidate.subjects.some((subject) =>
+      subject.units.some((unit) => [...unit.lessons.keys()].some((lesson) => !isGenericLesson(lesson))))
+    const whole = hasSpecificLesson && setsEqual(candidateTriples, previousTriples) &&
+      previous.subjects.every((oldSubject) =>
+        (candidateByKey.get(oldSubject.key) || []).every((subject) => compatibleSubjects(subject, oldSubject)))
+
+    if (whole) {
+      return [{
+        id: existing.id,
+        name: existing.name,
+        grade_levels: [...previous.gradeLevels],
+        edition: previous.edition,
+        reason: 'exact_curriculum',
+        matched_subjects: dedupeEvidence(previous.subjects.map((subject) => subject.name)),
+        matched_units: dedupeEvidence(previous.subjects.flatMap((subject) => subject.units.map((unit) => unit.name))),
+        matched_lessons: dedupeEvidence(previous.subjects.flatMap((subject) => subject.units.flatMap((unit) => [...unit.lessons.values()]))),
+      }]
+    }
+
+    const matchedSubjects: string[] = []
+    const matchedUnits: string[] = []
+    const matchedLessons: string[] = []
+    for (const [subject, oldSubject] of compatiblePairs) {
+      const candidateUnits = new Map<string, MockDuplicateUnit[]>()
+      for (const unit of subject.units) {
+        candidateUnits.set(unit.key, [...(candidateUnits.get(unit.key) || []), unit])
+      }
+      for (const oldUnit of oldSubject.units) {
+        const candidateLessons = new Set((candidateUnits.get(oldUnit.key) || []).flatMap((unit) => [...unit.lessons.keys()]))
+        const shared = [...oldUnit.lessons.keys()].filter((lesson) => candidateLessons.has(lesson) && !isGenericLesson(lesson))
+        if (shared.length < 2) continue
+        matchedSubjects.push(oldSubject.name)
+        matchedUnits.push(oldUnit.name)
+        matchedLessons.push(...shared.map((lesson) => oldUnit.lessons.get(lesson)!))
+      }
+    }
+    if (!matchedUnits.length) return []
+    return [{
+      id: existing.id,
+      name: existing.name,
+      grade_levels: [...previous.gradeLevels],
+      edition: previous.edition,
+      reason: 'partial_overlap',
+      matched_subjects: dedupeEvidence(matchedSubjects),
+      matched_units: dedupeEvidence(matchedUnits),
+      matched_lessons: dedupeEvidence(matchedLessons),
+    }]
+  })
+}
+
+function requireMockSession(id: string) {
+  const entry = mockSessions.get(id)
+  if (!entry) throw new ApiError(404, 'Import session not found.')
+  if (Date.parse(entry.session.expires_at) <= Date.now() && entry.session.status !== 'confirmed') entry.session.status = 'expired'
+  return entry
+}
+
 export const curriculumImportMockApi = {
+  async createSession(input: FormData | { url: string }): Promise<CurriculumAiImportSession> {
+    const label = await readAiPayloadLabel(input)
+    const session: CurriculumAiImportSession = {
+      id: crypto.randomUUID(), status: 'processing', source_kind: input instanceof FormData ? 'file' : 'url',
+      source_name: label.label, warnings: ['Development mock: this is a sample draft, not AI analysis.'],
+      revision: 1, expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      created_at: nowIso(), updated_at: nowIso(), draft: null, error: null,
+    }
+    mockSessions.set(session.id, { session, input })
+    return cloneDocument(session)
+  },
+  async getSession(id: string): Promise<CurriculumAiImportSession> {
+    const entry = requireMockSession(id)
+    if (entry.session.status === 'processing') {
+      try {
+        const result = await buildAiDraft(entry.input)
+        if (mockSessions.get(id) !== entry) throw new ApiError(404, 'Import session was cancelled.')
+        entry.session = { ...entry.session, status: 'ready', draft: result.draft, revision: 2,
+          warnings: [...entry.session.warnings, ...(result.warnings || [])], updated_at: nowIso() }
+      } catch (error) {
+        if (!mockSessions.has(id)) throw error
+        entry.session = { ...entry.session, status: 'failed', error: { code: 'mock_analysis_failed', message: 'Mock analysis failed.' } }
+      }
+    }
+    return cloneDocument(entry.session)
+  },
+  async deleteSession(id: string) {
+    const entry = requireMockSession(id)
+    if (entry.session.status === 'confirmed') throw new ApiError(409, 'A confirmed session cannot be cancelled.')
+    mockSessions.delete(id)
+  },
+  async confirmSession(id: string, payload: CurriculumImportConfirmPayload & { client_revision: number }) {
+    const entry = requireMockSession(id)
+    if (entry.session.status !== 'ready') throw new ApiError(409, 'This session is not ready. Start a new analysis.')
+    if (entry.session.revision !== payload.client_revision) throw new ApiError(409, 'The session revision changed. Start a new analysis.')
+    const result = await this.confirmImport(payload)
+    entry.session.status = 'confirmed'
+    return result
+  },
+  async duplicateCheck(draft: CurriculumImportDocument | Record<string, unknown>) {
+    return { matches: findMockDuplicateMatches(draft, readStore().curricula) }
+  },
+  async confirmImport(payload: CurriculumImportConfirmPayload) {
+    const matches = findMockDuplicateMatches(payload.draft, readStore().curricula)
+    if (matches.some((match) => !payload.acknowledged_duplicate_ids.includes(match.id))) {
+      throw new ApiError(409, 'Review the duplicate curriculum matches.', 'curriculum_import_duplicate_conflict', { matches }, matches)
+    }
+    return this.persistImport(payload.draft)
+  },
   async list() {
     const store = readStore()
     return store.curricula.map(summarize).sort((left, right) => right.updated_at.localeCompare(left.updated_at))
@@ -629,7 +902,15 @@ export const curriculumImportMockApi = {
   },
 
   async import(payload: CurriculumImportDocument | Record<string, unknown>) {
+    return this.confirmImport({ draft: payload, acknowledged_duplicate_ids: [] })
+  },
+
+  async persistImport(payload: CurriculumImportDocument | Record<string, unknown>) {
     const store = readStore()
+    const name = normalizeCurriculumImport(payload).name
+    if (store.curricula.some((item) => normalizedName(item.name) === normalizedName(name))) {
+      throw new ApiError(409, 'A curriculum with this name already exists. Rename the draft.', 'curriculum_name_conflict')
+    }
     const { detail, nextId } = buildDetail(payload, store.nextId)
     const nextStore = {
       nextId,

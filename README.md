@@ -238,7 +238,7 @@ See `docs/development.md` for the full development workflow.
 | `OLLAMA_HOST` | No | Ollama base URL. |
 | `OLLAMA_MODEL` | No | Ollama model name. |
 | `AI_LOCAL_ONLY` | No | When `true`, require `AI_PROVIDER=ollama`, restrict `OLLAMA_HOST` to localhost/private addresses, route curriculum AI import through Ollama, and reject configured remote AI import endpoints. |
-| `AI_IMPORT_ENABLED` | No | Enables AI-assisted curriculum import. With `AI_LOCAL_ONLY=true`, the Ollama model must support tool calling. |
+| `AI_IMPORT_ENABLED` | No | Enables AI-assisted curriculum import. With `AI_LOCAL_ONLY=true`, drafts use the native Ollama `/api/chat` API with a JSON-schema `format` (no tool calling required, never a cloud fallback). The UI drafts in the background via `/api/curriculum/ai-import-sessions`. |
 | `AI_IMPORT_ENDPOINT` | No | Remote-compatible endpoint for curriculum import; must be unset when `AI_LOCAL_ONLY=true`. |
 | `ONLINE_CURRICULUM_ENABLED` | No | `true` by default. Set `false` to disable OpenStax/OER Commons downloads and AI imports from URLs while retaining uploads and the static CK-12 catalog. |
 | `OPENAI_API_KEY` | No | Required when `AI_PROVIDER=openai`. |

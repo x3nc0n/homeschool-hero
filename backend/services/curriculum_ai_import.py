@@ -6,7 +6,9 @@ import ipaddress
 import json
 import logging
 import mimetypes
+import re
 import socket
+import time
 from dataclasses import dataclass
 from html import unescape
 from html.parser import HTMLParser
@@ -17,15 +19,21 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 from docx import Document as DocxDocument
+from pydantic import ValidationError
 from pypdf import PdfReader
 
 from backend.config import settings
 from backend.local_ai import validate_local_ollama_host
 from backend.schemas.curriculum import CurriculumImportDocument
 from backend.services import ai_grader
+from backend.services.logging_config import log_action
 
 logger = logging.getLogger(__name__)
 AI_IMPORT_TOOL_NAME = 'create_curriculum_import'
+AI_IMPORT_SCHEMA_VERSION = '1.0'
+RETRYABLE_PROVIDER_STATUS_CODES = frozenset({429, 502, 503, 504})
+MAX_VALIDATION_ERROR_SUMMARY = 5
+_FENCED_JSON_PATTERN = re.compile(r'^```[a-zA-Z0-9_-]*\s*\n?(.*?)\n?\s*```$', re.DOTALL)
 AZURE_OPENAI_HOSTS = ('openai.azure.com',)
 AZURE_DEPLOYMENTS_PATH_PREFIX = '/openai/deployments/'
 ALLOWED_HTTP_SCHEMES = {'http', 'https'}
@@ -42,6 +50,10 @@ AI_IMPORT_SYSTEM_PROMPT = (
     'that are not supported by the source. Keep resource URLs only when they appear in the source. Prefer concise, '
     'clear names and descriptions. If the source is high level, create a lightweight unit/lesson outline instead of '
     'fabricating a detailed sequence.'
+)
+OLLAMA_JSON_INSTRUCTION = (
+    ' Respond with a single JSON object that matches the provided JSON schema. Use JSON arrays for list fields and '
+    'integers for numeric fields. Do not wrap the JSON in Markdown.'
 )
 
 
@@ -77,7 +89,15 @@ class AIImportUnavailable(RuntimeError):
 
 
 class AIImportError(RuntimeError):
-    """Raised when AI import cannot extract or parse a source document."""
+    """Raised when AI import cannot extract or parse a source document.
+
+    Messages are client-safe: they never include raw model output, source text, or validation input.
+    """
+
+    def __init__(self, message: str, *, code: str = 'ai_import_failed') -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 
 @dataclass(slots=True)
@@ -127,6 +147,25 @@ class AICurriculumImportService:
         extracted = await self._extract_from_url(url)
         return await self._build_draft(extracted)
 
+    async def build_draft_from_bytes(
+        self,
+        payload: bytes,
+        *,
+        filename: str,
+        content_type: str,
+    ) -> tuple[CurriculumImportDocument, ExtractedSource]:
+        """Build a draft from an already bounded upload; extraction runs off the event loop."""
+        self._ensure_configured()
+        extracted = await asyncio.to_thread(
+            self._extract_from_bytes,
+            payload,
+            filename=filename,
+            content_type=content_type,
+            source_kind='file',
+            source_name=filename,
+        )
+        return await self._build_draft(extracted)
+
     def _ensure_configured(self) -> None:
         if not settings.ai_import_enabled:
             raise AIImportUnavailable('AI curriculum import is disabled. Set AI_IMPORT_ENABLED=true to enable it.')
@@ -158,8 +197,13 @@ class AICurriculumImportService:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
                 response = await self._fetch_validated_source_url(client, url)
             response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise AIImportError(f'Unable to fetch the provided URL: {exc}') from exc
+        except httpx.HTTPStatusError as exc:
+            raise AIImportError(
+                f'Unable to fetch the provided URL (HTTP {exc.response.status_code})',
+                code='source_extraction_failed',
+            ) from None
+        except httpx.HTTPError:
+            raise AIImportError('Unable to fetch the provided URL', code='source_extraction_failed') from None
 
         content_type = (response.headers.get('content-type') or '').split(';', 1)[0].strip().lower()
         filename = Path(urlparse(str(response.url)).path).name or 'url-import'
@@ -255,8 +299,8 @@ class AICurriculumImportService:
     def _extract_pdf_text(self, payload: bytes) -> str:
         try:
             reader = PdfReader(BytesIO(payload))
-        except Exception as exc:  # noqa: BLE001
-            raise AIImportError(f'Unable to read PDF document: {exc}') from exc
+        except Exception:  # noqa: BLE001
+            raise AIImportError('Unable to read PDF document', code='source_extraction_failed') from None
         text_parts: list[str] = []
         for page in reader.pages:
             try:
@@ -268,8 +312,8 @@ class AICurriculumImportService:
     def _extract_docx_text(self, payload: bytes) -> str:
         try:
             document = DocxDocument(BytesIO(payload))
-        except Exception as exc:  # noqa: BLE001
-            raise AIImportError(f'Unable to read DOCX document: {exc}') from exc
+        except Exception:  # noqa: BLE001
+            raise AIImportError('Unable to read DOCX document', code='source_extraction_failed') from None
         return '\n'.join(paragraph.text for paragraph in document.paragraphs if paragraph.text.strip())
 
     def _extract_html_text(self, html: str) -> str:
@@ -354,8 +398,21 @@ class AICurriculumImportService:
         payload = self._apply_source_defaults(payload, extracted)
         try:
             document = CurriculumImportDocument.model_validate(payload)
-        except Exception as exc:  # noqa: BLE001
-            raise AIImportError(f'AI returned an invalid curriculum draft: {exc}') from exc
+        except ValidationError as exc:
+            summary = _summarize_validation_error(exc)
+            log_action(
+                logger,
+                logging.WARNING,
+                'AI curriculum draft failed schema validation.',
+                action='curriculum_ai_import.draft_invalid',
+                details={'error_count': exc.error_count(), 'errors': summary},
+            )
+            raise AIImportError(
+                f'AI returned a curriculum draft that does not match the import schema ({exc.error_count()} validation error(s)).',
+                code='ai_response_invalid',
+            ) from None
+        except ValueError:
+            raise AIImportError('AI returned an invalid curriculum draft.', code='ai_response_invalid') from None
         return document, extracted
 
     def _apply_source_defaults(self, payload: dict[str, Any], extracted: ExtractedSource) -> dict[str, Any]:
@@ -369,16 +426,21 @@ class AICurriculumImportService:
         metadata['external_source'] = external_source
         draft['metadata'] = metadata
         draft['source'] = 'ai-import'
+        draft['schema_version'] = AI_IMPORT_SCHEMA_VERSION
         draft.setdefault('name', extracted.source_name)
         return draft
 
     async def _call_ai_parser(self, extracted: ExtractedSource) -> dict[str, Any]:
         if settings.ai_local_only:
-            request_url = f'{settings.ollama_host.rstrip("/")}/v1/chat/completions'
+            # Local-only mode always uses the native Ollama chat API; there is never a cloud fallback.
+            provider = 'ollama'
+            request_url = f'{settings.ollama_host.rstrip("/")}/api/chat'
             request_params: dict[str, str] | None = None
             headers = {'Content-Type': 'application/json'}
-            payload = self._build_request_payload(extracted, model=settings.ollama_model)
+            payload = self._build_ollama_payload(extracted)
+            parse_response = self._parse_ollama_response
         else:
+            provider = 'remote'
             endpoint = settings.ai_import_endpoint.strip()
             _, parsed_endpoint = self._parse_http_url(
                 endpoint,
@@ -392,26 +454,155 @@ class AICurriculumImportService:
                 request_params = None
             headers = self._build_headers(endpoint)
             payload = self._build_request_payload(extracted)
+            parse_response = self._parse_ai_response
+        body = await self._post_with_transport_retries(
+            request_url,
+            headers=headers,
+            params=request_params,
+            payload=payload,
+            provider=provider,
+        )
+        try:
+            parsed = parse_response(body)
+        except AIImportError as exc:
+            log_action(
+                logger,
+                logging.WARNING,
+                'AI curriculum import response could not be parsed.',
+                action='curriculum_ai_import.response_invalid',
+                details={'provider': provider, 'code': exc.code},
+            )
+            raise
+        return self._coerce_stringified_lists(parsed, _curriculum_import_schema())
+
+    async def _post_with_transport_retries(
+        self,
+        request_url: str,
+        *,
+        headers: dict[str, str],
+        params: dict[str, str] | None,
+        payload: dict[str, Any],
+        provider: str,
+    ) -> Any:
+        """POST to the provider, retrying only transient transport failures (never parse/schema errors)."""
         timeout = httpx.Timeout(settings.ai_import_request_timeout_seconds)
         backoff = max(settings.ai_import_retry_backoff_seconds, 0.0)
-        last_error: Exception | None = None
-        for attempt in range(1, max(settings.ai_import_retry_attempts, 1) + 1):
+        attempts = max(settings.ai_import_retry_attempts, 1)
+        for attempt in range(1, attempts + 1):
+            started = time.monotonic()
+            failure_kind: str
+            status_code: int | None = None
             try:
                 async with httpx.AsyncClient(
                     timeout=timeout,
                     follow_redirects=True,
                     trust_env=not settings.ai_local_only,
                 ) as client:
-                    response = await client.post(request_url, headers=headers, params=request_params, json=payload)
+                    response = await client.post(request_url, headers=headers, params=params, json=payload)
                 response.raise_for_status()
-                body = response.json()
-                return self._parse_ai_response(body)
-            except (httpx.HTTPError, ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
-                last_error = exc
-                if attempt >= max(settings.ai_import_retry_attempts, 1):
-                    break
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                if status_code not in RETRYABLE_PROVIDER_STATUS_CODES:
+                    self._log_provider_attempt(provider, attempt, started, outcome='http_error', status_code=status_code)
+                    raise AIImportError(
+                        f'The AI provider rejected the curriculum import request (HTTP {status_code}).',
+                        code='ai_provider_error',
+                    ) from None
+                failure_kind = 'retryable_http_error'
+            except httpx.TimeoutException:
+                failure_kind = 'timeout'
+            except httpx.TransportError:
+                failure_kind = 'transport_error'
+            else:
+                self._log_provider_attempt(provider, attempt, started, outcome='ok', status_code=response.status_code)
+                try:
+                    return response.json()
+                except ValueError:
+                    raise AIImportError(
+                        'The AI provider returned a response that was not valid JSON.',
+                        code='ai_response_invalid',
+                    ) from None
+            self._log_provider_attempt(provider, attempt, started, outcome=failure_kind, status_code=status_code)
+            if attempt < attempts:
                 await asyncio.sleep(backoff * (2 ** (attempt - 1)))
-        raise AIImportError(f'AI curriculum import failed: {last_error}')
+        if failure_kind == 'timeout':
+            raise AIImportError('The AI provider timed out while drafting the curriculum.', code='ai_provider_timeout')
+        raise AIImportError('The AI provider could not be reached to draft the curriculum.', code='ai_provider_error')
+
+    def _log_provider_attempt(
+        self,
+        provider: str,
+        attempt: int,
+        started: float,
+        *,
+        outcome: str,
+        status_code: int | None,
+    ) -> None:
+        log_action(
+            logger,
+            logging.INFO if outcome == 'ok' else logging.WARNING,
+            'AI curriculum import provider call finished.',
+            action='curriculum_ai_import.provider_call',
+            details={
+                'provider': provider,
+                'attempt': attempt,
+                'outcome': outcome,
+                'status_code': status_code,
+                'duration_ms': int((time.monotonic() - started) * 1000),
+            },
+        )
+
+    def _build_ollama_payload(self, extracted: ExtractedSource) -> dict[str, Any]:
+        return {
+            'model': settings.ollama_model,
+            'messages': [
+                {'role': 'system', 'content': AI_IMPORT_SYSTEM_PROMPT + OLLAMA_JSON_INSTRUCTION},
+                {'role': 'user', 'content': self._build_user_prompt(extracted)},
+            ],
+            'format': _curriculum_import_schema(),
+            'stream': False,
+            'options': {'temperature': 0},
+        }
+
+    def _build_user_prompt(self, extracted: ExtractedSource) -> str:
+        return (
+            f'Source type: {extracted.source_kind}\n'
+            f'Source name: {extracted.source_name}\n'
+            f'Content type: {extracted.content_type}\n'
+            f'Source URL: {extracted.source_url or "N/A"}\n\n'
+            'Document text:\n'
+            f'{extracted.text}'
+        )
+
+    def _parse_ollama_response(self, body: Any) -> dict[str, Any]:
+        message = body.get('message') if isinstance(body, dict) else None
+        content = message.get('content') if isinstance(message, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            raise AIImportError('The AI provider returned an empty curriculum draft.', code='ai_response_invalid')
+        return _decode_json_object(content)
+
+    def _coerce_stringified_lists(self, value: Any, schema: dict[str, Any]) -> Any:
+        """Decode list fields that a model returned as JSON strings, guided by the import schema.
+
+        A string is replaced only when it decodes to a JSON list; anything else is left untouched
+        so schema validation still rejects it.
+        """
+        if isinstance(value, str) and _schema_allows(schema, 'array') and not _schema_allows(schema, 'string'):
+            decoded = _try_decode_json(value)
+            if isinstance(decoded, list):
+                value = decoded
+        if isinstance(value, dict):
+            properties = _schema_properties(schema)
+            return {
+                key: self._coerce_stringified_lists(item, properties[key]) if key in properties else item
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            item_schema = _schema_items(schema)
+            if item_schema is None:
+                return value
+            return [self._coerce_stringified_lists(item, item_schema) for item in value]
+        return value
 
     def _build_headers(self, endpoint: str) -> dict[str, str]:
         _, parsed_endpoint = self._parse_http_url(
@@ -432,14 +623,7 @@ class AICurriculumImportService:
         }
 
     def _build_request_payload(self, extracted: ExtractedSource, *, model: str | None = None) -> dict[str, Any]:
-        prompt = (
-            f'Source type: {extracted.source_kind}\n'
-            f'Source name: {extracted.source_name}\n'
-            f'Content type: {extracted.content_type}\n'
-            f'Source URL: {extracted.source_url or "N/A"}\n\n'
-            'Document text:\n'
-            f'{extracted.text}'
-        )
+        prompt = self._build_user_prompt(extracted)
         payload: dict[str, Any] = {
             'temperature': 0,
             'messages': [
@@ -496,8 +680,8 @@ class AICurriculumImportService:
     def _parse_ai_response(self, body: dict[str, Any]) -> dict[str, Any]:
         choices = body.get('choices') if isinstance(body, dict) else None
         if not isinstance(choices, list) or not choices:
-            raise AIImportError('AI response did not include any choices')
-        message = choices[0].get('message') or {}
+            raise AIImportError('AI response did not include any choices', code='ai_response_invalid')
+        message = (choices[0].get('message') if isinstance(choices[0], dict) else None) or {}
         tool_calls = message.get('tool_calls') if isinstance(message, dict) else None
         if isinstance(tool_calls, list):
             for tool_call in tool_calls:
@@ -507,15 +691,81 @@ class AICurriculumImportService:
                 if function.get('name') != AI_IMPORT_TOOL_NAME:
                     continue
                 arguments = function.get('arguments') or '{}'
-                parsed = arguments if isinstance(arguments, dict) else json.loads(arguments)
-                if isinstance(parsed, dict):
-                    return parsed
+                if isinstance(arguments, dict):
+                    return arguments
+                return _decode_json_object(arguments)
         content = message.get('content') if isinstance(message, dict) else None
         if isinstance(content, str) and content.strip():
-            parsed = json.loads(content)
-            if isinstance(parsed, dict):
-                return parsed
-        raise AIImportError('AI response did not include a curriculum tool call')
+            return _decode_json_object(content)
+        raise AIImportError('AI response did not include a curriculum tool call', code='ai_response_invalid')
+
+
+def _curriculum_import_schema() -> dict[str, Any]:
+    return inline_json_schema_refs(CurriculumImportDocument.model_json_schema())
+
+
+def _strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    match = _FENCED_JSON_PATTERN.match(stripped)
+    return match.group(1).strip() if match else stripped
+
+
+def _try_decode_json(text: str) -> Any:
+    try:
+        return json.loads(_strip_code_fence(text))
+    except (TypeError, ValueError):
+        return None
+
+
+def _decode_json_object(text: str) -> dict[str, Any]:
+    """Decode a JSON object, accepting a single surrounding Markdown code fence."""
+    try:
+        parsed = json.loads(_strip_code_fence(text))
+    except (TypeError, ValueError):
+        raise AIImportError('The AI provider returned a curriculum draft that was not valid JSON.', code='ai_response_invalid') from None
+    if not isinstance(parsed, dict):
+        raise AIImportError('The AI provider returned a curriculum draft that was not a JSON object.', code='ai_response_invalid')
+    return parsed
+
+
+def _schema_variants(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    variants = [schema]
+    for key in ('anyOf', 'oneOf', 'allOf'):
+        options = schema.get(key)
+        if isinstance(options, list):
+            variants.extend(option for option in options if isinstance(option, dict))
+    return variants
+
+
+def _schema_allows(schema: dict[str, Any], json_type: str) -> bool:
+    for variant in _schema_variants(schema):
+        declared = variant.get('type')
+        if declared == json_type or (isinstance(declared, list) and json_type in declared):
+            return True
+    return False
+
+
+def _schema_properties(schema: dict[str, Any]) -> dict[str, Any]:
+    properties: dict[str, Any] = {}
+    for variant in _schema_variants(schema):
+        if isinstance(variant.get('properties'), dict):
+            properties.update(variant['properties'])
+    return properties
+
+
+def _schema_items(schema: dict[str, Any]) -> dict[str, Any] | None:
+    for variant in _schema_variants(schema):
+        if isinstance(variant.get('items'), dict):
+            return variant['items']
+    return None
+
+
+def _summarize_validation_error(exc: ValidationError) -> list[dict[str, str]]:
+    """Summarize validation failures by location and type only; never include input values."""
+    return [
+        {'loc': '.'.join(str(part) for part in error.get('loc', ())), 'type': str(error.get('type', ''))}
+        for error in exc.errors(include_url=False, include_context=False, include_input=False)[:MAX_VALIDATION_ERROR_SUMMARY]
+    ]
 
 
 _service: AICurriculumImportService | None = None
