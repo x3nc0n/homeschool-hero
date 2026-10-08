@@ -3,14 +3,14 @@ import { CheckCircle2, FileJson, FileText, Sparkles, Upload, WandSparkles } from
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useCapabilities } from '@/context/CapabilitiesContext'
-import { api } from '@/lib/api'
-import type { CurriculumAiImportDraftResponse, CurriculumImportDetail, CurriculumImportDocument, CurriculumImportSchema } from '@/types/api'
+import { ApiError, api } from '@/lib/api'
+import { CurriculumSessionRunner, duplicatesAcknowledged } from '@/lib/curriculumImportSession'
+import type { CurriculumAiImportSession, CurriculumDuplicateMatch, CurriculumImportDetail, CurriculumImportSchema } from '@/types/api'
 import {
   buildCurriculumImportExample,
   formatEstimatedHours,
   normalizeCurriculumImport,
   parseCurriculumImportJson,
-  toCurriculumImportPayload,
   type NormalizedCurriculumImport,
 } from '@/lib/curriculumImport'
 import { CurriculumImportTree } from '@/components/features/CurriculumImportTree'
@@ -35,26 +35,6 @@ const STEPS = [
   'Review & confirm',
   'Success',
 ] as const
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function getAiDraftResult(response: CurriculumAiImportDraftResponse | CurriculumImportDocument | Record<string, unknown>) {
-  if (isRecord(response) && isRecord(response.draft)) {
-    return {
-      draft: response.draft,
-      warnings: Array.isArray(response.warnings) ? response.warnings.filter((warning): warning is string => typeof warning === 'string') : [],
-      sourceLabel: typeof response.source_label === 'string' ? response.source_label : '',
-    }
-  }
-
-  return {
-    draft: isRecord(response) ? response : (toCurriculumImportPayload(normalizeCurriculumImport(buildCurriculumImportExample())) as unknown as Record<string, unknown>),
-    warnings: [],
-    sourceLabel: '',
-  }
-}
 
 function StatsGrid({ curriculum }: { curriculum: NormalizedCurriculumImport }) {
   return (
@@ -113,7 +93,6 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
   const [saving, setSaving] = useState(false)
   const [activating, setActivating] = useState(false)
   const [parsed, setParsed] = useState<NormalizedCurriculumImport | null>(null)
-  const [rawPayload, setRawPayload] = useState<Record<string, unknown> | null>(null)
   const [createdCurriculum, setCreatedCurriculum] = useState<CurriculumImportDetail | null>(null)
   const [aiInputMethod, setAiInputMethod] = useState<'file' | 'url'>('file')
   const [aiFile, setAiFile] = useState<File | null>(null)
@@ -125,6 +104,75 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
   const [analysisProgress, setAnalysisProgress] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const aiFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [session, setSession] = useState<CurriculumAiImportSession | null>(null)
+  const [matches, setMatches] = useState<CurriculumDuplicateMatch[]>([])
+  const [acknowledgedIds, setAcknowledgedIds] = useState<number[]>([])
+  const [validatedText, setValidatedText] = useState<string | null>(null)
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false)
+  const [duplicateError, setDuplicateError] = useState('')
+  const [preflightAttempt, setPreflightAttempt] = useState(0)
+  const [runner] = useState(() => new CurriculumSessionRunner(api.deleteCurriculumAiImportSession))
+  const active = useRef(true)
+  const attempt = useRef(0)
+  const editorText = useRef(editablePayloadText)
+  useEffect(() => { editorText.current = editablePayloadText }, [editablePayloadText])
+
+  useEffect(() => {
+    active.current = true
+    const invalidate = () => { attempt.current++ }
+    return () => {
+      active.current = false
+      invalidate()
+      void runner.cancel().catch(() => { /* The server expiry also releases abandoned sessions. */ })
+    }
+  }, [runner])
+
+  useEffect(() => {
+    if ((step !== STEPS[1] && step !== STEPS[2]) || !editablePayloadText) return
+    let current = true
+    setValidatedText(null)
+    setAcknowledgedIds([])
+    setMatches([])
+    setCheckingDuplicates(true)
+    setDuplicateError('')
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = parseCurriculumImportJson(editablePayloadText)
+        const response = await api.checkCurriculumImportDuplicates(result.raw)
+        if (!current || editorText.current !== editablePayloadText) return
+        setMatches(response.matches)
+        setValidatedText(editablePayloadText)
+      } catch (checkError) {
+        if (current && editorText.current === editablePayloadText) {
+          setDuplicateError(checkError instanceof Error ? checkError.message : 'Unable to check for duplicates. Retry before importing.')
+        }
+      } finally {
+        if (current) setCheckingDuplicates(false)
+      }
+    }, 350)
+    return () => { current = false; window.clearTimeout(timer) }
+  }, [editablePayloadText, step, preflightAttempt])
+
+  useEffect(() => {
+    if (!session || session.status !== 'ready') return
+    const timer = window.setTimeout(() => {
+      setSession((current) => current ? { ...current, status: 'expired' } : null)
+      setError('This AI draft session expired. Copy your edits before starting a new analysis.')
+    }, Math.min(2147483647, Math.max(0, Date.parse(session.expires_at) - Date.now())))
+    return () => window.clearTimeout(timer)
+  }, [session])
+
+  const closeWizard = async () => {
+    if (saving || activating) return
+    attempt.current++
+    setAnalyzing(false)
+    try {
+      await runner.cancel()
+      if (active.current) onCancel()
+    } catch {
+      if (active.current) setError('Unable to cancel the server session. Try Close again; it will also expire automatically.')
+    }
+  }
 
   const requiredFields = useMemo(() => {
     const required = schema?.required
@@ -164,7 +212,16 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
   const resetError = () => setError('')
 
   const loadExample = () => {
+    attempt.current++
+    void runner.cancel().catch(() => { if (active.current) setError('Unable to cancel the previous analysis. It will expire automatically.') })
+    setAnalyzing(false)
+    setSession(null)
     resetError()
+    setStep(STEPS[0])
+    setParsed(null)
+    setEditablePayloadText('')
+    setValidatedText(null)
+    setAcknowledgedIds([])
     setImportMode('manual')
     setMethod('paste')
     setFileName('')
@@ -176,9 +233,9 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
       resetError()
       const result = parseCurriculumImportJson(jsonText)
       setParsed(result.normalized)
-      setRawPayload(result.raw)
       setAiWarnings([])
-      setEditablePayloadText('')
+      setEditablePayloadText(JSON.stringify(result.raw, null, 2))
+      setAiSourceLabel('')
       setStep(STEPS[1])
     } catch (validationError) {
       setError(validationError instanceof Error ? validationError.message : 'Unable to validate curriculum JSON.')
@@ -190,7 +247,9 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
     if (!file) return
     setMethod('file')
     setFileName(file.name)
-    setJsonText(await file.text())
+    const text = await file.text()
+    if (!active.current) return
+    setJsonText(text)
     resetError()
   }
 
@@ -207,8 +266,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
       resetError()
       const result = parseCurriculumImportJson(editablePayloadText)
       setParsed(result.normalized)
-      setRawPayload(result.raw)
-      setEditablePayloadText(JSON.stringify(result.raw, null, 2))
+      if (importMode === 'manual') setJsonText(editablePayloadText)
       return result.raw
     } catch (draftError) {
       setError(draftError instanceof Error ? draftError.message : 'Unable to apply the AI draft edits.')
@@ -226,61 +284,73 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
     setAiWarnings([])
     setImportMode('ai')
     setAnalyzing(true)
+    const requestAttempt = ++attempt.current
+    setSession(null)
 
     try {
-      const response =
+      const create = () =>
         aiInputMethod === 'file'
-          ? await (() => {
+          ? (() => {
               if (!aiFile) {
                 throw new Error('Choose a PDF, DOCX, or TXT file to continue.')
               }
               const payload = new FormData()
               payload.append('file', aiFile)
-              return api.createCurriculumAiImportDraft(payload)
+              return api.createCurriculumAiImportSession(payload)
             })()
-          : await (() => {
+          : (() => {
               const trimmedUrl = aiUrl.trim()
               if (!trimmedUrl) {
                 throw new Error('Paste a curriculum URL to continue.')
               }
-              return api.createCurriculumAiImportDraft({ url: trimmedUrl })
+              return api.createCurriculumAiImportSession({ url: trimmedUrl })
             })()
 
-      const draftResult = getAiDraftResult(response)
-      const normalized = normalizeCurriculumImport(draftResult.draft)
-      const nextPayload = isRecord(draftResult.draft)
-        ? draftResult.draft
-        : (toCurriculumImportPayload(normalized) as unknown as Record<string, unknown>)
+      const response = await runner.run(create, api.getCurriculumAiImportSession, (next) => {
+        if (active.current && attempt.current === requestAttempt) setSession(next)
+      })
+      if (!response || !active.current || attempt.current !== requestAttempt) return
+      if (response.status === 'expired') throw new Error('This analysis session expired. Start a new analysis to retry.')
+      if (response.status === 'failed') throw new Error('Analysis failed. Check that the document contains readable text and try a new analysis. If it fails again, ask an administrator to check the AI provider.')
+      if (response.status !== 'ready' || !response.draft) throw new Error('No editable draft was returned. Start a new analysis.')
+      const normalized = normalizeCurriculumImport(response.draft)
+      const nextPayload = response.draft as Record<string, unknown>
 
       setAnalysisProgress(100)
       setParsed(normalized)
-      setRawPayload(nextPayload)
       setEditablePayloadText(JSON.stringify(nextPayload, null, 2))
-      setAiWarnings(draftResult.warnings)
-      setAiSourceLabel(draftResult.sourceLabel || (aiInputMethod === 'file' ? aiFile?.name || '' : aiUrl.trim()))
+      setAiWarnings(response.warnings)
+      setAiSourceLabel(response.source_name || (aiInputMethod === 'file' ? aiFile?.name || '' : aiUrl.trim()))
       setStep(STEPS[1])
     } catch (analysisError) {
-      setError(analysisError instanceof Error ? analysisError.message : 'Unable to analyze this curriculum document right now.')
+      if (!active.current || attempt.current !== requestAttempt) return
+      if (analysisError instanceof ApiError) {
+        setError(analysisError.status === 503
+          ? 'AI curriculum import is unavailable. Ask an administrator to check the AI provider, or use Standard JSON.'
+          : analysisError.status === 404 || analysisError.status === 410
+            ? 'This analysis session is no longer available. Start a new analysis.'
+            : 'Analysis could not finish. Check the file or URL and start a new analysis. If this continues, ask an administrator to check the AI provider.')
+      } else {
+        setError(analysisError instanceof TypeError
+          ? 'The connection was interrupted. Start a new analysis when the server is available.'
+          : analysisError instanceof Error ? analysisError.message : 'Unable to analyze this curriculum document right now.')
+      }
     } finally {
-      setAnalyzing(false)
+      if (active.current && attempt.current === requestAttempt) setAnalyzing(false)
     }
   }
 
   const handleContinueFromPreview = () => {
-    if (importMode === 'ai' && !syncDraftEdits()) {
+    if (!syncDraftEdits()) {
       return
     }
     setStep(STEPS[2])
   }
 
   const handleImport = async () => {
-    const payload =
-      importMode === 'ai'
-        ? (() => {
-            const syncedPayload = syncDraftEdits()
-            return syncedPayload
-          })()
-        : rawPayload
+    if (validatedText !== editablePayloadText || checkingDuplicates || !duplicatesAcknowledged(matches, acknowledgedIds)) return
+    if (importMode === 'ai' && (!session || session.status !== 'ready' || Date.parse(session.expires_at) <= Date.now())) return
+    const payload = syncDraftEdits()
 
     if (!payload) return
 
@@ -289,15 +359,31 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
     try {
       const created =
         importMode === 'ai'
-          ? await api.confirmCurriculumAiImport({ draft: payload, source_url: aiInputMethod === 'url' ? aiUrl.trim() || null : null })
-          : await api.importCurriculum(payload)
+          ? await api.confirmCurriculumAiImportSession(session!.id, { draft: payload, client_revision: session!.revision, acknowledged_duplicate_ids: acknowledgedIds })
+          : await api.confirmCurriculumImport({ draft: payload, acknowledged_duplicate_ids: acknowledgedIds })
+      if (importMode === 'ai') runner.confirmed()
+      if (!active.current) return
       setCreatedCurriculum(created)
       setStep(STEPS[3])
       onImported()
     } catch (saveError) {
+      if (!active.current) return
+      if (saveError instanceof ApiError && saveError.status === 409) {
+        setStep(STEPS[2])
+        setAcknowledgedIds([])
+        if (saveError.code === 'curriculum_import_duplicate_conflict') {
+          setMatches(saveError.matches)
+          setValidatedText(editablePayloadText)
+          setError('The duplicate matches changed. Review and acknowledge the current matches before importing separately.')
+          return
+        }
+        setValidatedText(null)
+        setError(`${saveError.message} Rename or edit the draft and check again; duplicate acknowledgement cannot override this conflict.`)
+        return
+      }
       setError(saveError instanceof Error ? saveError.message : 'Unable to import curriculum right now.')
     } finally {
-      setSaving(false)
+      if (active.current) setSaving(false)
     }
   }
 
@@ -307,6 +393,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
     resetError()
     try {
       const activation = await api.activateImportedCurriculum(createdCurriculum.id)
+      if (!active.current) return
       setCreatedCurriculum((current) =>
         current
           ? {
@@ -318,9 +405,10 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
       )
       onImported()
     } catch (activationError) {
+      if (!active.current) return
       setError(activationError instanceof Error ? activationError.message : 'Unable to activate curriculum right now.')
     } finally {
-      setActivating(false)
+      if (active.current) setActivating(false)
     }
   }
 
@@ -332,11 +420,11 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
           <CardDescription>Bring in standard JSON, or upload a document and let AI draft the curriculum structure before you import it.</CardDescription>
         </div>
         <CardAction className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={loadExample}>
+          <Button size="sm" variant="outline" disabled={saving || activating} onClick={loadExample}>
             <FileJson className="h-4 w-4" />
             Load example
           </Button>
-          <Button size="sm" variant="ghost" onClick={onCancel}>
+          <Button size="sm" variant="ghost" disabled={saving || activating} onClick={() => void closeWizard()}>
             Close
           </Button>
         </CardAction>
@@ -359,7 +447,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
         {step === STEPS[0] ? (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
             <div className="space-y-4">
-              <Tabs value={importMode} onValueChange={(value) => setImportMode(value as 'manual' | 'ai')}>
+              <Tabs value={importMode} onValueChange={(value) => { if (!analyzing) setImportMode(value as 'manual' | 'ai') }}>
                 <TabsList>
                   <TabsTrigger value="manual">Standard JSON</TabsTrigger>
                   <TabsTrigger value="ai" disabled={!aiAvailable}>
@@ -436,7 +524,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                                 ref={aiFileInputRef}
                                 id="curriculum-ai-upload"
                                 type="file"
-                                className="hidden"
+                                className="sr-only"
                                 accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
                                 onChange={(event) => handleAiFileChange(event.target.files?.[0])}
                               />
@@ -488,7 +576,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                               <Sparkles className="h-4 w-4 text-primary" />
                               Analyzing curriculum structure…
                             </CardTitle>
-                            <CardDescription>Uploading, extracting headings, and building an editable draft.</CardDescription>
+                            <CardDescription role="status">Processing in the background. Large documents may take several minutes. You can cancel without importing anything.</CardDescription>
                           </CardHeader>
                           <CardContent className="space-y-4">
                             <Progress value={analysisProgress} />
@@ -529,7 +617,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                   <>
                     <div className="rounded-lg border bg-muted/20 p-3">
                       <p className="font-medium">AI import status</p>
-                      <p className="mt-1 text-muted-foreground">{aiAvailable ? 'Ready to analyze curriculum documents.' : aiAvailabilityMessage}</p>
+                      <p role="status" className="mt-1 text-muted-foreground">{session ? `Session: ${session.status}` : aiAvailable ? 'Ready to analyze curriculum documents.' : aiAvailabilityMessage}</p>
                     </div>
                     <p className="text-muted-foreground">Use the draft editor in the next step to rename sections, adjust grade levels, and correct anything AI inferred incorrectly.</p>
                     <div className="flex flex-wrap gap-2">
@@ -548,12 +636,12 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
         {step === STEPS[1] && parsed ? (
           <div className="space-y-4">
             <StatsGrid curriculum={parsed} />
-            {importMode === 'ai' ? (
+            {(
               <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
                 <Card size="sm">
                   <CardHeader>
-                    <CardTitle>Refine the AI draft</CardTitle>
-                    <CardDescription>{aiSourceLabel ? `Draft source: ${aiSourceLabel}` : 'Adjust the draft JSON, then refresh the preview.'}</CardDescription>
+                    <CardTitle>Edit the curriculum draft</CardTitle>
+                    <CardDescription>{aiSourceLabel ? `Draft source: ${aiSourceLabel}` : 'Adjust the draft JSON, including metadata.edition, then refresh the preview.'}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {aiWarnings.length ? (
@@ -569,7 +657,8 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                     <Textarea
                       className="min-h-[420px] font-mono text-xs"
                       value={editablePayloadText}
-                      onChange={(event) => setEditablePayloadText(event.target.value)}
+                      aria-label="Curriculum draft JSON"
+                      onChange={(event) => { editorText.current = event.target.value; setValidatedText(null); setAcknowledgedIds([]); setMatches([]); setEditablePayloadText(event.target.value) }}
                     />
                     <Button type="button" variant="outline" onClick={syncDraftEdits}>
                       Refresh preview
@@ -586,16 +675,6 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                   </CardContent>
                 </Card>
               </div>
-            ) : (
-              <Card size="sm">
-                <CardHeader>
-                  <CardTitle>{parsed.name}</CardTitle>
-                  <CardDescription>Preview the curriculum tree before you confirm the import.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <CurriculumImportTree curriculum={parsed} />
-                </CardContent>
-              </Card>
             )}
           </div>
         ) : null}
@@ -625,6 +704,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                       {standard}
                     </Badge>
                   ))}
+                  {parsed.metadata.edition ? <Badge variant="outline">Edition: {parsed.metadata.edition}</Badge> : null}
                   {importMode === 'ai' && aiSourceLabel ? <Badge variant="secondary">Source: {aiSourceLabel}</Badge> : null}
                 </div>
                 {importMode === 'ai' ? <CurriculumImportTree curriculum={parsed} expandAll={false} /> : null}
@@ -653,22 +733,47 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
               <Button asChild variant="outline">
                 <Link to={`/curriculum/${createdCurriculum.id}`}>View details</Link>
               </Button>
-              <Button variant="ghost" onClick={onCancel}>
+              <Button variant="ghost" onClick={() => void closeWizard()}>
                 Done
               </Button>
             </div>
           </div>
         ) : null}
 
+        {(step === STEPS[1] || step === STEPS[2]) ? (
+          <Card size="sm">
+            <CardHeader><CardTitle>Duplicate curriculum check</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {checkingDuplicates ? <p role="status">Checking the current draft…</p> : null}
+              {duplicateError ? <p role="alert">{duplicateError}</p> : null}
+              {!checkingDuplicates && validatedText !== editablePayloadText ? <Button variant="outline" onClick={() => setPreflightAttempt((value) => value + 1)}>Check again</Button> : null}
+              {validatedText === editablePayloadText && !matches.length ? <p>No matching curriculum content found.</p> : null}
+              {matches.map((match) => (
+                <div key={match.id} className="space-y-2 rounded-lg border p-3">
+                  <Link className="font-medium underline" target="_blank" rel="noreferrer" to={`/curriculum/${match.id}`}>{match.name}</Link>
+                  <p>Grades: {match.grade_levels.join(', ') || 'Not specified'} · Edition: {match.edition || 'Not specified'}</p>
+                  <p>{match.reason}</p>
+                  <p>Subjects: {match.matched_subjects.join(', ') || 'None'}; Units: {match.matched_units.join(', ') || 'None'}; Lessons: {match.matched_lessons.join(', ') || 'None'}</p>
+                  <label className="flex items-start gap-2">
+                    <input type="checkbox" disabled={saving || validatedText !== editablePayloadText} checked={acknowledgedIds.includes(match.id)}
+                      onChange={(event) => setAcknowledgedIds((ids) => event.target.checked ? [...ids, match.id] : ids.filter((id) => id !== match.id))} />
+                    Import as a separate curriculum despite this match. Nothing will be merged or removed.
+                  </label>
+                </div>
+              ))}
+              {importMode === 'ai' && session?.status === 'expired' ? <p role="alert">Session expired. Copy your edits before starting a new analysis.</p> : null}
+            </CardContent>
+          </Card>
+        ) : null}
         <div className="flex flex-wrap justify-between gap-2 border-t pt-4">
-          <Button variant="ghost" onClick={onCancel}>
+          <Button variant="ghost" disabled={saving || activating} onClick={() => void closeWizard()}>
             Cancel
           </Button>
 
           <div className="flex gap-2">
             {step === STEPS[1] ? (
               <>
-                <Button variant="outline" onClick={() => setStep(STEPS[0])}>
+                <Button variant="outline" onClick={() => { if (importMode === 'manual') setJsonText(editablePayloadText); setStep(STEPS[0]) }}>
                   Back
                 </Button>
                 <Button onClick={handleContinueFromPreview}>Continue</Button>
@@ -676,10 +781,10 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
             ) : null}
             {step === STEPS[2] ? (
               <>
-                <Button variant="outline" onClick={() => setStep(STEPS[1])}>
+                <Button variant="outline" disabled={saving} onClick={() => setStep(STEPS[1])}>
                   Back
                 </Button>
-                <Button disabled={saving} onClick={() => void handleImport()}>
+                <Button disabled={saving || checkingDuplicates || validatedText !== editablePayloadText || !duplicatesAcknowledged(matches, acknowledgedIds) || (importMode === 'ai' && session?.status !== 'ready')} onClick={() => void handleImport()}>
                   {saving ? 'Importing…' : importMode === 'ai' ? 'Looks good — Import' : 'Import curriculum'}
                 </Button>
               </>
@@ -693,7 +798,7 @@ export function CurriculumImportWizard({ schema, onCancel, onImported }: Curricu
                 ) : (
                   <>
                     <WandSparkles className="h-4 w-4" />
-                    Analyze curriculum
+                    {session?.status === 'failed' || session?.status === 'expired' ? 'Start a new analysis' : 'Analyze curriculum'}
                   </>
                 )}
               </Button>

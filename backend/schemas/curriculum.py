@@ -255,6 +255,7 @@ class CurriculumImportMetadata(BaseModel):
     standards_alignment: list[str] = Field(default_factory=list, max_length=50)
     estimated_hours: int | None = Field(default=None, ge=1, le=5000)
     prerequisites: list[str] = Field(default_factory=list, max_length=25)
+    edition: str | None = Field(default=None, max_length=120)
     external_source: dict[str, Any] = Field(default_factory=dict)
     extensions: dict[str, Any] = Field(default_factory=dict)
 
@@ -295,6 +296,11 @@ class CurriculumImportMetadata(BaseModel):
     @classmethod
     def validate_prerequisites(cls, value: list[str]) -> list[str]:
         return _normalize_prerequisites(value, field_name='Prerequisite')
+
+    @field_validator('edition')
+    @classmethod
+    def validate_edition(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, field_name='Curriculum edition', max_length=120)
 
     @field_validator('extensions')
     @classmethod
@@ -674,5 +680,80 @@ class CurriculumAIImportRead(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+def _normalize_acknowledged_ids(values: list[int]) -> list[int]:
+    return sorted(set(values))
+
+
 class CurriculumAIImportConfirmRequest(BaseModel):
     draft: CurriculumImportDocument
+    acknowledged_duplicate_ids: list[int] = Field(default_factory=list, max_length=500)
+
+    @field_validator('acknowledged_duplicate_ids')
+    @classmethod
+    def validate_acknowledged_duplicate_ids(cls, value: list[int]) -> list[int]:
+        return _normalize_acknowledged_ids(value)
+
+
+class CurriculumImportConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    draft: CurriculumImportDocument
+    acknowledged_duplicate_ids: list[int] = Field(default_factory=list, max_length=500)
+
+    @field_validator('acknowledged_duplicate_ids')
+    @classmethod
+    def validate_acknowledged_duplicate_ids(cls, value: list[int]) -> list[int]:
+        return _normalize_acknowledged_ids(value)
+
+
+class CurriculumDuplicateCheckRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    draft: CurriculumImportDocument
+
+
+class CurriculumDuplicateMatchRead(BaseModel):
+    id: int
+    name: str
+    grade_levels: list[str] = Field(default_factory=list)
+    edition: str | None = None
+    reason: str
+    matched_subjects: list[str] = Field(default_factory=list)
+    matched_units: list[str] = Field(default_factory=list)
+    matched_lessons: list[str] = Field(default_factory=list)
+
+
+class CurriculumDuplicateCheckRead(BaseModel):
+    matches: list[CurriculumDuplicateMatchRead] = Field(default_factory=list)
+
+
+class CurriculumAIImportSessionError(BaseModel):
+    code: str
+    message: str
+
+
+class CurriculumAIImportSessionRead(BaseModel):
+    id: int
+    status: str
+    source_kind: str
+    source_name: str
+    warnings: list[str] = Field(default_factory=list)
+    revision: int
+    expires_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    draft: CurriculumImportDocument | None = None
+    error: CurriculumAIImportSessionError | None = None
+
+
+class CurriculumAIImportSessionConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    draft: CurriculumImportDocument
+    client_revision: int = Field(ge=1)
+    acknowledged_duplicate_ids: list[int] = Field(default_factory=list, max_length=500)
+
+    @field_validator('acknowledged_duplicate_ids')
+    @classmethod
+    def validate_acknowledged_duplicate_ids(cls, value: list[int]) -> list[int]:
+        return _normalize_acknowledged_ids(value)

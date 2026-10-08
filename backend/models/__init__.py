@@ -12,6 +12,7 @@ from backend.models.attendance import AttendanceRecord
 from backend.models.audit_event import AuditAction, AuditEvent
 from backend.models.backup_job import BackupDestination, BackupJob, BackupJobStatus, BackupType
 from backend.models.bulk_assignment_import import BulkAssignmentImportSession, BulkAssignmentImportStatus
+from backend.models.curriculum_ai_import_session import CurriculumAIImportSession, CurriculumAIImportSessionStatus
 from backend.models.lesson_plan import LessonPlan, LessonPlanStatus, PacingTarget
 from backend.models.maintenance import MaintenanceMode
 from backend.models.calendar import CalendarEvent, CalendarEventType, GradingPeriod, SchoolYear, Term, TermType
@@ -67,6 +68,8 @@ __all__ = [
     'BackupType',
     'BulkAssignmentImportSession',
     'BulkAssignmentImportStatus',
+    'CurriculumAIImportSession',
+    'CurriculumAIImportSessionStatus',
     'Base',
     'CalendarEvent',
     'CalendarEventType',

@@ -1899,6 +1899,7 @@ export interface CurriculumPackageDetail extends CurriculumPackage {
 }
 
 export interface CurriculumImportMetadata {
+  edition?: string
   grade_levels?: string[]
   standards_alignment?: string[]
   estimated_hours?: number | null
@@ -2067,6 +2068,36 @@ export interface CurriculumAiImportDraftResponse {
 export interface CurriculumAiImportConfirmPayload {
   draft: CurriculumImportDocument | Record<string, unknown>
   source_url?: string | null
+}
+
+export interface CurriculumDuplicateMatch {
+  id: number
+  name: string
+  grade_levels: string[]
+  edition?: string | null
+  reason: string
+  matched_subjects: string[]
+  matched_units: string[]
+  matched_lessons: string[]
+}
+
+export interface CurriculumImportConfirmPayload {
+  draft: CurriculumImportDocument | Record<string, unknown>
+  acknowledged_duplicate_ids: number[]
+}
+
+export interface CurriculumAiImportSession {
+  id: string
+  status: 'processing' | 'ready' | 'failed' | 'expired' | 'confirmed'
+  source_kind: string
+  source_name: string
+  warnings: string[]
+  revision: number
+  expires_at: string
+  created_at: string
+  updated_at: string
+  draft: CurriculumImportDocument | Record<string, unknown> | null
+  error: { code: string; message: string } | null
 }
 
 export type CurriculumImportSchema = Record<string, unknown>

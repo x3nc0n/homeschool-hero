@@ -14,6 +14,31 @@ from tests.contracts import CURRICULUM
 from tests.helpers import response_id
 
 
+_FAKE_DRAFT = {
+    'name': 'AI Draft Curriculum',
+    'description': 'Generated from uploaded text.',
+    'source': 'manual',
+    'subjects': [
+        {
+            'name': 'Language Arts',
+            'units': [
+                {
+                    'name': 'Semester 1',
+                    'lessons': [
+                        {
+                            'name': 'Lesson 1',
+                            'description': 'Read and discuss the source.',
+                            'objectives': ['Identify major themes'],
+                            'resources': [],
+                        }
+                    ],
+                }
+            ],
+        }
+    ],
+}
+
+
 class _FakeAIAsyncClient:
     requests: list[dict] = []
     options: dict = {}
@@ -30,6 +55,13 @@ class _FakeAIAsyncClient:
     async def post(self, url, headers=None, params=None, json=None):
         self.requests.append({'url': url, 'headers': headers, 'params': params, 'json': json})
         request = httpx.Request('POST', url)
+        if url.endswith('/api/chat'):
+            body = {
+                'model': (json or {}).get('model'),
+                'message': {'role': 'assistant', 'content': json_module.dumps(_FAKE_DRAFT)},
+                'done': True,
+            }
+            return httpx.Response(200, json=body, request=request)
         body = {
             'choices': [
                 {
@@ -38,31 +70,7 @@ class _FakeAIAsyncClient:
                             {
                                 'function': {
                                     'name': 'create_curriculum_import',
-                                    'arguments': json_module.dumps(
-                                        {
-                                            'name': 'AI Draft Curriculum',
-                                            'description': 'Generated from uploaded text.',
-                                            'source': 'manual',
-                                            'subjects': [
-                                                {
-                                                    'name': 'Language Arts',
-                                                    'units': [
-                                                        {
-                                                            'name': 'Semester 1',
-                                                            'lessons': [
-                                                                {
-                                                                    'name': 'Lesson 1',
-                                                                    'description': 'Read and discuss the source.',
-                                                                    'objectives': ['Identify major themes'],
-                                                                    'resources': [],
-                                                                }
-                                                            ],
-                                                        }
-                                                    ],
-                                                }
-                                            ],
-                                        }
-                                    ),
+                                    'arguments': json_module.dumps(_FAKE_DRAFT),
                                 }
                             }
                         ]
@@ -157,8 +165,9 @@ async def test_ai_import_upload_and_confirm_flow(authorized_client, monkeypatch)
     assert draft_payload['draft']['name'] == 'AI Draft Curriculum'
     assert draft_payload['draft']['source'] == 'ai-import'
     assert draft_payload['source_kind'] == 'file'
-    assert _FakeAIAsyncClient.requests[0]['url'] == 'http://192.168.50.135:11434/v1/chat/completions'
-    assert _FakeAIAsyncClient.requests[0]['json']['tools'][0]['function']['name'] == 'create_curriculum_import'
+    assert _FakeAIAsyncClient.requests[0]['url'] == 'http://192.168.50.135:11434/api/chat'
+    assert _FakeAIAsyncClient.requests[0]['json']['format']['type'] == 'object'
+    assert 'tools' not in _FakeAIAsyncClient.requests[0]['json']
 
     reviewed_draft = draft_payload['draft']
     reviewed_draft['name'] = 'Reviewed AI Curriculum'
@@ -210,7 +219,7 @@ async def test_ai_import_service_rejects_url_when_online_curriculum_disabled(mon
 
 
 @pytest.mark.asyncio
-async def test_local_only_ai_import_uses_ollama_compatible_endpoint(monkeypatch):
+async def test_local_only_ai_import_uses_native_ollama_chat_endpoint(monkeypatch):
     _FakeAIAsyncClient.requests.clear()
     monkeypatch.setattr('backend.config.settings.ai_import_enabled', True, raising=False)
     monkeypatch.setattr('backend.config.settings.ai_local_only', True, raising=False)
@@ -234,11 +243,18 @@ async def test_local_only_ai_import_uses_ollama_compatible_endpoint(monkeypatch)
     result = await service._call_ai_parser(extracted)
 
     request = _FakeAIAsyncClient.requests[0]
-    assert request['url'] == 'http://192.168.50.135:11434/v1/chat/completions'
+    assert request['url'] == 'http://192.168.50.135:11434/api/chat'
     assert request['headers'] == {'Content-Type': 'application/json'}
     assert request['params'] is None
     assert request['json']['model'] == 'qwen2.5:14b'
-    assert request['json']['tools'][0]['function']['name'] == 'create_curriculum_import'
+    assert request['json']['stream'] is False
+    assert request['json']['options'] == {'temperature': 0}
+    assert request['json']['format']['type'] == 'object'
+    assert 'subjects' in request['json']['format']['properties']
+    assert not _contains_json_schema_ref(request['json']['format'])
+    assert 'tools' not in request['json']
+    assert 'num_ctx' not in json.dumps(request['json'])
+    assert [message['role'] for message in request['json']['messages']] == ['system', 'user']
     assert _FakeAIAsyncClient.options['trust_env'] is False
     assert result['name'] == 'AI Draft Curriculum'
 

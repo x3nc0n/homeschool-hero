@@ -190,3 +190,39 @@ def test_attendance_migration_preserves_records_and_maps_status_on_sqlite() -> N
         assert sa.inspect(connection).get_table_names().count('attendance_excuses') == 1
 
     engine.dispose()
+
+
+def test_curriculum_ai_import_sessions_migration_cycles_on_sqlite() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / 'migrations'
+        / 'versions'
+        / '20261008_105100_curriculum_ai_import_sessions.py'
+    )
+    spec = importlib.util.spec_from_file_location('ai_import_sessions_migration', migration_path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.down_revision == '20261006_172835'
+    assert 'TODO' not in migration.ROLLBACK_NOTES
+
+    engine = sa.create_engine('sqlite:///:memory:')
+    with engine.begin() as connection:
+        connection.exec_driver_sql('CREATE TABLE families (id INTEGER PRIMARY KEY)')
+        connection.exec_driver_sql('CREATE TABLE users (id INTEGER PRIMARY KEY)')
+        connection.exec_driver_sql('CREATE TABLE imported_curricula (id INTEGER PRIMARY KEY)')
+        migration.op = Operations(MigrationContext.configure(connection))
+        for _ in range(2):
+            migration.upgrade()
+            inspector = sa.inspect(connection)
+            assert 'curriculum_ai_import_sessions' in inspector.get_table_names()
+            columns = {column['name'] for column in inspector.get_columns('curriculum_ai_import_sessions')}
+            assert {
+                'id', 'family_id', 'created_by_user_id', 'status', 'source_kind', 'source_name', 'warnings',
+                'draft_payload', 'error_code', 'error_message', 'revision', 'expires_at', 'confirmed_at',
+                'confirmed_curriculum_id', 'created_at', 'updated_at',
+            } <= columns
+            indexes = {index['name'] for index in inspector.get_indexes('curriculum_ai_import_sessions')}
+            assert {'ix_curriculum_ai_import_sessions_family_status', 'ix_curriculum_ai_import_sessions_expires_at'} <= indexes
+            migration.downgrade()
+            assert 'curriculum_ai_import_sessions' not in sa.inspect(connection).get_table_names()
