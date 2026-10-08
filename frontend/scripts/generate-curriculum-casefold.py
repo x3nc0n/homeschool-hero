@@ -16,17 +16,22 @@ import unicodedata
 
 
 ROOT = Path(__file__).resolve().parent.parent
-assert unicodedata.unidata_version == "15.1.0", "Use Python with Unicode 15.1.0"
-assert subprocess.check_output(
+if unicodedata.unidata_version != "15.1.0":
+    raise SystemExit("Use Python with Unicode 15.1.0")
+node_unicode = subprocess.check_output(
     ["node", "-p", "process.versions.unicode"], encoding="utf-8"
-).strip() == "17.0", "Use Node with Unicode 17.0"
-javascript_lower = dict(json.loads(subprocess.check_output([
-    "node", "-e",
-    "const pairs = []; for (let cp = 0; cp <= 0x10ffff; cp++) {"
-    "const c = String.fromCodePoint(cp), lower = c.toLowerCase();"
-    "if (c !== lower) pairs.push([c, lower]); }"
+).strip()
+if node_unicode != "17.0":
+    raise SystemExit("Use Node with Unicode 17.0")
+NODE_LOWERCASE_SCRIPT = "".join([
+    "const pairs = []; for (let cp = 0; cp <= 0x10ffff; cp++) {",
+    "const c = String.fromCodePoint(cp), lower = c.toLowerCase();",
+    "if (c !== lower) pairs.push([c, lower]); }",
     "process.stdout.write(JSON.stringify(pairs));",
-], encoding="utf-8")))
+])
+javascript_lower = dict(json.loads(subprocess.check_output(
+    ["node", "-e", NODE_LOWERCASE_SCRIPT], encoding="utf-8"
+)))
 python_fold = {
     char: char.casefold()
     for cp in range(0x110000)

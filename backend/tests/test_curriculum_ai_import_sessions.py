@@ -320,10 +320,14 @@ async def test_sessions_are_family_scoped(authorized_client, secondary_client, c
     sync_csrf_header(secondary_client)
 
     detail = CURRICULUM['ai_import_session_detail'].format(session_id=ready['id'])
-    assert (await secondary_client.get(detail)).status_code == 404
-    assert (await secondary_client.delete(detail)).status_code == 404
-    assert (await _confirm(secondary_client, ready['id'], ready['draft'], ready['revision'])).status_code == 404
-    assert (await _get(authorized_client, ready['id'])).json()['status'] == 'ready'
+    foreign_get = await secondary_client.get(detail)
+    assert foreign_get.status_code == 404
+    foreign_delete = await secondary_client.delete(detail)
+    assert foreign_delete.status_code == 404
+    foreign_confirm = await _confirm(secondary_client, ready['id'], ready['draft'], ready['revision'])
+    assert foreign_confirm.status_code == 404
+    owner_view = await _get(authorized_client, ready['id'])
+    assert owner_view.json()['status'] == 'ready'
 
 
 @pytest.mark.asyncio

@@ -118,7 +118,8 @@ async def test_cancel_after_inference_started_discards_late_result(authorized_cl
             await asyncio.sleep(0.01)
         assert local_ai.requests, 'Worker did not reach the provider'
         detail = CURRICULUM['ai_import_session_detail'].format(session_id=session_id)
-        assert (await authorized_client.delete(detail)).status_code == 204
+        cancel_response = await authorized_client.delete(detail)
+        assert cancel_response.status_code == 204
         local_ai.gate.set()
         await asyncio.wait_for(worker, timeout=5)
         cancelled = (await _get(authorized_client, session_id)).json()
