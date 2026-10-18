@@ -13,6 +13,7 @@ import type {
   AssignmentRecurrence,
   AssignmentTargetInput,
   GradingPeriod,
+  SchoolYear,
   Student,
   Subject,
 } from '@/types/api'
@@ -25,6 +26,8 @@ import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { WeeklyPlanningInput } from '@/components/features/WeeklyPlanningInput'
+import { WeeklyPlanningPreview } from '@/components/features/WeeklyPlanningPreview'
 
 type WizardStep = 'upload' | 'clarify' | 'preview' | 'complete'
 
@@ -32,6 +35,11 @@ type BulkAssignmentImportWizardProps = {
   subjects: Subject[]
   students: Student[]
   gradingPeriods: GradingPeriod[]
+  planningMode?: 'weekly' | 'assignments'
+  initialDate?: string
+  initialStudentId?: number
+  initialSchoolYearId?: number
+  schoolYears?: SchoolYear[]
   onClose: () => void
   onImported: () => void
 }
@@ -53,6 +61,17 @@ function formatFileSize(bytes: number) {
 
 function normalizeDateInput(value?: string | null) {
   return value ? value.slice(0, 10) : ''
+}
+
+function todayInputDate() {
+  const today = new Date()
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+}
+
+function weekMonday(value: string) {
+  const date = new Date(`${value}T12:00:00`)
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7))
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 function toApiDateTime(value?: string | null) {
@@ -109,6 +128,8 @@ function getFriendlyApiError(error: unknown) {
 
 function parseMethodLabel(method?: AssignmentImportSession['parse_method'] | null) {
   if (method === 'structured_json') return 'Structured JSON'
+  if (method === 'weekly_template') return 'Spreadsheet template'
+  if (method === 'weekly_grid') return 'Weekly grid'
   if (method === 'ai') return 'AI'
   return 'Pending'
 }
@@ -123,8 +144,21 @@ export function BulkAssignmentImportWizard({
   gradingPeriods,
   onClose,
   onImported,
+  planningMode = 'assignments',
+  initialDate,
+  initialStudentId,
+  initialSchoolYearId,
+  schoolYears = [],
 }: BulkAssignmentImportWizardProps) {
+  const weekly = planningMode === 'weekly'
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const alive = useRef(true)
+  const [weeklyInputMode, setWeeklyInputMode] = useState<'paste' | 'file'>('paste')
+  const [planText, setPlanText] = useState('')
+  const [weekStart, setWeekStart] = useState(initialDate || todayInputDate())
+  const [schoolYearId, setSchoolYearId] = useState(String(initialSchoolYearId || schoolYears.find((year) => year.is_active)?.id || ''))
+  const [defaultStudentId, setDefaultStudentId] = useState(initialStudentId ? String(initialStudentId) : '')
+  const [defaultGrade, setDefaultGrade] = useState('')
   const [step, setStep] = useState<WizardStep>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -142,6 +176,11 @@ export function BulkAssignmentImportWizard({
     grading_period_id: 'none',
     due_date: '',
   })
+
+  useEffect(() => {
+    alive.current = true
+    return () => { alive.current = false }
+  }, [])
 
   useEffect(() => {
     if (!analyzing) {
@@ -169,9 +208,12 @@ export function BulkAssignmentImportWizard({
     setError('')
     if (!nextFile) return
     const validationError = validateAssignmentImportFile(nextFile)
-    if (validationError) {
+    const weeklyTypeError = weekly && !/\.(csv|xlsx)$/i.test(nextFile.name)
+      ? 'Choose the weekly CSV or XLSX template, or paste your plan instead.'
+      : null
+    if (validationError || weeklyTypeError) {
       setFile(null)
-      setError(validationError)
+      setError(validationError || weeklyTypeError || '')
       return
     }
 
@@ -191,12 +233,12 @@ export function BulkAssignmentImportWizard({
     return payload
   }
 
-  const setSession = (session: AssignmentImportSession) => {
+  const setSession = (session: AssignmentImportSession, selectAll = false) => {
     setDraft(session)
     setSelectedItemIds((current) => {
       const itemIds = session.items.map((item) => item.client_item_id)
       const next = current.filter((itemId) => itemIds.includes(itemId))
-      if (next.length) return next
+      if (!selectAll) return next
       return session.items
         .filter((item) => item.status !== 'invalid')
         .map((item) => item.client_item_id)
@@ -204,7 +246,11 @@ export function BulkAssignmentImportWizard({
   }
 
   const analyze = async () => {
-    if (!file) {
+    if (weekly && (!weekStart || !schoolYearId || (weeklyInputMode === 'paste' ? !planText.trim() : !file))) {
+      setError('Choose a week and school year, then paste your plan or choose a template file.')
+      return
+    }
+    if (!weekly && !file) {
       setError('Choose a planning file before starting the AI import.')
       return
     }
@@ -212,12 +258,29 @@ export function BulkAssignmentImportWizard({
     setError('')
     setAnalyzing(true)
     try {
-      let session = await api.createAssignmentImportSession(file, buildDefaults())
+      let session: AssignmentImportSession
+      if (weekly) {
+        session = await api.createWeeklyPlanSession({
+          ...(weeklyInputMode === 'paste' ? { text: planText } : { file: file || undefined }),
+          week_start: weekMonday(weekStart),
+          school_year_id: Number(schoolYearId),
+          defaults: {
+            ...buildDefaults(),
+            ...(defaultStudentId ? { student_ids: [Number(defaultStudentId)] } : {}),
+            ...(defaultGrade.trim() ? { grade: defaultGrade.trim() } : {}),
+          },
+        })
+      } else {
+        if (!file) return
+        session = await api.createAssignmentImportSession(file, buildDefaults())
+      }
+      if (!alive.current) return
       setAnalysisProgress(100)
       for (let attempt = 0; session.status === 'processing'; attempt += 1) {
         setSession(session)
         setAnalysisProgress((current) => Math.min(95, Math.max(current, 35 + attempt * 8)))
         await sleep(POLL_INTERVALS_MS[Math.min(attempt, POLL_INTERVALS_MS.length - 1)])
+        if (!alive.current) return
         session = await api.getAssignmentImportSession(session.id)
       }
       if (session.status === 'failed') {
@@ -226,7 +289,7 @@ export function BulkAssignmentImportWizard({
         return
       }
       const fullSession = session.items.length ? session : await api.getAssignmentImportSession(session.id)
-      setSession(fullSession)
+      setSession(fullSession, true)
       setAnswers({})
       setStep(fullSession.questions.length ? 'clarify' : 'preview')
     } catch (uploadError) {
@@ -296,7 +359,7 @@ export function BulkAssignmentImportWizard({
     setSaving(true)
     setError('')
     try {
-      const updated = await api.updateAssignmentImportSession(draft.id, { answers: payloadAnswers })
+      const updated = await api.updateAssignmentImportSession(draft.id, { client_revision: draft.revision, answers: payloadAnswers })
       setSession(updated)
       setStep(updated.questions.length ? 'clarify' : 'preview')
     } catch (clarificationError) {
@@ -344,7 +407,7 @@ export function BulkAssignmentImportWizard({
     setSaving(true)
     setError('')
     try {
-      const updated = await api.updateAssignmentImportSession(draft.id, { items: draft.items.map(serializeItemForApi) })
+      const updated = await api.updateAssignmentImportSession(draft.id, { client_revision: draft.revision, items: draft.items.map(serializeItemForApi) })
       setSession(updated)
       return updated
     } catch (saveError) {
@@ -396,8 +459,10 @@ export function BulkAssignmentImportWizard({
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>Import assignments</CardTitle>
-          <CardDescription>Upload a planning file, answer any friendly follow-up questions, review each row, then create assignments.</CardDescription>
+          <CardTitle>{weekly ? 'Plan week' : 'Import assignments'}</CardTitle>
+          <CardDescription>{weekly
+            ? 'Paste lessons or use a spreadsheet template. Review curriculum matches, dates, and student assignments before confirming.'
+            : 'Upload a planning file, answer any friendly follow-up questions, review each row, then create assignments.'}</CardDescription>
         </div>
         <CardAction>
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>
@@ -409,7 +474,7 @@ export function BulkAssignmentImportWizard({
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-2">
           {[
-            ['upload', 'Upload'],
+            ['upload', weekly ? 'Enter plan' : 'Upload'],
             ['clarify', 'Clarify'],
             ['preview', 'Preview'],
             ['complete', 'Done'],
@@ -427,7 +492,17 @@ export function BulkAssignmentImportWizard({
           </div>
         ) : null}
 
-        {step === 'upload' ? (
+        {step === 'upload' && weekly ? (
+          <WeeklyPlanningInput
+            schoolYears={schoolYears} students={students} schoolYearId={schoolYearId} weekStart={weekStart}
+            studentId={defaultStudentId} grade={defaultGrade} text={planText} file={file} inputMode={weeklyInputMode} busy={analyzing}
+            onSchoolYear={setSchoolYearId} onWeek={setWeekStart} onStudent={setDefaultStudentId}
+            onGrade={setDefaultGrade} onText={setPlanText} onFile={chooseFile} onInputMode={setWeeklyInputMode}
+            onAnalyze={() => void analyze()} onError={setError}
+          />
+        ) : null}
+        {weekly && analyzing ? <p role="status" className="text-sm text-muted-foreground">Preparing your draft. Keep this open while processing.</p> : null}
+        {step === 'upload' && !weekly ? (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
             <div
               className={`rounded-lg border-2 border-dashed p-6 text-center transition ${
@@ -645,6 +720,12 @@ export function BulkAssignmentImportWizard({
         {step === 'preview' && draft ? (
           <div className="space-y-4">
             <SummaryCards draft={draft} />
+            {weekly && draft.weekly_context ? (
+              <p className="text-sm font-medium">
+                Week of {draft.weekly_context.week_start}
+                {' - '}{schoolYears.find((year) => year.id === draft.weekly_context?.school_year_id)?.name || 'Selected school year'}
+              </p>
+            ) : null}
             {draft.warnings.length ? (
               <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
                 {draft.warnings.map((warning) => (
@@ -652,6 +733,14 @@ export function BulkAssignmentImportWizard({
                 ))}
               </div>
             ) : null}
+            {weekly ? (
+              <WeeklyPlanningPreview
+                items={draft.items} students={students} subjects={subjects} selectedIds={selectedItemIds} busy={saving}
+                onSelect={(id, selected) => setSelectedItemIds((current) =>
+                  selected ? [...new Set([...current, id])] : current.filter((value) => value !== id))}
+                onEdit={updateItem}
+              />
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -844,13 +933,14 @@ export function BulkAssignmentImportWizard({
                 })}
               </TableBody>
             </Table>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => void savePreviewEdits()} disabled={saving}>
                 Save preview edits
               </Button>
               <Button type="button" onClick={() => void confirm()} disabled={saving || !selectedItemIds.length}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Create {selectedItemIds.length} assignment{selectedItemIds.length === 1 ? '' : 's'}
+                {weekly ? 'Confirm linked weekly plan' : `Create ${selectedItemIds.length} assignment${selectedItemIds.length === 1 ? '' : 's'}`}
               </Button>
             </div>
           </div>
@@ -865,6 +955,7 @@ export function BulkAssignmentImportWizard({
               </CardTitle>
               <CardDescription>
                 Created {confirmResult.assignment_count} assignment{confirmResult.assignment_count === 1 ? '' : 's'}.
+                {weekly ? ` Created ${confirmResult.lesson_plan_count ?? 0} student lesson plan${confirmResult.lesson_plan_count === 1 ? '' : 's'}; reused ${confirmResult.reused_lesson_plan_ids?.length ?? 0}.` : ''}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -874,8 +965,15 @@ export function BulkAssignmentImportWizard({
               {confirmResult.skipped_item_ids.length ? (
                 <p className="text-sm text-muted-foreground">Skipped rows: {confirmResult.skipped_item_ids.join(', ')}</p>
               ) : null}
+              {weekly && confirmResult.curriculum_counts ? (
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  {Object.entries(confirmResult.curriculum_counts).map(([kind, counts]) => (
+                    <p key={kind}>{kind}: {counts.created} created, {counts.reused} reused</p>
+                  ))}
+                </div>
+              ) : null}
               <Button type="button" onClick={onClose}>
-                Back to assignments
+                {weekly ? 'Back to weekly plan' : 'Back to assignments'}
               </Button>
             </CardContent>
           </Card>

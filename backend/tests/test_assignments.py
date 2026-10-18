@@ -6,6 +6,62 @@ from tests.contracts import ASSIGNMENTS, CALENDAR, GRADES, STUDENTS, SUBMISSIONS
 from tests.helpers import assert_validation_error, response_id, update_resource
 
 
+@pytest.mark.asyncio
+async def test_date_bounds_apply_to_same_effective_student_target(authorized_client, seeded_subject, seeded_student):
+    first_student = response_id(seeded_student)
+    second = await authorized_client.post(STUDENTS['collection'], json=student_payload('Second student'))
+    second_student = response_id(second.json())
+    body = {**assignment_payload(response_id(seeded_subject)), 'due_date': '2026-05-15T00:00:00Z'}
+    outside = await authorized_client.post(ASSIGNMENTS['collection'], json={
+        **body, 'title': 'No target in range', 'targets': [
+            {'student_id': first_student, 'due_date': '2026-05-01T00:00:00Z'},
+            {'student_id': second_student, 'due_date': '2026-05-31T00:00:00Z'},
+        ],
+    })
+    assert outside.status_code == 201, outside.text
+    fallback = await authorized_client.post(ASSIGNMENTS['collection'], json={
+        **body, 'title': 'Student fallback', 'targets': [{'student_id': first_student, 'due_date': None}],
+    })
+    assert fallback.status_code == 201, fallback.text
+    different_student = await authorized_client.post(ASSIGNMENTS['collection'], json={
+        **body, 'title': 'Other student in range', 'targets': [
+            {'student_id': first_student, 'due_date': '2026-05-31T00:00:00Z'},
+            {'student_id': second_student, 'due_date': '2026-05-15T00:00:00Z'},
+        ],
+    })
+    assert different_student.status_code == 201, different_student.text
+    params = {'due_from': '2026-05-10', 'due_to': '2026-05-20'}
+    response = await authorized_client.get(ASSIGNMENTS['collection'], params=params)
+    assert {item['id'] for item in response.json()['items']} == {
+        response_id(fallback.json()), response_id(different_student.json()),
+    }
+    response = await authorized_client.get(ASSIGNMENTS['collection'], params={**params, 'student_id': first_student})
+    assert [item['id'] for item in response.json()['items']] == [response_id(fallback.json())]
+
+
+@pytest.mark.asyncio
+async def test_undated_filter_uses_target_date_and_assignment_fallback(authorized_client, seeded_subject, seeded_student):
+    student_id = response_id(seeded_student)
+    body = assignment_payload(response_id(seeded_subject))
+    expected = set()
+    for title, global_date, targets in (
+        ('Undated target', None, [{'student_id': student_id, 'due_date': None}]),
+        ('Undated untargeted', None, []),
+        ('Dated fallback', '2026-05-15T00:00:00Z', [{'student_id': student_id, 'due_date': None}]),
+        ('Dated target', None, [{'student_id': student_id, 'due_date': '2026-05-15T00:00:00Z'}]),
+    ):
+        response = await authorized_client.post(ASSIGNMENTS['collection'], json={
+            **body, 'title': title, 'due_date': global_date, 'targets': targets,
+        })
+        assert response.status_code == 201, response.text
+        if title.startswith('Undated'):
+            expected.add(response_id(response.json()))
+    response = await authorized_client.get(ASSIGNMENTS['collection'], params={'undated': True})
+    assert {item['id'] for item in response.json()['items']} == expected
+    response = await authorized_client.get(ASSIGNMENTS['collection'], params={'undated': False})
+    assert {item['title'] for item in response.json()['items']} == {'Dated fallback', 'Dated target'}
+
+
 async def _create_grading_period(authorized_client) -> int:
     school_year = await authorized_client.post(CALENDAR['school_years'], json=school_year_payload())
     assert school_year.status_code == 201, school_year.text

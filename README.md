@@ -56,15 +56,30 @@ Swagger UI automatically uses the current session cookie and forwards the CSRF c
 
 ## Bulk assignment upload
 
-On **Assignments**, choose **Import assignments** to draft assignments from a TXT,
-Markdown, JSON (`.json`), CSV (`.csv`), TSV (`.tsv`), Word (`.docx`), PDF, or Excel (`.xlsx`) planning file up to 10 MiB. AI
-import must be configured; review and edit the draft before confirming creation.
+For weekly lesson entry, choose **Plan week** on Lesson Plans or Assignments.
+Paste a natural-language plan, or use **Download example CSV / XLSX** and upload
+one row per student's daily assignment. The standard CSV/XLSX templates parse
+without AI. Select the school year and week, review new/reused curriculum matches,
+and confirm linked curriculum lessons, dated lesson plans, and student assignments
+together. See the [weekly planning guide](docs/teacher-guide.md#enter-a-weeks-lessons)
+for exact columns and date rules.
+
+Both screens default to a compact selected-week view, with date navigation and
+Day, Work week, Week, Month, and Agenda layouts. Historical work stays accessible
+through All dates rather than accumulating in the default view.
+
+For assignment-only uploads on **Assignments**, choose **Import assignments** to draft assignments from a TXT,
+Markdown, JSON (`.json`), CSV (`.csv`), TSV (`.tsv`), Word (`.docx`), PDF, or Excel (`.xlsx`) planning file up to 10 MiB.
+AI import must be configured for unstructured inputs; matching assignment JSON and
+the weekly spreadsheet formats do not require AI. Review and edit the draft before confirming creation.
 
 JSON/CSV/TSV must be UTF-8 (including UTF-8 BOM exports). JSON schema keys and
 CSV/TSV headers, delimiters, rows, and quoted multiline cells are preserved for AI.
 Malformed JSON, broken quoted cells, unsupported encodings, and oversized structured
-text are rejected rather than silently repaired/truncated. Even `ParsedAssignmentDocument`
-JSON exports use AI extraction, not a direct JSON-to-database import.
+text are rejected rather than silently repaired/truncated. Matching
+`ParsedAssignmentDocument` JSON uses deterministic parsing; arbitrary structured
+files in the assignment-only importer use AI interpretation. Neither path creates
+assignments before review and confirmation.
 
 Excel import reads all worksheets, including hidden sheets, and preserves sheet
 names, cell/row positions, date headers, and merged headers for weekly grids.

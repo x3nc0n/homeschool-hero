@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarRange, Pencil, Trash2 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
 import type {
   CurriculumPackageDetail,
@@ -21,11 +22,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LoadingState } from '@/components/common/LoadingState'
 import { Textarea } from '@/components/ui/textarea'
+import { BulkAssignmentImportWizard } from '@/components/features/BulkAssignmentImportWizard'
+import { PlanningCalendar, PlanningCalendarToolbar, PlanningEntry, usePlanningCalendar } from '@/components/features/PlanningCalendar'
+import { addSchoolDays, schoolDate, schoolDateLabel } from '@/lib/planning-calendar'
 
 const selectClassName = 'h-10 w-full rounded-md border border-input bg-background px-3 text-sm'
 const lessonStatuses: LessonPlanStatus[] = ['planned', 'in_progress', 'completed', 'skipped', 'rescheduled']
-
-type ViewMode = 'timeline' | 'list'
 
 type LessonPlanForm = {
   package_id: string
@@ -50,10 +52,7 @@ type PacingForm = {
 }
 
 function toInputDate(value = new Date()) {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, '0')
-  const day = String(value.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return schoolDate(value)
 }
 
 function emptyLessonPlanForm(date = toInputDate()): LessonPlanForm {
@@ -85,7 +84,7 @@ function emptyPacingForm(date = toInputDate()): PacingForm {
 }
 
 function formatDateLabel(value?: string | null) {
-  return value ? new Date(`${value}T12:00:00`).toLocaleDateString() : 'TBD'
+  return value ? schoolDateLabel(value) : 'TBD'
 }
 
 function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'destructive' {
@@ -95,14 +94,11 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'd
   return 'default'
 }
 
-function groupByDate(lessonPlans: LessonPlan[]) {
-  return lessonPlans.reduce<Record<string, LessonPlan[]>>((groups, lessonPlan) => {
-    groups[lessonPlan.target_date] = [...(groups[lessonPlan.target_date] || []), lessonPlan]
-    return groups
-  }, {})
-}
-
 export function LessonPlansPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigation = usePlanningCalendar()
+  const { date, view, scope, range, page: historyPage, setPage: setHistoryPage } = navigation
+  const planningSequence = useRef(0)
   const { canManageCurriculum, studentId: scopedStudentId } = useAuth()
   const [students, setStudents] = useState<Student[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -111,10 +107,13 @@ export function LessonPlansPage() {
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([])
   const [pacingTargets, setPacingTargets] = useState<PacingTarget[]>([])
   const [pacingItems, setPacingItems] = useState<PacingStatusItem[]>([])
-  const [selectedStudentId, setSelectedStudentId] = useState('')
-  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState('')
-  const [selectedSubjectId, setSelectedSubjectId] = useState('all')
-  const [viewMode, setViewMode] = useState<ViewMode>('timeline')
+  const [selectedStudentId, setSelectedStudentId] = useState(scopedStudentId ? String(scopedStudentId) : searchParams.get('student_id') || '')
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(searchParams.get('school_year_id') || '')
+  const [selectedSubjectId, setSelectedSubjectId] = useState(searchParams.get('subject_id') || 'all')
+  const [query, setQuery] = useState(searchParams.get('search') || searchParams.get('q') || '')
+  const [status, setStatus] = useState(searchParams.get('status') || 'all')
+  const [tool, setTool] = useState<'lesson' | 'generate' | 'pacing' | null>(null)
+  const [showWeeklyImport, setShowWeeklyImport] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sectionLoading, setSectionLoading] = useState(false)
   const [error, setError] = useState('')
@@ -132,7 +131,7 @@ export function LessonPlansPage() {
     () =>
       packages.filter(
         (pkg) =>
-          (!selectedSchoolYearId || pkg.school_year_id === Number(selectedSchoolYearId)) &&
+          (!selectedSchoolYearId || selectedSchoolYearId === 'all' || pkg.school_year_id === Number(selectedSchoolYearId)) &&
           (selectedSubjectId === 'all' || pkg.subject_id === Number(selectedSubjectId)),
       ),
     [packages, selectedSchoolYearId, selectedSubjectId],
@@ -165,7 +164,18 @@ export function LessonPlansPage() {
     [filteredPackages],
   )
 
-  const groupedLessonPlans = useMemo(() => groupByDate(lessonPlans), [lessonPlans])
+  useEffect(() => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (!next.has('scope')) next.set('scope', scope)
+      const values = { student_id: selectedStudentId, school_year_id: selectedSchoolYearId, subject_id: selectedSubjectId, search: query, status }
+      Object.entries(values).forEach(([key, value]) => {
+        if (value && (value !== 'all' || key === 'school_year_id')) next.set(key, value)
+        else next.delete(key)
+      })
+      return next
+    }, { replace: true })
+  }, [selectedStudentId, selectedSchoolYearId, selectedSubjectId, query, status, scope, setSearchParams])
 
   const loadReferenceData = useCallback(async () => {
     const [studentData, subjectData, schoolYearData] = await Promise.all([
@@ -187,7 +197,7 @@ export function LessonPlansPage() {
     const defaultSchoolYearId =
       String(schoolYearData.find((schoolYear) => schoolYear.is_active)?.id ?? schoolYearData[0]?.id ?? '')
 
-    setSelectedStudentId((current) => current || defaultStudentId)
+    setSelectedStudentId((current) => scopedStudentId ? String(scopedStudentId) : current || defaultStudentId)
     setSelectedSchoolYearId((current) => current || defaultSchoolYearId)
     setGenerateForm((current) => ({
       ...current,
@@ -196,6 +206,7 @@ export function LessonPlansPage() {
   }, [scopedStudentId])
 
   const loadLessonPlanningData = useCallback(async () => {
+    const sequence = ++planningSequence.current
     if (!selectedStudentId) {
       setLessonPlans([])
       setPacingTargets([])
@@ -207,18 +218,22 @@ export function LessonPlansPage() {
     const [lessonPlanData, pacingTargetData, pacingData] = await Promise.all([
       api.listLessonPlans({
         student_id: Number(selectedStudentId),
-        school_year_id: selectedSchoolYearId ? Number(selectedSchoolYearId) : undefined,
+        school_year_id: selectedSchoolYearId && selectedSchoolYearId !== 'all' ? Number(selectedSchoolYearId) : undefined,
         subject_id: subjectId,
+        status: status as LessonPlanStatus | 'all',
+        start_date: scope === 'calendar' ? range.start : undefined,
+        end_date: scope === 'calendar' ? range.end : scope === 'overdue' ? addSchoolDays(schoolDate(), -1) : undefined,
       }),
       api.listPacingTargets({ student_id: Number(selectedStudentId), subject_id: subjectId }),
       api.getPacingStatus(Number(selectedStudentId), subjectId),
     ])
 
+    if (sequence !== planningSequence.current) return
     setLessonPlans(lessonPlanData)
     setPacingTargets(pacingTargetData)
     setPacingItems(pacingData.items)
     setSelectedLessonPlanIds((current) => current.filter((id) => lessonPlanData.some((lessonPlan) => lessonPlan.id === id)))
-  }, [selectedSchoolYearId, selectedStudentId, selectedSubjectId])
+  }, [selectedSchoolYearId, selectedStudentId, selectedSubjectId, status, scope, range.start, range.end])
 
   useEffect(() => {
     let cancelled = false
@@ -264,11 +279,13 @@ export function LessonPlansPage() {
   const resetLessonPlanForm = () => {
     setEditingLessonPlanId(null)
     setLessonPlanForm(emptyLessonPlanForm())
+    setTool(null)
   }
 
   const resetPacingForm = () => {
     setEditingPacingTargetId(null)
     setPacingForm(emptyPacingForm())
+    setTool(null)
   }
 
   const handleActionError = (actionFailure: unknown, fallback: string) => {
@@ -294,11 +311,18 @@ export function LessonPlansPage() {
   const handleSaveLessonPlan = async () => {
     if (!selectedStudentId || !selectedSchoolYearId || !lessonPlanForm.curriculum_lesson_id || !lessonPlanForm.target_date) return
     setActionError('')
+    const schoolYearId = selectedSchoolYearId === 'all'
+      ? packages.find((pkg) => pkg.id === Number(lessonPlanForm.package_id))?.school_year_id
+      : Number(selectedSchoolYearId)
+    if (!schoolYearId) {
+      setActionError('Choose a curriculum package and school year before saving.')
+      return
+    }
     try {
       const payload = {
         curriculum_lesson_id: Number(lessonPlanForm.curriculum_lesson_id),
         student_id: Number(selectedStudentId),
-        school_year_id: Number(selectedSchoolYearId),
+        school_year_id: schoolYearId,
         target_date: lessonPlanForm.target_date,
         estimated_duration_minutes: lessonPlanForm.estimated_duration_minutes
           ? Number(lessonPlanForm.estimated_duration_minutes)
@@ -327,7 +351,7 @@ export function LessonPlansPage() {
       await api.generateLessonPlans({
         package_id: Number(generateForm.package_id),
         student_id: Number(selectedStudentId),
-        school_year_id: selectedSchoolYearId ? Number(selectedSchoolYearId) : undefined,
+        school_year_id: selectedSchoolYearId && selectedSchoolYearId !== 'all' ? Number(selectedSchoolYearId) : undefined,
         start_date: generateForm.start_date || undefined,
         default_duration_minutes: generateForm.default_duration_minutes ? Number(generateForm.default_duration_minutes) : undefined,
         overwrite_existing: generateForm.overwrite_existing,
@@ -432,6 +456,8 @@ export function LessonPlansPage() {
   }
 
   const loadLessonPlanForEdit = (lessonPlan: LessonPlan) => {
+    setTool('lesson')
+    setShowWeeklyImport(false)
     setEditingLessonPlanId(lessonPlan.id)
     setLessonPlanForm({
       package_id: String(lessonPlan.curriculum_lesson.unit.package.id),
@@ -441,16 +467,47 @@ export function LessonPlansPage() {
       status: lessonPlan.status,
       notes: lessonPlan.notes || '',
     })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const loadPacingTargetForEdit = (pacingTarget: PacingTarget) => {
+    setTool('pacing')
+    setShowWeeklyImport(false)
     setEditingPacingTargetId(pacingTarget.id)
     setPacingForm({
       curriculum_unit_id: String(pacingTarget.curriculum_unit_id),
       target_start_date: pacingTarget.target_start_date,
       target_end_date: pacingTarget.target_end_date,
     })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
+  const visibleLessons = useMemo(() => lessonPlans.filter((lesson) => {
+    if (scope === 'undated' && lesson.target_date) return false
+    if (scope === 'overdue' && (['completed', 'skipped'].includes(lesson.status) || !lesson.target_date || lesson.target_date >= schoolDate())) return false
+    const text = `${lesson.curriculum_lesson.name} ${lesson.curriculum_lesson.unit.name} ${lesson.curriculum_lesson.unit.package.name} ${lesson.notes || ''}`
+    return !query || text.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+  }).sort((a, b) => a.target_date.localeCompare(b.target_date) || a.curriculum_lesson.name.localeCompare(b.curriculum_lesson.name) || a.id - b.id),
+  [lessonPlans, query, scope])
+  const historyPages = Math.max(1, Math.ceil(visibleLessons.length / 10))
+  const visibleHistoryPage = Math.min(historyPage, historyPages)
+  const lessonEntry = (lesson: LessonPlan) => ({
+    id: lesson.id, date: lesson.target_date, title: lesson.curriculum_lesson.name,
+    subtitle: `${lesson.curriculum_lesson.unit.package.name} · ${lesson.status}`,
+    details: <>
+      <p className="text-xs text-muted-foreground">{lesson.curriculum_lesson.unit.name} · {formatDateLabel(lesson.target_date)}</p>
+      <p className="text-xs text-muted-foreground">{lesson.estimated_duration_minutes || lesson.curriculum_lesson.estimated_duration_minutes || 0} minutes · {lesson.curriculum_lesson.resources.length} resources · {lesson.assignment_ids.length ? 'assignment ready' : 'no assignment yet'}</p>
+      {lesson.notes ? <p className="text-sm">{lesson.notes}</p> : null}
+      {canManageCurriculum ? <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selectedLessonPlanIds.includes(lesson.id)} onChange={() => toggleSelection(lesson.id)} />Select lesson</label>
+        <Button variant="secondary" size="sm" onClick={() => void handleSingleStatusUpdate(lesson.id, 'completed')}>Complete</Button>
+        <Button variant="outline" size="sm" onClick={() => void handleSingleStatusUpdate(lesson.id, 'skipped')}>Skip</Button>
+        <Button variant="outline" size="sm" onClick={() => void handleGenerateAssignments([lesson.id])}>Generate assignment</Button>
+        <Button variant="outline" size="sm" onClick={() => loadLessonPlanForEdit(lesson)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button>
+        <Button variant="outline" size="sm" onClick={() => void handleDeleteLessonPlan(lesson.id)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button>
+      </div> : null}
+    </>,
+  })
 
   if (loading) return <LoadingState message="Loading lesson plans…" />
   if (error) return <ErrorState message={error} onRetry={() => void loadReferenceData()} />
@@ -462,10 +519,19 @@ export function LessonPlansPage() {
           <CardTitle>Lesson plans and pacing guides</CardTitle>
           <CardDescription>Build lesson sequences by student, monitor pace, and turn plans into assignments.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+        <CardContent className="space-y-4">
+          <PlanningCalendarToolbar navigation={navigation} />
+          {canManageCurriculum ? <div className="flex flex-wrap gap-2">
+            <Button onClick={() => { setShowWeeklyImport(true); setTool(null) }}>Plan week</Button>
+            <Button variant="outline" onClick={() => { setTool('lesson'); setEditingLessonPlanId(null); setLessonPlanForm(emptyLessonPlanForm(date)); setShowWeeklyImport(false) }}>Add lesson plan</Button>
+            <Button variant="outline" onClick={() => { setTool('generate'); setGenerateForm((current) => ({ ...current, start_date: date })); setShowWeeklyImport(false) }}>Generate from curriculum</Button>
+            <Button variant="outline" onClick={() => { setTool('pacing'); setShowWeeklyImport(false) }}>Add pacing target</Button>
+            {tool ? <Button variant="ghost" onClick={() => setTool(null)}>Close form</Button> : null}
+          </div> : null}
+          <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
             <Label>Student</Label>
-            <select className={selectClassName} value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)}>
+            <select aria-label="Student" disabled={Boolean(scopedStudentId)} className={selectClassName} value={selectedStudentId} onChange={(event) => { setSelectedStudentId(event.target.value); setHistoryPage(1) }}>
               {students.map((student) => (
                 <option key={student.id} value={student.id}>
                   {student.name}
@@ -475,7 +541,8 @@ export function LessonPlansPage() {
           </div>
           <div className="space-y-2">
             <Label>School year</Label>
-            <select className={selectClassName} value={selectedSchoolYearId} onChange={(event) => setSelectedSchoolYearId(event.target.value)}>
+            <select aria-label="School year" className={selectClassName} value={selectedSchoolYearId} onChange={(event) => { setSelectedSchoolYearId(event.target.value); setHistoryPage(1) }}>
+              <option value="all">All school years</option>
               {schoolYears.map((schoolYear) => (
                 <option key={schoolYear.id} value={schoolYear.id}>
                   {schoolYear.name}
@@ -485,7 +552,7 @@ export function LessonPlansPage() {
           </div>
           <div className="space-y-2">
             <Label>Subject</Label>
-            <select className={selectClassName} value={selectedSubjectId} onChange={(event) => setSelectedSubjectId(event.target.value)}>
+            <select aria-label="Subject" className={selectClassName} value={selectedSubjectId} onChange={(event) => { setSelectedSubjectId(event.target.value); setHistoryPage(1) }}>
               <option value="all">All subjects</option>
               {subjects.map((subject) => (
                 <option key={subject.id} value={subject.id}>
@@ -494,19 +561,24 @@ export function LessonPlansPage() {
               ))}
             </select>
           </div>
-          <div className="space-y-2">
-            <Label>View</Label>
-            <div className="flex gap-2">
-              <Button variant={viewMode === 'timeline' ? 'default' : 'outline'} onClick={() => setViewMode('timeline')}>
-                Timeline
-              </Button>
-              <Button variant={viewMode === 'list' ? 'default' : 'outline'} onClick={() => setViewMode('list')}>
-                List
-              </Button>
-            </div>
           </div>
+          <details>
+            <summary className="cursor-pointer text-sm font-medium">Search and advanced filters</summary>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <label htmlFor="lesson-search" className="space-y-2 text-sm">Search<Input id="lesson-search" value={query} onChange={(event) => { setQuery(event.target.value); setHistoryPage(1) }} placeholder="Lesson, unit, curriculum, or notes" /></label>
+              <label className="space-y-2 text-sm">Status<select className={selectClassName} value={status} onChange={(event) => { setStatus(event.target.value); setHistoryPage(1) }}>
+                <option value="all">All statuses</option>
+                {lessonStatuses.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select></label>
+            </div>
+          </details>
         </CardContent>
       </Card>
+      {canManageCurriculum && showWeeklyImport ? <BulkAssignmentImportWizard
+        planningMode="weekly" initialDate={date} initialStudentId={selectedStudentId ? Number(selectedStudentId) : undefined}
+        initialSchoolYearId={selectedSchoolYearId && selectedSchoolYearId !== 'all' ? Number(selectedSchoolYearId) : undefined}
+        subjects={subjects} students={students} schoolYears={schoolYears} gradingPeriods={[]}
+        onClose={() => setShowWeeklyImport(false)} onImported={() => void refreshPage()} /> : null}
 
       {(successMessage || actionError) && (
         <Card>
@@ -517,9 +589,9 @@ export function LessonPlansPage() {
         </Card>
       )}
 
-      {canManageCurriculum ? (
-        <div className="grid gap-4 xl:grid-cols-3">
-          <Card>
+      {canManageCurriculum && tool ? (
+        <div>
+          {tool === 'generate' ? <Card>
             <CardHeader>
               <CardTitle>Generate from curriculum</CardTitle>
               <CardDescription>Auto-place lessons on scheduled instructional days.</CardDescription>
@@ -576,9 +648,9 @@ export function LessonPlansPage() {
                 Generate lesson plans
               </Button>
             </CardContent>
-          </Card>
+          </Card> : null}
 
-          <Card>
+          {tool === 'lesson' ? <Card>
             <CardHeader>
               <CardTitle>{editingLessonPlanId ? 'Edit lesson plan' : 'Add lesson plan'}</CardTitle>
               <CardDescription>Manually schedule or adjust a single curriculum lesson.</CardDescription>
@@ -684,9 +756,9 @@ export function LessonPlansPage() {
                 ) : null}
               </div>
             </CardContent>
-          </Card>
+          </Card> : null}
 
-          <Card>
+          {tool === 'pacing' ? <Card>
             <CardHeader>
               <CardTitle>{editingPacingTargetId ? 'Edit pacing target' : 'Add pacing target'}</CardTitle>
               <CardDescription>Set the target window for each unit to drive pace indicators.</CardDescription>
@@ -736,11 +808,11 @@ export function LessonPlansPage() {
                 ) : null}
               </div>
             </CardContent>
-          </Card>
+          </Card> : null}
         </div>
       ) : null}
 
-      {selectedLessonPlanIds.length ? (
+      {canManageCurriculum && selectedLessonPlanIds.length ? (
         <Card>
           <CardHeader>
             <CardTitle>Bulk actions</CardTitle>
@@ -765,119 +837,36 @@ export function LessonPlansPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+      <div className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Planned lessons</CardTitle>
             <CardDescription>
-              {sectionLoading ? 'Refreshing…' : `${lessonPlans.length} lesson plan(s) for ${students.find((student) => String(student.id) === selectedStudentId)?.name || 'this student'}.`}
+              {sectionLoading ? 'Refreshing…' : `${visibleLessons.length} lesson plan(s) for ${students.find((student) => String(student.id) === selectedStudentId)?.name || 'this student'}.`}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {lessonPlans.length ? (
-              <>
-                {viewMode === 'timeline' ? (
-                  Object.entries(groupedLessonPlans).map(([dateKey, items]) => (
-                    <div key={dateKey} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-medium">{formatDateLabel(dateKey)}</h3>
-                        {canManageCurriculum ? (
-                          <Button variant="outline" size="sm" onClick={() => setSelectedLessonPlanIds(items.map((item) => item.id))}>
-                            Select day
-                          </Button>
-                        ) : null}
-                      </div>
-                      <div className="space-y-2">
-                        {items.map((lessonPlan) => (
-                          <div key={lessonPlan.id} className="rounded-lg border p-3">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  {canManageCurriculum ? (
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedLessonPlanIds.includes(lessonPlan.id)}
-                                      onChange={() => toggleSelection(lessonPlan.id)}
-                                    />
-                                  ) : null}
-                                  <p className="font-medium">{lessonPlan.curriculum_lesson.name}</p>
-                                  <Badge variant={statusVariant(lessonPlan.status)}>{lessonPlan.status}</Badge>
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                  {lessonPlan.curriculum_lesson.unit.package.name} · {lessonPlan.curriculum_lesson.unit.name}
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                  {lessonPlan.estimated_duration_minutes || lessonPlan.curriculum_lesson.estimated_duration_minutes || 0} minutes
-                                  {' · '}
-                                  {lessonPlan.curriculum_lesson.resources.length} linked resource(s)
-                                  {' · '}
-                                  {lessonPlan.assignment_ids.length ? 'assignment ready' : 'no assignment yet'}
-                                </p>
-                                {lessonPlan.notes ? <p className="text-sm">{lessonPlan.notes}</p> : null}
-                              </div>
-                            </div>
-                            {canManageCurriculum ? (
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                <Button variant="secondary" size="sm" onClick={() => void handleSingleStatusUpdate(lessonPlan.id, 'completed')}>
-                                  Complete
-                                </Button>
-                                <Button variant="outline" size="sm" onClick={() => void handleSingleStatusUpdate(lessonPlan.id, 'skipped')}>
-                                  Skip
-                                </Button>
-                                <Button variant="outline" size="sm" onClick={() => void handleGenerateAssignments([lessonPlan.id])}>
-                                  Generate assignment
-                                </Button>
-                                <Button variant="outline" size="sm" onClick={() => loadLessonPlanForEdit(lessonPlan)}>
-                                  <Pencil className="mr-1 h-3.5 w-3.5" />
-                                  Edit
-                                </Button>
-                                <Button variant="outline" size="sm" onClick={() => void handleDeleteLessonPlan(lessonPlan.id)}>
-                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                                  Delete
-                                </Button>
-                              </div>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="space-y-2">
-                    {lessonPlans.map((lessonPlan) => (
-                      <div key={lessonPlan.id} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[140px_1fr_auto] md:items-center">
-                        <div className="flex items-center gap-2">
-                          {canManageCurriculum ? (
-                            <input
-                              type="checkbox"
-                              checked={selectedLessonPlanIds.includes(lessonPlan.id)}
-                              onChange={() => toggleSelection(lessonPlan.id)}
-                            />
-                          ) : null}
-                          <span className="text-sm text-muted-foreground">{formatDateLabel(lessonPlan.target_date)}</span>
-                        </div>
-                        <div>
-                          <p className="font-medium">{lessonPlan.curriculum_lesson.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {lessonPlan.curriculum_lesson.unit.package.name} · {lessonPlan.curriculum_lesson.unit.name}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={statusVariant(lessonPlan.status)}>{lessonPlan.status}</Badge>
-                          {lessonPlan.assignment_ids.length ? <Badge variant="outline">assignment</Badge> : null}
-                        </div>
-                      </div>
-                    ))}
+            {scope === 'calendar' ? <PlanningCalendar date={date} view={view} entries={visibleLessons.map(lessonEntry)} /> : visibleLessons.length ? (
+              <div className="space-y-3">
+                {visibleLessons.slice((visibleHistoryPage - 1) * 10, visibleHistoryPage * 10).map((lesson) =>
+                  <PlanningEntry key={lesson.id} entry={lessonEntry(lesson)} />)}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-muted-foreground">{visibleLessons.length} lessons · Page {visibleHistoryPage} of {historyPages}</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" disabled={visibleHistoryPage <= 1} onClick={() => setHistoryPage(visibleHistoryPage - 1)}>Previous</Button>
+                    <Button variant="outline" disabled={visibleHistoryPage >= historyPages} onClick={() => setHistoryPage(visibleHistoryPage + 1)}>Next</Button>
                   </div>
-                )}
-              </>
+                </div>
+              </div>
             ) : (
               <EmptyState title="No lesson plans yet" description="Generate a sequence from curriculum or add a lesson manually." />
             )}
           </CardContent>
         </Card>
 
-        <div className="space-y-4">
+        <details className="rounded-lg border p-4">
+          <summary className="cursor-pointer font-medium">Pacing status and targets</summary>
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle>Pacing status</CardTitle>
@@ -947,6 +936,7 @@ export function LessonPlansPage() {
             </CardContent>
           </Card>
         </div>
+        </details>
       </div>
     </div>
   )

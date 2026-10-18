@@ -263,7 +263,76 @@ Here you can:
 - Generate lesson plans from a curriculum package
 - Set pacing targets for units
 - Bulk reschedule planned lessons
-- Switch between **timeline** and **list** views
+- Browse dated work in **Day**, **Work week**, **Week**, **Month**, and **Agenda** views
+
+### Enter a week's lessons
+
+Choose **Plan week** from Lesson Plans or Assignments. Select the school year and a
+date in the intended week, then either **Paste plan** in natural language or
+**Upload CSV / Excel**. Paste requires configured AI; the standard spreadsheet
+templates do not.
+
+Use **Download example CSV** or **Download example XLSX** for the exact headers.
+Replace the example rows with one row per student's daily assignment:
+
+| Column | Value |
+| --- | --- |
+| `student` | Existing student's name |
+| `grade` | Grade, such as `7` |
+| `subject` | Subject, such as `Spelling` or `Spelling - 7th Grade` |
+| `unit` | Unit, chapter, or broad lesson grouping, such as `Lesson 6` |
+| `lesson` | Daily activity, such as `Page 25` |
+| `instructions` | Directions, textbook pages, worksheets, or other work |
+| `date` | `YYYY-MM-DD`, or blank when using `day` |
+| `day` | Weekday, such as `Tuesday`, resolved against the selected week |
+| `curriculum` | Optional curriculum package name |
+| `category` | Optional category, such as `homework` or `quiz` |
+| `estimated_minutes` | Optional duration in minutes |
+| `resource_url` | Optional HTTP/HTTPS resource link |
+| `max_score`, `weight` | Optional scoring settings |
+
+The week runs Monday through Sunday. If both date and day are supplied, they must
+agree. Save CSV as UTF-8 and Excel as `.xlsx`, not `.xls`. Use ordinary cell values,
+not formulas.
+
+For example:
+
+```csv
+student,grade,subject,unit,lesson,instructions,date,day,curriculum,category,estimated_minutes,resource_url,max_score,weight
+Lucas,7,Spelling,Lesson 6,Page 25,Complete page 25.,,Tuesday,,homework,,,100,1
+Lucas,7,Math,Unit 4,Lesson 4.4,Textbook pages 99-102 and Worksheet pages 71-72.,,Tuesday,,homework,,,100,1
+```
+
+Review the actual dates, student, grade-qualified subjects, and curriculum matches.
+The preview distinguishes existing records from records that will be created.
+Resolve ambiguous matches or edit incorrect values before confirming. Confirmation
+creates connected curriculum lessons, dated student lesson plans, and assignments
+together; existing matches are reused. Students must already exist.
+
+You can also upload a weekly Excel grid with subjects down the left and weekdays
+across the top, like `Lucas Week 9.xlsx`. Include the student and week/date range
+in the title. The importer preserves multiline assignment cells and ignores blank
+cells and completion-check columns. Use **Default grade** when the workbook does
+not state the grade, or answer the draft's apply-to-all grade question. A title
+such as `October 26-30` uses the selected week for its year and must agree with
+that week; it is not silently reassigned to the current week.
+
+Use distinct activity names for daily work under a shared lesson, for example
+`Page 25` and `Page 26` under `Lesson 6`. An existing lesson plan scheduled on a
+different date must be resolved explicitly; importing does not silently reschedule
+it or overwrite completed work.
+
+### Keep the planning screen focused
+
+Lesson Plans and Assignments initially show the current week. Use the date picker,
+**Today**, and previous/next buttons to navigate. Switch between Day, Work week,
+Week, Month, and Agenda without losing the selected date. Filter by student or
+subject; expand busy days and individual items for details.
+
+Creation and import forms open only when requested. Historical work is still
+available through **All dates**, while overdue and undated work remain separately
+accessible. This changes what is displayed, not what is saved; old work is not
+automatically deleted or archived.
 
 A practical workflow:
 
@@ -315,7 +384,7 @@ Assignments can include:
 ### Creating an assignment
 
 1. Open **Assignments**.
-2. Fill in the assignment details.
+2. Choose **Create assignment** and fill in the assignment details.
 3. Choose the subject and category.
 4. Set the due date.
 5. Select one or more students.

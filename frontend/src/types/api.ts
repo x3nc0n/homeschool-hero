@@ -440,7 +440,7 @@ export interface AssignmentUpsertPayload {
 }
 
 export type AssignmentImportSessionStatus = 'draft' | 'processing' | 'needs_clarification' | 'ready' | 'confirmed' | 'expired' | 'failed'
-export type AssignmentImportParseMethod = 'structured_json' | 'ai'
+export type AssignmentImportParseMethod = 'structured_json' | 'weekly_template' | 'weekly_grid' | 'ai'
 export type AssignmentImportItemStatus = 'ready' | 'needs_clarification' | 'invalid'
 export type AssignmentImportQuestionField =
   | 'title'
@@ -501,6 +501,49 @@ export interface AssignmentImportItem {
   missing_fields?: string[]
   ambiguous_fields?: string[]
   notes?: string[]
+  refs?: Record<string, unknown>
+  weekly?: WeeklyPlanItem | null
+}
+
+export interface WeeklyPlanItem {
+  student?: string | null
+  grade: string
+  subject: string
+  unit: string
+  lesson: string
+  instructions?: string | null
+  curriculum?: string | null
+  scheduled_date?: string | null
+  day?: string | null
+  estimated_minutes?: number | null
+  resource_url?: string | null
+  package_id?: number | null
+  activity_name?: string | null
+  source_location?: string | null
+  source_week_label?: string | null
+  resolution?: WeeklyPlanResolution
+}
+
+export interface WeeklyPlanResolution {
+  student?: 'reused' | 'ambiguous' | 'missing'
+  student_id?: number
+  subject?: 'new' | 'reused' | 'ambiguous'
+  subject_id?: number | null
+  subject_name?: string
+  package?: 'new' | 'reused' | 'ambiguous'
+  package_id?: number | null
+  package_name?: string
+  package_choices?: AssignmentImportChoice[]
+  unit?: 'new' | 'reused'
+  unit_id?: number | null
+  activity?: 'new' | 'reused'
+  activity_id?: number | null
+  lesson_plan?: 'new' | 'reused' | 'conflict'
+  lesson_plan_id?: number | null
+  assignment?: 'new' | 'reused' | 'conflict'
+  assignment_id?: number | null
+  duplicate?: boolean
+  duplicate_of?: string
 }
 
 export interface AssignmentImportDefaults {
@@ -511,6 +554,7 @@ export interface AssignmentImportDefaults {
   max_score?: number
   weight?: number
   due_date?: string
+  grade?: string
 }
 
 export interface AssignmentImportAnswer {
@@ -520,6 +564,7 @@ export interface AssignmentImportAnswer {
 }
 
 export interface AssignmentImportPatchPayload {
+  client_revision?: number
   answers?: AssignmentImportAnswer[]
   items?: AssignmentImportItem[]
 }
@@ -540,6 +585,7 @@ export interface AssignmentImportSession {
   expires_at?: string
   created_at?: string
   updated_at?: string
+  weekly_context?: { week_start: string; school_year_id: number } | null
 }
 
 export interface AssignmentImportConfirmPayload {
@@ -551,6 +597,13 @@ export interface AssignmentImportConfirmResponse {
   created_assignment_ids: number[]
   skipped_item_ids: string[]
   assignment_count: number
+  created_lesson_plan_ids?: number[]
+  reused_lesson_plan_ids?: number[]
+  reused_assignment_ids?: number[]
+  lesson_plan_count?: number
+  skipped_count?: number
+  curriculum_counts?: Record<string, { created: number; reused: number }>
+  curriculum_ids?: Record<string, { created: number[]; reused: number[] }>
 }
 
 export interface SubmissionVersion {

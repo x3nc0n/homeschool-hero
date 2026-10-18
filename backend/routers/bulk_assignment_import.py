@@ -3,14 +3,20 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from fastapi.responses import JSONResponse, Response
+from pydantic import ValidationError
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import Headers
 
 from backend.database import get_db
 from backend.models import AuditAction
+from backend.models.family import Family
 from backend.models.bulk_assignment_import import BulkAssignmentImportSession, BulkAssignmentImportStatus
 from backend.schemas.bulk_assignment_import import (
     BulkAssignmentImportConfirmRequest,
@@ -20,6 +26,7 @@ from backend.schemas.bulk_assignment_import import (
     BulkAssignmentImportRead,
     BulkAssignmentImportTarget,
     BulkImportDefaults,
+    WeeklyImportContext,
 )
 from backend.security import AuthSession
 from backend.services.audit import log_event
@@ -31,10 +38,26 @@ from backend.services.bulk_assignment_import import (
     schedule_assignment_import_processing,
 )
 from backend.services.curriculum_ai_import import AIImportError, AIImportUnavailable
+from backend.services.weekly_assignment_import import TEMPLATE_GUIDANCE, parse_template, parse_weekday_grid, template_bytes, validate_context
+from backend.services.assignment_spreadsheet import XLSX_CONTENT_TYPE
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/assignment-import-sessions', tags=['assignment-import-sessions'])
 AI_IMPORT_UNAVAILABLE_DETAIL = 'AI assignment import is unavailable'
+
+
+@router.get('/template', summary='Download a canonical weekly planning CSV or XLSX template',
+            description=TEMPLATE_GUIDANCE)
+async def download_weekly_template(
+    format: Literal['csv', 'xlsx'] = 'csv',
+    auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='download weekly planning template')),
+) -> Response:
+    return Response(
+        content=template_bytes(format),
+        media_type='text/csv' if format == 'csv' else XLSX_CONTENT_TYPE,
+        headers={'Content-Disposition': f'attachment; filename="weekly-plan-template.{format}"',
+                 'X-Content-Type-Options': 'nosniff'},
+    )
 
 
 async def _get_session_or_404(db: AsyncSession, auth: AuthSession, session_id: int) -> BulkAssignmentImportSession:
@@ -105,16 +128,45 @@ def _parse_defaults(raw_defaults: str | None) -> BulkImportDefaults | None:
     ),
 )
 async def create_assignment_import_session(
-    file: UploadFile = File(..., description='Planning file: .txt, .md, .json, .csv, .tsv, .docx, .pdf, or unencrypted .xlsx (not .xls).'),
+    file: UploadFile | None = File(default=None, description='Planning file: .txt, .md, .json, .csv, .tsv, .docx, .pdf, or unencrypted .xlsx (not .xls).'),
     defaults: str | None = Form(default=None),
+    planning_mode: Literal['assignments', 'weekly'] = Form(default='assignments'),
+    week_start: str | None = Form(default=None, description='Selected Monday in YYYY-MM-DD format; required in weekly mode.'),
+    school_year_id: int | None = Form(default=None),
+    text: str | None = Form(default=None, description='Natural-language weekly plan; alternative to file, requires configured AI.'),
     db: AsyncSession = Depends(get_db),
     auth: AuthSession = Depends(require_capabilities(Capability.manage_curriculum, action='create assignment import draft')),
 ) -> dict:
     service = get_bulk_assignment_import_service()
     try:
+        weekly_context = None
+        if planning_mode == 'weekly':
+            if week_start is None or school_year_id is None:
+                raise BulkAssignmentImportError('Weekly planning requires week_start and school_year_id')
+            weekly_context = WeeklyImportContext(week_start=week_start, school_year_id=school_year_id)
+            await validate_context(db, family_id=auth.family_id, context=weekly_context)
+        if bool(file) == bool(text and text.strip()):
+            raise BulkAssignmentImportError('Provide exactly one file or nonempty text')
+        if text:
+            if weekly_context is None:
+                raise BulkAssignmentImportError('Pasted text requires planning_mode=weekly')
+            file = UploadFile(filename='weekly-plan.txt', file=BytesIO(text.encode('utf-8')),
+                              headers=Headers({'content-type': 'text/plain'}))
         parsed_defaults = _parse_defaults(defaults)
         extracted = await service.extract_upload(file)
         await service.validate_defaults(db, family_id=auth.family_id, defaults=parsed_defaults)
+        if weekly_context and extracted.content_type in {'text/csv', 'text/tab-separated-values', XLSX_CONTENT_TYPE}:
+            from backend.services.bulk_assignment_import import bulk_assignment_max_items
+
+            parsed = parse_weekday_grid(extracted, context=weekly_context, max_items=bulk_assignment_max_items())
+            parse_method = 'weekly_grid' if parsed is not None else 'weekly_template'
+            if parsed is None:
+                parsed = parse_template(extracted, max_items=bulk_assignment_max_items())
+            session = await service.create_draft_session(
+                db, family_id=auth.family_id, user_id=auth.user_id, source=extracted,
+                parsed=parsed, defaults=parsed_defaults, parse_method=parse_method, weekly_context=weekly_context,
+            )
+            return service.read_session_payload(session, include_items=False)
         parsed = service.parse_structured_json(extracted.extracted)
         if parsed is not None:
             session = await service.create_draft_session(
@@ -125,14 +177,23 @@ async def create_assignment_import_session(
                 parsed=parsed,
                 defaults=parsed_defaults,
                 parse_method='structured_json',
+                weekly_context=weekly_context,
             )
             return service.read_session_payload(session, include_items=False)
         service.ensure_ai_configured()
+        if weekly_context:
+            extracted.extracted.source_kind = 'weekly'
+            extracted.extracted.text = (
+                f'Selected weekly context: Monday {weekly_context.week_start.isoformat()}, '
+                f'school year ID {weekly_context.school_year_id}. Resolve day names server-side; do not invent dates.\n\n'
+                + extracted.extracted.text
+            )
         session = await service.create_processing_session(
             db,
             family_id=auth.family_id,
             user_id=auth.user_id,
             source=extracted,
+            weekly_context=weekly_context,
         )
         schedule_assignment_import_processing(session.id, extracted, parsed_defaults)
     except AIImportUnavailable:
@@ -141,7 +202,7 @@ async def create_assignment_import_session(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={'detail': AI_IMPORT_UNAVAILABLE_DETAIL, 'code': 'ai_import_unavailable'},
         )
-    except (AIImportError, BulkAssignmentImportError) as exc:
+    except (AIImportError, BulkAssignmentImportError, ValidationError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return service.read_session_payload(session, include_items=False)
 
@@ -171,6 +232,8 @@ async def patch_assignment_import_session(
         BulkAssignmentImportStatus.expired,
     }:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Cannot update a {session.status.value} import session')
+    if payload.client_revision is not None and payload.client_revision != session.revision:
+        raise HTTPException(409, 'Assignment import session revision is stale')
     draft_payload = dict(session.draft_payload or {})
     items = [BulkAssignmentImportItem.model_validate(item) for item in draft_payload.get('items', [])]
     questions_by_id = {question.get('id'): question for question in session.questions or []}
@@ -194,6 +257,10 @@ async def patch_assignment_import_session(
                 setattr(item, field, int(answer.value) if answer.value is not None else None)
             elif field == 'title':
                 item.title = str(answer.value or '').strip() or None
+            elif field == 'weekly.package_id' and item.weekly:
+                item.weekly.package_id = int(answer.value) if answer.value is not None else None
+            elif field == 'weekly.grade' and item.weekly:
+                item.weekly.grade = str(answer.value or '').strip()
 
     by_id = {item.client_item_id: index for index, item in enumerate(items)}
     for edited in payload.items:
@@ -205,11 +272,22 @@ async def patch_assignment_import_session(
     draft_payload['items'] = [item.model_dump(mode='json') for item in items]
     service = get_bulk_assignment_import_service()
     draft_payload, questions, status_value = await service.revalidate_payload(db, family_id=auth.family_id, payload=draft_payload)
-    session.draft_payload = draft_payload
-    session.questions = questions
-    session.status = status_value
-    session.revision += 1
-    await db.commit()
+    try:
+        updated = await db.execute(
+            update(BulkAssignmentImportSession).where(
+                BulkAssignmentImportSession.id == session.id,
+                BulkAssignmentImportSession.revision == session.revision,
+                BulkAssignmentImportSession.status == session.status,
+            ).values(
+                draft_payload=draft_payload, questions=questions, status=status_value, revision=session.revision + 1,
+            ).execution_options(synchronize_session=False),
+        )
+        if updated.rowcount != 1:
+            raise HTTPException(409, 'Assignment import changed; reload the draft before editing')
+        await db.commit()
+    except (HTTPException, OperationalError):
+        await db.rollback()
+        raise HTTPException(409, 'Assignment import changed; reload the draft before editing')
     await db.refresh(session)
     return service.read_session_payload(session, include_items=True)
 
@@ -225,17 +303,35 @@ async def confirm_assignment_import_session(
     session = await _get_session_or_404(db, auth, session_id)
     if session.status == BulkAssignmentImportStatus.confirmed:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Assignment import session already confirmed')
-    if session.status != BulkAssignmentImportStatus.ready:
+    weekly_subset = (
+        bool(session.draft_payload.get('weekly_context'))
+        and session.status == BulkAssignmentImportStatus.needs_clarification
+        and payload.item_ids is not None
+    )
+    if session.status != BulkAssignmentImportStatus.ready and not weekly_subset:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Cannot confirm a {session.status.value} import session')
     if payload.client_revision is not None and payload.client_revision != session.revision:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Assignment import session revision is stale')
     service = get_bulk_assignment_import_service()
     try:
+        # Serialize linked creation across sessions for one family, including on SQLite.
+        await db.execute(update(Family).where(Family.id == auth.family_id).values(id=Family.id))
+        claimed = await db.execute(
+            update(BulkAssignmentImportSession).where(
+                BulkAssignmentImportSession.id == session.id,
+                BulkAssignmentImportSession.family_id == auth.family_id,
+                BulkAssignmentImportSession.status == session.status,
+                BulkAssignmentImportSession.revision == session.revision,
+            ).values(status=BulkAssignmentImportStatus.confirmed),
+        )
+        if claimed.rowcount != 1:
+            raise HTTPException(409, 'Assignment import changed or was already confirmed')
         created_ids, skipped_ids = await service.confirm(
             db,
             family_id=auth.family_id,
             payload=session.draft_payload,
             item_ids=payload.item_ids,
+            user_id=auth.user_id,
         )
         session.status = BulkAssignmentImportStatus.confirmed
         session.confirmed_at = datetime.now(UTC)
@@ -255,10 +351,18 @@ async def confirm_assignment_import_session(
     except HTTPException:
         await db.rollback()
         raise
+    except (IntegrityError, OperationalError) as exc:
+        await db.rollback()
+        raise HTTPException(409, 'Import conflicted with another update; reload the draft and retry') from exc
+    except Exception:
+        await db.rollback()
+        raise
     return BulkAssignmentImportConfirmResponse(
         created_assignment_ids=created_ids,
         skipped_item_ids=skipped_ids,
         assignment_count=len(created_ids),
+        skipped_count=len(skipped_ids),
+        **session.draft_payload.get('weekly_results', {}),
     )
 
 
