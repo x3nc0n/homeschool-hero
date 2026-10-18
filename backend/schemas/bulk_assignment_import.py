@@ -28,8 +28,8 @@ class WeeklyImportContext(BaseModel):
             try:
                 if date.fromisoformat(value).isoformat() == value:
                     return value
-            except ValueError:
-                pass
+            except ValueError as exc:
+                raise ValueError('week_start must be YYYY-MM-DD') from exc
         raise ValueError('week_start must be YYYY-MM-DD')
 
     @field_validator('week_start')
@@ -67,8 +67,8 @@ class WeeklyImportItem(BaseModel):
             try:
                 if date.fromisoformat(value).isoformat() == value:
                     return value
-            except ValueError:
-                pass
+            except ValueError as exc:
+                raise ValueError('scheduled_date must be YYYY-MM-DD') from exc
         raise ValueError('scheduled_date must be YYYY-MM-DD')
 
     @field_validator('resource_url')

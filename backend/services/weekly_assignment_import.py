@@ -289,7 +289,7 @@ def validate_source_week(label: str | None, context: WeeklyImportContext) -> Non
     year = int(match[4]) if match[4] else context.week_start.year
     start = date(year, month, int(match[2]))
     end = date(year, month, int(match[3]))
-    if start > end or not (context.week_start <= start <= end <= context.week_start + timedelta(days=6)):
+    if not (context.week_start <= start <= end <= context.week_start + timedelta(days=6)):
         raise ValueError(f'Grid title "{label}" conflicts with selected week {context.week_start}; select its week and upload again')
 
 
