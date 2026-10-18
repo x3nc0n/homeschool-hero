@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, inspect, or_, select
+from sqlalchemy import and_, func, inspect, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import NO_VALUE, init_collection
@@ -333,6 +333,7 @@ async def list_assignments(
     status_filter: str | None = Query(default=None, alias='status'),
     due_from: date | None = Query(default=None),
     due_to: date | None = Query(default=None),
+    undated: bool | None = Query(default=None, description='Filter by effective student due date, falling back to assignment due date.'),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -376,20 +377,30 @@ async def list_assignments(
 
     due_from_dt = _normalize_date_floor(due_from)
     due_to_dt = _normalize_date_ceil(due_to)
-    if due_from_dt is not None:
-        stmt = stmt.where(
-            or_(
-                Assignment.due_date >= due_from_dt,
-                Assignment.targets.any(AssignmentTarget.due_date >= due_from_dt),
-            )
-        )
-    if due_to_dt is not None:
-        stmt = stmt.where(
-            or_(
-                Assignment.due_date <= due_to_dt,
-                Assignment.targets.any(AssignmentTarget.due_date <= due_to_dt),
-            )
-        )
+    if due_from_dt is not None or due_to_dt is not None or undated is not None:
+        effective_date = func.coalesce(AssignmentTarget.due_date, Assignment.due_date)
+
+        def date_clauses(column):
+            clauses = []
+            if due_from_dt is not None:
+                clauses.append(column >= due_from_dt)
+            if due_to_dt is not None:
+                clauses.append(column <= due_to_dt)
+            if undated is not None:
+                clauses.append(column.is_(None) if undated else column.is_not(None))
+            return clauses
+
+        target_clauses = date_clauses(effective_date)
+        if scoped_student_id is not None:
+            target_clauses.append(AssignmentTarget.student_id == scoped_student_id)
+        dated_target = Assignment.targets.any(and_(*target_clauses))
+        if scoped_student_id is None:
+            stmt = stmt.where(or_(
+                dated_target,
+                and_(~Assignment.targets.any(), *date_clauses(Assignment.due_date)),
+            ))
+        else:
+            stmt = stmt.where(dated_target)
 
     total = (await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one()
     total_pages = (total + page_size - 1) // page_size if total else 0

@@ -37,6 +37,7 @@ from backend.schemas.bulk_assignment_import import (
     BulkAssignmentImportTarget,
     BulkImportDefaults,
     ParsedAssignmentDocument,
+    WeeklyImportContext,
 )
 from backend.services.cache import invalidate_gradebook_cache
 from backend.services.assignment_spreadsheet import XLSX_CONTENT_TYPE, extract_assignment_spreadsheet
@@ -92,6 +93,7 @@ class ExtractedAssignmentSource:
     size_bytes: int
     text_hash: str
     extracted: ExtractedSource
+    raw_bytes: bytes = b''
 
 
 class BulkAssignmentImportError(RuntimeError):
@@ -182,6 +184,7 @@ class BulkAssignmentImportService:
             size_bytes=len(payload),
             text_hash=hashlib.sha256(extracted.text.encode('utf-8')).hexdigest(),
             extracted=extracted,
+            raw_bytes=payload,
         )
 
     def _detect_content_type(self, *, filename: str, content_type: str) -> str:
@@ -220,6 +223,8 @@ class BulkAssignmentImportService:
         except ValidationError as exc:
             raise AIImportError(f'AI returned an invalid assignment draft: {exc}') from exc
         max_items = bulk_assignment_max_items()
+        if len(document.assignments) > max_items and extracted.source_kind == 'weekly':
+            raise AIImportError(f'Weekly plan exceeds {max_items} items; split the plan')
         if len(document.assignments) > max_items:
             document.assignments = document.assignments[:max_items]
         return document
@@ -300,7 +305,15 @@ class BulkAssignmentImportService:
         payload: dict[str, Any] = {
             'temperature': 0,
             'messages': [
-                {'role': 'system', 'content': ASSIGNMENT_IMPORT_SYSTEM_PROMPT},
+                {'role': 'system', 'content': ASSIGNMENT_IMPORT_SYSTEM_PROMPT + (
+                    '\nWEEKLY MODE: Return weekly metadata on every candidate: student, grade, subject, unit, lesson, '
+                    'instructions, optional curriculum, scheduled_date (only explicitly stated ISO dates), '
+                    'day (weekday name), estimated_minutes, resource_url. Expand weekday ranges to one row per '
+                    'student/day/activity. Preserve distinct page assignments even when they share a lesson number. '
+                    'Do not guess explicit dates or grades. Leave missing fields empty for clarification. '
+                    'The backend resolves weekdays against the selected week. Never return database IDs.'
+                    if getattr(extracted, 'source_kind', '') == 'weekly' else ''
+                )},
                 {'role': 'user', 'content': prompt},
             ],
             'tools': [
@@ -368,9 +381,18 @@ class BulkAssignmentImportService:
         family_id: int,
         parsed: ParsedAssignmentDocument,
         defaults: BulkImportDefaults | None,
+        weekly_context: WeeklyImportContext | None = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int], BulkAssignmentImportStatus]:
         items = await self._build_items(db, family_id=family_id, parsed=parsed, defaults=defaults or BulkImportDefaults())
+        if weekly_context is not None and len({item.client_item_id for item in items}) != len(items):
+            raise AIImportError('Weekly plan contains duplicate client item IDs; retry the source')
         await self._validate_family_ids(db, family_id=family_id, items=items)
+        if weekly_context is not None:
+            from backend.services.weekly_assignment_import import resolve_items
+
+            questions = await resolve_items(db, family_id=family_id, items=items, context=weekly_context)
+            summary = self._summary(items)
+            return [item.model_dump(mode='json') for item in items], questions, summary, self._status_from_summary(summary)
         questions = await self._generate_questions(db, family_id=family_id, items=items)
         summary = self._summary(items)
         status_value = self._status_from_summary(summary)
@@ -390,6 +412,8 @@ class BulkAssignmentImportService:
         lesson_plans = (await db.execute(select(LessonPlan).where(LessonPlan.family_id == family_id))).scalars().all()
         items: list[BulkAssignmentImportItem] = []
         for index, candidate in enumerate(parsed.assignments):
+            if candidate.weekly and not candidate.weekly.grade and defaults.grade:
+                candidate.weekly.grade = defaults.grade
             subject_id, subject_ambiguous = self._resolve_ref(candidate.subject_ref, subjects, default_id=defaults.subject_id)
             grading_period_id, grading_ambiguous = self._resolve_ref(
                 candidate.grading_period_ref,
@@ -398,8 +422,13 @@ class BulkAssignmentImportService:
             )
             lesson_plan_id, lesson_ambiguous = self._resolve_lesson_ref(candidate.lesson_plan_ref, lesson_plans)
             target_ids, student_ambiguous = self._resolve_student_refs(candidate.student_refs, students, defaults.student_ids)
+            if candidate.weekly is not None:
+                subject_id, subject_ambiguous = None, False
+                target_ids, student_ambiguous = list(defaults.student_ids), False
+                lesson_plan_id, lesson_ambiguous = None, False
             client_item_id = candidate.client_item_id or f'item_{index + 1:04d}'
             item = BulkAssignmentImportItem(
+                weekly=candidate.weekly,
                 client_item_id=client_item_id,
                 title=candidate.title,
                 subject_id=subject_id,
@@ -593,6 +622,15 @@ class BulkAssignmentImportService:
     ) -> tuple[dict[str, Any], list[dict[str, Any]], BulkAssignmentImportStatus]:
         items = [BulkAssignmentImportItem.model_validate(item) for item in payload.get('items', [])]
         await self._validate_family_ids(db, family_id=family_id, items=items)
+        if payload.get('weekly_context'):
+            from backend.services.weekly_assignment_import import resolve_items
+
+            context = WeeklyImportContext.model_validate(payload['weekly_context'])
+            questions = await resolve_items(db, family_id=family_id, items=items, context=context)
+            summary = self._summary(items)
+            payload['items'] = [item.model_dump(mode='json') for item in items]
+            payload['summary'] = summary
+            return payload, questions, self._status_from_summary(summary)
         for item in items:
             self._validate_item(item)
         questions = await self._generate_questions(db, family_id=family_id, items=items)
@@ -646,14 +684,34 @@ class BulkAssignmentImportService:
         family_id: int,
         payload: dict[str, Any],
         item_ids: list[str] | None,
+        user_id: int | None = None,
     ) -> tuple[list[int], list[str]]:
         items = [BulkAssignmentImportItem.model_validate(item) for item in payload.get('items', [])]
-        selected_ids = set(item_ids or [item.client_item_id for item in items])
+        if payload.get('weekly_context') and item_ids is not None and set(item_ids) - {item.client_item_id for item in items}:
+            raise HTTPException(400, 'Unknown weekly import item ID')
+        selected_ids = set(
+            item_ids if payload.get('weekly_context') and item_ids is not None
+            else item_ids or [item.client_item_id for item in items]
+        )
         selected = [item for item in items if item.client_item_id in selected_ids]
         skipped = [item.client_item_id for item in items if item.client_item_id not in selected_ids]
         if not selected:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={'code': 'no_ready_items', 'items': []})
         await self._validate_family_ids(db, family_id=family_id, items=selected)
+        weekly = payload.get('weekly_context')
+        if weekly:
+            from backend.services.weekly_assignment_import import create_links, resolve_items
+
+            context = WeeklyImportContext.model_validate(weekly)
+            await resolve_items(db, family_id=family_id, items=selected, context=context)
+            invalid_weekly = [item.model_dump(mode='json') for item in selected if item.status != 'ready']
+            if invalid_weekly:
+                raise HTTPException(409, {'code': 'invalid_import_items', 'items': invalid_weekly})
+            selected, weekly_skipped, results = await create_links(
+                db, family_id=family_id, user_id=user_id, items=selected, context=context,
+            )
+            skipped.extend(weekly_skipped)
+            payload['weekly_results'] = results
         invalid: list[dict[str, Any]] = []
         for item in selected:
             self._validate_item(item)
@@ -715,6 +773,7 @@ class BulkAssignmentImportService:
             'source_size_bytes': session.source_size_bytes,
             'warnings': list(session.warnings or []),
             'parse_method': payload.get('parse_method'),
+            'weekly_context': payload.get('weekly_context'),
             'error_message': payload.get('error_message'),
             'summary': payload.get('summary') or self._summary([BulkAssignmentImportItem.model_validate(item) for item in items]),
             'questions': list(session.questions or []),
@@ -735,12 +794,14 @@ class BulkAssignmentImportService:
         parsed: ParsedAssignmentDocument,
         defaults: BulkImportDefaults | None,
         parse_method: str = 'ai',
+        weekly_context: WeeklyImportContext | None = None,
     ) -> BulkAssignmentImportSession:
         items, questions, summary, status_value = await self.build_session_payload(
             db,
             family_id=family_id,
             parsed=parsed,
             defaults=defaults,
+            weekly_context=weekly_context,
         )
         session = BulkAssignmentImportSession(
             family_id=family_id,
@@ -756,6 +817,7 @@ class BulkAssignmentImportService:
                 'parse_method': parse_method,
                 'items': items,
                 'summary': summary,
+                **({'weekly_context': weekly_context.model_dump(mode='json')} if weekly_context else {}),
             },
             questions=questions,
             expires_at=datetime.now(UTC) + timedelta(hours=bulk_assignment_ttl_hours()),
@@ -772,6 +834,7 @@ class BulkAssignmentImportService:
         family_id: int,
         user_id: int,
         source: ExtractedAssignmentSource,
+        weekly_context: WeeklyImportContext | None = None,
     ) -> BulkAssignmentImportSession:
         session = BulkAssignmentImportSession(
             family_id=family_id,
@@ -787,6 +850,7 @@ class BulkAssignmentImportService:
                 'parse_method': 'ai',
                 'summary': {'total': 0, 'ready': 0, 'needs_clarification': 0, 'invalid': 0},
                 'items': [],
+                **({'weekly_context': weekly_context.model_dump(mode='json')} if weekly_context else {}),
             },
             questions=[],
             expires_at=datetime.now(UTC) + timedelta(hours=bulk_assignment_ttl_hours()),
@@ -808,11 +872,13 @@ class BulkAssignmentImportService:
         if session is None or session.status != BulkAssignmentImportStatus.processing:
             return
         parsed = await self.parse_with_ai(source.extracted)
+        weekly_context = WeeklyImportContext.model_validate(session.draft_payload['weekly_context']) if session.draft_payload.get('weekly_context') else None
         items, questions, summary, status_value = await self.build_session_payload(
             db,
             family_id=session.family_id,
             parsed=parsed,
             defaults=defaults,
+            weekly_context=weekly_context,
         )
         session.status = status_value
         session.draft_payload = {
@@ -820,6 +886,7 @@ class BulkAssignmentImportService:
             'parse_method': 'ai',
             'items': items,
             'summary': summary,
+            **({'weekly_context': weekly_context.model_dump(mode='json')} if weekly_context else {}),
         }
         session.questions = questions
         session.revision += 1

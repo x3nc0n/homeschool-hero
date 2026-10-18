@@ -71,6 +71,70 @@ When `AUTH_PROVIDER=saml`:
    - `PUT /api/gradebook/categories`
    - `PUT /api/gradebook/scales`
 
+### Weekly lesson planning
+
+Use the existing `/api/assignment-import-sessions` workflow in weekly planning
+mode when curriculum, student lesson plans, and assignments should be created
+together. All operations require `manage_curriculum` and remain family-scoped.
+
+`GET /api/assignment-import-sessions/template?format=csv` or `format=xlsx` downloads
+the canonical example. The columns are:
+
+```text
+student,grade,subject,unit,lesson,instructions,date,day,curriculum,category,estimated_minutes,resource_url,max_score,weight
+```
+
+The first six headers and at least one date/day header are required. Use one row
+per student's daily assignment. `date` is `YYYY-MM-DD`; `day` is resolved within
+the Monday-Sunday week containing `week_start`. If both values are present, they
+must agree.
+
+Create the draft with multipart `POST /api/assignment-import-sessions`:
+
+- `planning_mode`: `weekly`
+- `school_year_id`: an authorized school year
+- `week_start`: the intended week's Monday as `YYYY-MM-DD`
+- Exactly one of `file` (CSV/XLSX) or `text` (natural-language plan)
+- Optional `defaults`: JSON assignment defaults, including existing student IDs and
+  `grade` for workbooks that do not state a grade
+
+Canonical templates do not require AI. Pasted plans use configured AI and the
+same background-processing/polling workflow as assignment imports. Parent-authored
+Excel grids may have subjects down the left and weekdays across the top; preserve
+their title/date context, ignore empty cells and completion-check columns, and
+review the resulting rows before confirming.
+
+Read the draft with `GET /api/assignment-import-sessions/{id}`, apply corrections
+with `PATCH`, then `POST /api/assignment-import-sessions/{id}/confirm` with
+`client_revision` and selected `item_ids`. Weekly rows include curriculum reference
+information in addition to ordinary assignment fields. New curriculum is proposed
+in preview, never created during extraction. Existing unambiguous records are
+reused; ambiguous names, invalid dates, and conflicting existing plans require
+correction.
+
+Confirmation rechecks ownership, matches, session state/revision, and duplicates,
+and persists missing curriculum records, dated per-student lesson plans, and linked
+assignments together. A failed confirmation must not leave partial educational
+records. The ordinary assignment-only upload contract remains supported.
+
+Weekly parse methods are `weekly_template`, `weekly_grid`, or `ai`. The read
+response includes `weekly_context: {week_start, school_year_id}` and each item's
+`weekly` object with student/grade/subject/curriculum/unit/lesson/instructions,
+`scheduled_date`, optional `day`, duration/resource fields, source context, and
+derived `resolution` decisions. Decisions distinguish `new`, `reused`, ambiguous
+matches, conflicts, and duplicate work. Package ambiguity includes
+`resolution.package_choices`; choose an existing package by editing
+`weekly.package_id`, not the derived resolution.
+
+PATCH accepts `client_revision` with complete edited items. Preserve source/ref
+metadata. If changing the date, also clear or update `weekly.day` so it does not
+conflict with the new date. Weekly confirmation may select only ready rows,
+leaving unresolved rows unselected; the response reports skipped item IDs.
+Confirmation adds `created_lesson_plan_ids`, `reused_lesson_plan_ids`,
+`reused_assignment_ids`, `lesson_plan_count`, `skipped_count`, and
+`curriculum_counts`/`curriculum_ids` for `subjects`, `packages`, `units`, and
+`activities`. Existing work is reused or skipped rather than overwritten.
+
 ### 3. Submit work
 
 1. Upload work with `POST /api/submissions`

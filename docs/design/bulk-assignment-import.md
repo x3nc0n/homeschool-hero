@@ -26,6 +26,49 @@
 
 Let a parent/teacher upload a text-like planning document, have AI draft assignment JSON, clarify missing required fields interactively, preview/edit every row, then confirm a transactional bulk create. No real assignment persists before confirmation.
 
+## Weekly planning mode
+
+The same import-session workflow also supports a weekly mode that creates connected
+curriculum, lesson plans, and assignments. The original assignment-only path remains
+available for arbitrary planning files.
+
+Weekly entry accepts natural-language paste (using configured AI) or standard
+CSV/XLSX templates (deterministic, with no AI requirement). Templates and parsers
+use a single canonical column contract:
+
+```text
+student,grade,subject,unit,lesson,instructions,date,day,curriculum,category,estimated_minutes,resource_url,max_score,weight
+```
+
+The first six columns and at least one of `date`/`day` are required. Each row
+represents one student's daily assignment. Optional fields leave scoring defaults
+unchanged. Weekdays are resolved against the selected Monday-Sunday week; exact
+dates use `YYYY-MM-DD`. Conflicting date/day values are errors.
+
+Drafts retain curriculum references and proposed create/reuse decisions in addition
+to assignment fields. Matching is family- and school-year-scoped, hierarchical,
+and case-normalized. Subject names include grade, such as `Spelling - 7th Grade`.
+Ambiguous packages or other references require a teacher's choice. New student
+creation is not supported.
+
+Daily activity identity is independent of weekday labels. Repeated broad lesson
+references with distinct work, such as Spelling Lesson 6 pages 25 and 26, need
+distinct descriptive curriculum activities. Reimporting identical work reuses
+existing curriculum and skips existing scheduled work; conflicting dates require
+explicit resolution because lesson plans are unique by student and curriculum
+lesson. No completed work is silently overwritten or rescheduled.
+
+Confirmation revalidates references, permissions, session revision, duplicates,
+and conflicts transactionally, then creates any missing curriculum records,
+student lesson plans, and assignments linked by `lesson_plan_id`. It must not leave
+partial educational records after failure.
+
+The UI exposes **Plan week**, **Paste plan**, **Upload CSV / Excel**, and example
+template downloads. The shared preview shows actual dates and proposed records.
+Lesson Plans and Assignments use date-bounded Day, Work week, Week, Month, and
+Agenda views, with All dates history and compact overdue/undated access. Creation
+forms are opened on demand instead of occupying the default screen.
+
 ## Supported inputs
 
 Minimum supported formats:

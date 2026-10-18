@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FileText, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
@@ -9,6 +9,7 @@ import type {
   AssignmentTargetStatus,
   AnswerKeyQuestion,
   GradingPeriod,
+  SchoolYear,
   Student,
   Subject,
 } from '@/types/api'
@@ -24,6 +25,8 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingState } from '@/components/common/LoadingState'
 import { ErrorState } from '@/components/common/ErrorState'
 import { BulkAssignmentImportWizard } from '@/components/features/BulkAssignmentImportWizard'
+import { PlanningCalendar, PlanningCalendarToolbar, PlanningEntry, usePlanningCalendar } from '@/components/features/PlanningCalendar'
+import { assignmentDates, assignmentIsOverdue, fetchEveryPage, schoolDate, schoolDateLabel } from '@/lib/planning-calendar'
 
 const assignmentStatuses: AssignmentStatus[] = ['pending', 'complete', 'graded']
 const targetStatuses: AssignmentTargetStatus[] = ['assigned', 'submitted', 'graded', 'excused']
@@ -74,7 +77,7 @@ const emptyForm = (): AssignmentForm => ({
 })
 
 function formatDateLabel(value?: string | null) {
-  return value ? new Date(value).toLocaleDateString() : 'TBD'
+  return value ? schoolDateLabel(value.slice(0, 10)) : 'TBD'
 }
 
 function normalizeTargetMap(assignment: Assignment): Record<string, TargetDraft> {
@@ -91,90 +94,100 @@ function normalizeTargetMap(assignment: Assignment): Record<string, TargetDraft>
 
 export function AssignmentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { canManageCurriculum } = useAuth()
+  const navigation = usePlanningCalendar()
+  const { date, view, scope, range, page, setPage } = navigation
+  const loadSequence = useRef(0)
+  const { canManageCurriculum, studentId: scopedStudentId } = useAuth()
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [gradingPeriods, setGradingPeriods] = useState<GradingPeriod[]>([])
+  const [schoolYears, setSchoolYears] = useState<SchoolYear[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [editing, setEditing] = useState<Assignment | null>(null)
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(0)
-  const [total, setTotal] = useState(0)
   const [form, setForm] = useState<AssignmentForm>(emptyForm())
   const [targets, setTargets] = useState<Record<string, TargetDraft>>({})
   const [answerKeyQuestions, setAnswerKeyQuestions] = useState<AnswerKeyQuestion[]>([])
   const [showBulkImport, setShowBulkImport] = useState(false)
+  const [weeklyImport, setWeeklyImport] = useState(false)
+  const [showForm, setShowForm] = useState(false)
   const [filters, setFilters] = useState({
     q: searchParams.get('q') || searchParams.get('search') || '',
-    category: 'all',
-    grading_period_id: 'all',
+    category: searchParams.get('category') || 'all',
+    grading_period_id: searchParams.get('grading_period_id') || 'all',
     subject_id: searchParams.get('subject_id') || 'all',
-    student_id: 'all',
-    status: 'all',
-    due_from: '',
-    due_to: '',
-    sort: 'due-asc',
+    student_id: scopedStudentId ? String(scopedStudentId) : searchParams.get('student_id') || 'all',
+    status: searchParams.get('status') || 'all',
+    due_from: searchParams.get('due_from') || '',
+    due_to: searchParams.get('due_to') || '',
+    sort: searchParams.get('sort') || 'due-asc',
   })
+  const [hasLoaded, setHasLoaded] = useState(false)
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current
     setLoading(true)
     setError('')
     try {
-      const schoolYears = await api.listSchoolYears()
-      const schoolYearDetails = await Promise.all(schoolYears.map((year) => api.getSchoolYear(year.id)))
+      const years = await api.listSchoolYears()
+      const schoolYearDetails = await Promise.all(years.map((year) => api.getSchoolYear(year.id)))
       const allGradingPeriods = schoolYearDetails.flatMap((year) =>
         year.terms.flatMap((term) => term.grading_periods),
       )
       const [assignmentData, subjectData, studentData] = await Promise.all([
-        api.listAssignments({
+        fetchEveryPage((assignmentPage) => api.listAssignments({
           q: filters.q || undefined,
           category: filters.category as AssignmentCategory | 'all',
           grading_period_id: filters.grading_period_id === 'all' ? undefined : Number(filters.grading_period_id),
           subject_id: filters.subject_id === 'all' ? undefined : Number(filters.subject_id),
-          student_id: filters.student_id === 'all' ? undefined : Number(filters.student_id),
+          student_id: scopedStudentId || (filters.student_id === 'all' ? undefined : Number(filters.student_id)),
           status: filters.status as AssignmentStatus | AssignmentTargetStatus | 'all',
-          due_from: filters.due_from || undefined,
-          due_to: filters.due_to || undefined,
-          page,
-          page_size: 10,
-        }),
+          due_from: scope === 'calendar' ? range.start : scope === 'all' ? filters.due_from || undefined : undefined,
+          due_to: scope === 'calendar' ? range.end : scope === 'overdue' ? schoolDate() : scope === 'all' ? filters.due_to || undefined : undefined,
+          page: assignmentPage,
+          page_size: 100,
+        })),
         api.listSubjects(),
         api.listStudents(),
       ])
-      setAssignments(assignmentData.items)
-      setTotal(assignmentData.total)
-      setTotalPages(assignmentData.total_pages)
+      if (sequence !== loadSequence.current) return
+      setHasLoaded(true)
+      setSchoolYears(years)
+      setAssignments(assignmentData)
       setSubjects(subjectData)
       setStudents(studentData)
       setGradingPeriods(allGradingPeriods)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load assignments')
+      if (sequence === loadSequence.current) setError(loadError instanceof Error ? loadError.message : 'Unable to load assignments')
     } finally {
-      setLoading(false)
+      if (sequence === loadSequence.current) setLoading(false)
     }
-  }, [filters, page])
+  }, [filters, scope, range.start, range.end, scopedStudentId])
 
   useEffect(() => {
     void load()
   }, [load])
 
   useEffect(() => {
-    const params = new URLSearchParams()
-    Object.entries(filters).forEach(([key, value]) => {
-      if (!value || value === 'all') return
-      params.set(key === 'q' ? 'search' : key, value)
-    })
-    params.set('page', String(page))
-    setSearchParams(params, { replace: true })
-  }, [filters, page, setSearchParams])
+    setSearchParams((current) => {
+      const params = new URLSearchParams(current)
+      if (!params.has('scope')) params.set('scope', scope)
+      Object.entries(filters).forEach(([key, value]) => {
+        params.delete(key)
+        if (key === 'q') params.delete('search')
+        if (value && value !== 'all') params.set(key === 'q' ? 'search' : key, value)
+      })
+      return params
+    }, { replace: true })
+  }, [filters, scope, setSearchParams])
 
   const resetForm = () => {
     setEditing(null)
     setForm(emptyForm())
     setTargets({})
     setAnswerKeyQuestions([])
+    setShowForm(false)
   }
 
   const toggleStudent = (studentId: number) => {
@@ -257,28 +270,94 @@ export function AssignmentsPage() {
   )
 
   const sortedAssignments = useMemo(() => {
-    const items = [...assignmentsWithDetails]
+    const studentId = scopedStudentId || (filters.student_id === 'all' ? undefined : Number(filters.student_id))
+    const dueDates = (assignment: Assignment) => assignmentDates(assignment, studentId)
+    const effectiveDue = (assignment: Assignment) => dueDates(assignment).filter(Boolean).sort()[0] || '9999-12-31'
+    const items = assignmentsWithDetails.filter((assignment) => {
+      if (scope === 'undated') return dueDates(assignment).includes('')
+      if (scope !== 'overdue') return true
+      return assignmentIsOverdue(assignment, schoolDate(), studentId)
+    })
     switch (filters.sort) {
       case 'due-desc':
         return items.sort(
           (a, b) =>
-            new Date(b.due_date || 0).getTime() - new Date(a.due_date || 0).getTime(),
+            effectiveDue(b).localeCompare(effectiveDue(a)) || a.id - b.id,
         )
       case 'title':
-        return items.sort((a, b) => a.title.localeCompare(b.title))
+        return items.sort((a, b) => a.title.localeCompare(b.title) || a.id - b.id)
       default:
         return items.sort(
           (a, b) =>
-            new Date(a.due_date || '9999-12-31').getTime() - new Date(b.due_date || '9999-12-31').getTime(),
+            effectiveDue(a).localeCompare(effectiveDue(b)) || a.id - b.id,
         )
     }
-  }, [assignmentsWithDetails, filters.sort])
+  }, [assignmentsWithDetails, filters.sort, filters.student_id, scope, scopedStudentId])
 
-  if (loading) return <LoadingState message="Loading assignments…" />
+  const total = sortedAssignments.length
+  const totalPages = Math.ceil(total / 10)
+  const visiblePage = Math.min(page, Math.max(totalPages, 1))
+  const pagedAssignments = sortedAssignments.slice((visiblePage - 1) * 10, visiblePage * 10)
+
+  const editAssignment = (assignment: Assignment) => {
+    setEditing(assignment)
+    setShowForm(true)
+    setForm({
+      title: assignment.title, description: assignment.description || '',
+      due_date: assignment.due_date?.slice(0, 10) || '', status: assignment.status,
+      subject_id: assignment.subject_id ? String(assignment.subject_id) : '', category: assignment.category,
+      grading_period_id: assignment.grading_period_id ? String(assignment.grading_period_id) : 'none',
+      weight: String(assignment.weight), max_score: String(assignment.max_score), recurrence: assignment.recurrence,
+      recurrence_end_date: assignment.recurrence_end_date || '', rubric_description: assignment.rubric_description || '',
+      attachments: assignment.attachments.join('\n'),
+    })
+    setTargets(normalizeTargetMap(assignment))
+    setAnswerKeyQuestions(assignment.answer_key?.questions || [])
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const calendarEntries = sortedAssignments.flatMap((assignment) => {
+    const relevantTargets = assignment.targets.filter((target) =>
+      (!scopedStudentId && filters.student_id === 'all' || target.student_id === (scopedStudentId || Number(filters.student_id))) &&
+      (!targetStatuses.includes(filters.status as AssignmentTargetStatus) || target.status === filters.status))
+    const dates = assignmentDates(assignment,
+      scopedStudentId || (filters.student_id === 'all' ? undefined : Number(filters.student_id)),
+      targetStatuses.includes(filters.status as AssignmentTargetStatus) ? filters.status as AssignmentTargetStatus : undefined)
+    return dates.filter((day) => day >= range.start && day <= range.end).map((day) => ({
+      id: `${assignment.id}-${day}`, date: day, title: assignment.title,
+      subtitle: `${assignment.subjectName} · ${assignment.status}`,
+      details: <>
+        <p>{assignment.description || 'No instructions provided.'}</p>
+        <p className="text-xs text-muted-foreground">{assignment.category} · Max {assignment.max_score} · Weight {assignment.weight} · {assignment.gradingPeriodName}</p>
+        {relevantTargets.map((target) => <p key={`${assignment.id}-${target.student_id}`} className="text-xs">
+          {target.student?.name || students.find((student) => student.id === target.student_id)?.name || `Student #${target.student_id}`}
+          {' · '}{target.status} · Due {formatDateLabel(target.due_date || assignment.due_date)}
+        </p>)}
+        {canManageCurriculum ? <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => editAssignment(assignment)}>Edit assignment</Button>
+          <Button size="sm" variant="destructive" onClick={() => void api.deleteAssignment(assignment.id).then(load)}>Delete</Button>
+        </div> : null}
+      </>,
+    }))
+  })
+
+  if (loading && !hasLoaded) return <LoadingState message="Loading assignments…" />
   if (error) return <ErrorState message={error} onRetry={() => void load()} />
 
   return (
     <div className="space-y-4">
+      {loading ? <p role="status" className="text-sm text-muted-foreground">Refreshing assignments…</p> : null}
+      <Card>
+        <CardHeader><CardTitle>Assignments</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <PlanningCalendarToolbar navigation={navigation} />
+          {canManageCurriculum ? <div className="flex flex-wrap gap-2">
+            <Button onClick={() => { setWeeklyImport(true); setShowBulkImport(true); setShowForm(false) }}>Plan week</Button>
+            <Button variant="outline" onClick={() => { resetForm(); setForm({ ...emptyForm(), due_date: date }); setShowForm(true); setShowBulkImport(false) }}>Create assignment</Button>
+            <Button variant="outline" onClick={() => { setWeeklyImport(false); setShowBulkImport(true); setShowForm(false) }}><FileText className="mr-2 h-4 w-4" />Import assignments</Button>
+          </div> : null}
+        </CardContent>
+      </Card>
       {canManageCurriculum ? (
         <>
           {showBulkImport ? (
@@ -286,29 +365,19 @@ export function AssignmentsPage() {
               subjects={subjects}
               students={students}
               gradingPeriods={gradingPeriods}
+              schoolYears={schoolYears}
+              planningMode={weeklyImport ? 'weekly' : undefined}
+              initialDate={date}
+              initialStudentId={scopedStudentId || (filters.student_id === 'all' ? undefined : Number(filters.student_id))}
+              initialSchoolYearId={schoolYears.find((year) => year.is_active)?.id}
               onClose={() => setShowBulkImport(false)}
               onImported={() => void load()}
             />
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Bulk import assignments</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Upload a lesson plan or assignment list and let AI draft rows you can clarify, edit, and confirm.
-                </p>
-                <Button type="button" variant="secondary" onClick={() => setShowBulkImport(true)}>
-                  <FileText className="mr-2 h-4 w-4" />
-                  Import assignments
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+          ) : null}
         </>
       ) : null}
 
-      {canManageCurriculum ? (
+      {canManageCurriculum && showForm ? (
         <Card>
           <CardHeader>
             <CardTitle>{editing ? 'Edit assignment' : 'Create assignment'}</CardTitle>
@@ -585,11 +654,7 @@ export function AssignmentsPage() {
                 <Plus className="mr-2 h-4 w-4" />
                 {editing ? 'Update' : 'Create'} assignment
               </Button>
-              {editing ? (
-                <Button variant="outline" onClick={resetForm}>
-                  Cancel edit
-                </Button>
-              ) : null}
+              <Button variant="outline" onClick={resetForm}>Cancel</Button>
             </div>
           </CardContent>
         </Card>
@@ -597,10 +662,12 @@ export function AssignmentsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Assignment list</CardTitle>
+          <CardTitle>{scope === 'calendar' ? 'Scheduled assignments' : 'Assignment history'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
+          <details>
+          <summary className="cursor-pointer text-sm font-medium">Search and filters</summary>
+          <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-2 xl:col-span-2">
               <Label>Search</Label>
               <Input value={filters.q} onChange={(event) => { setFilters((prev) => ({ ...prev, q: event.target.value })); setPage(1) }} placeholder="Assignment title, note, or subject" />
@@ -655,7 +722,7 @@ export function AssignmentsPage() {
             </div>
             <div className="space-y-2">
               <Label>Student</Label>
-              <Select value={filters.student_id} onValueChange={(value) => { setFilters((prev) => ({ ...prev, student_id: value })); setPage(1) }}>
+              <Select disabled={Boolean(scopedStudentId)} value={filters.student_id} onValueChange={(value) => { setFilters((prev) => ({ ...prev, student_id: value })); setPage(1) }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -690,14 +757,14 @@ export function AssignmentsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+            {scope === 'all' ? <div className="space-y-2">
               <Label>Due from</Label>
               <Input type="date" value={filters.due_from} onChange={(event) => { setFilters((prev) => ({ ...prev, due_from: event.target.value })); setPage(1) }} />
-            </div>
-            <div className="space-y-2">
+            </div> : null}
+            {scope === 'all' ? <div className="space-y-2">
               <Label>Due to</Label>
               <Input type="date" value={filters.due_to} onChange={(event) => { setFilters((prev) => ({ ...prev, due_to: event.target.value })); setPage(1) }} />
-            </div>
+            </div> : null}
             <div className="space-y-2">
               <Label>Sort</Label>
               <Select value={filters.sort} onValueChange={(value) => setFilters((prev) => ({ ...prev, sort: value }))}>
@@ -712,12 +779,15 @@ export function AssignmentsPage() {
               </Select>
             </div>
           </div>
+          </details>
 
-          {sortedAssignments.length ? (
+          {scope === 'calendar' ? <PlanningCalendar date={date} view={view} entries={calendarEntries} /> : sortedAssignments.length ? (
             <>
               <div className="space-y-2">
-                {sortedAssignments.map((assignment) => (
-                  <div key={assignment.id} className="rounded-lg border p-3">
+                {pagedAssignments.map((assignment) => (
+                  <PlanningEntry key={assignment.id} entry={{ id: assignment.id, date: '', title: assignment.title,
+                    subtitle: `${assignment.subjectName} · Due ${formatDateLabel(assignment.due_date)} · ${assignment.status}`,
+                    details: <div className="rounded-lg p-1">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <p className="font-semibold">{assignment.title}</p>
@@ -740,7 +810,7 @@ export function AssignmentsPage() {
                       <div className="mt-3 space-y-2">
                         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Per-student status</p>
                         {assignment.targets.map((target) => (
-                          <div key={target.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 p-2 text-sm">
+                          <div key={`${assignment.id}-${target.student_id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 p-2 text-sm">
                             <div>
                               <p className="font-medium">{target.student?.name || `Student #${target.student_id}`}</p>
                               <p className="text-xs text-muted-foreground">Due {formatDateLabel(target.due_date)}</p>
@@ -757,26 +827,7 @@ export function AssignmentsPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            setEditing(assignment)
-                            setForm({
-                              title: assignment.title,
-                              description: assignment.description || '',
-                              due_date: assignment.due_date?.slice(0, 10) || '',
-                              status: assignment.status,
-                              subject_id: assignment.subject_id ? String(assignment.subject_id) : '',
-                              category: assignment.category,
-                              grading_period_id: assignment.grading_period_id ? String(assignment.grading_period_id) : 'none',
-                              weight: String(assignment.weight),
-                              max_score: String(assignment.max_score),
-                              recurrence: assignment.recurrence,
-                              recurrence_end_date: assignment.recurrence_end_date || '',
-                              rubric_description: assignment.rubric_description || '',
-                              attachments: assignment.attachments.join('\n'),
-                            })
-                            setTargets(normalizeTargetMap(assignment))
-                            setAnswerKeyQuestions(assignment.answer_key?.questions || [])
-                          }}
+                          onClick={() => editAssignment(assignment)}
                         >
                           <Pencil className="mr-2 h-3.5 w-3.5" />
                           Edit
@@ -787,18 +838,18 @@ export function AssignmentsPage() {
                         </Button>
                       </div>
                     ) : null}
-                  </div>
+                  </div> }} />
                 ))}
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-sm text-muted-foreground">
-                  {total} assignments • Page {page} of {Math.max(totalPages, 1)}
+                  {total} assignments • Page {visiblePage} of {Math.max(totalPages, 1)}
                 </p>
                 <div className="space-x-2">
-                  <Button variant="outline" disabled={page <= 1} onClick={() => setPage((current) => Math.max(current - 1, 1))}>
+                  <Button variant="outline" disabled={visiblePage <= 1} onClick={() => setPage(visiblePage - 1)}>
                     Previous
                   </Button>
-                  <Button variant="outline" disabled={totalPages > 0 ? page >= totalPages : true} onClick={() => setPage((current) => current + 1)}>
+                  <Button variant="outline" disabled={visiblePage >= totalPages} onClick={() => setPage(visiblePage + 1)}>
                     Next
                   </Button>
                 </div>

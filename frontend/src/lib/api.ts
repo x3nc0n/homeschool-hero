@@ -180,7 +180,11 @@ function shouldHandleAuthExpiry(path: string) {
   return !['/auth/login', '/auth/register', '/auth/bootstrap'].includes(path)
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  parseSuccess: (response: Response) => Promise<T> = parseResponse<T>,
+): Promise<T> {
   const headers = new Headers(init?.headers || {})
   const isFormData = init?.body instanceof FormData
   if (!isFormData && !headers.has('Content-Type')) {
@@ -227,7 +231,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw parseApiError(response.status, payload)
   }
 
-  return parseResponse<T>(response)
+  return parseSuccess(response)
 }
 
 function shouldUseCurriculumImportMock(error: unknown) {
@@ -1092,6 +1096,34 @@ export const api = {
       method: 'POST',
       body: formData,
     })
+  },
+
+  createWeeklyPlanSession(input: {
+    file?: File
+    text?: string
+    week_start: string
+    school_year_id: number
+    defaults?: AssignmentImportDefaults
+  }) {
+    const formData = new FormData()
+    formData.append('planning_mode', 'weekly')
+    formData.append('week_start', input.week_start)
+    formData.append('school_year_id', String(input.school_year_id))
+    if (input.file) formData.append('file', input.file)
+    if (input.text) formData.append('text', input.text)
+    if (input.defaults) formData.append('defaults', JSON.stringify(input.defaults))
+    return request<AssignmentImportSession>('/assignment-import-sessions', {
+      method: 'POST',
+      body: formData,
+    })
+  },
+
+  downloadWeeklyPlanTemplate(format: 'csv' | 'xlsx') {
+    return request<Blob>(
+      `/assignment-import-sessions/template?format=${format}`,
+      undefined,
+      (response) => response.blob(),
+    )
   },
 
   getAssignmentImportSession(sessionId: number) {
